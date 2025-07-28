@@ -1,43 +1,72 @@
-import express from 'express';
-import cors from 'cors';
+const express = require('express');
+const cors = require('cors');
+const bodyParser = require('body-parser');
+const { PDFDocument, rgb, StandardFonts } = require('pdf-lib');
+const fs = require('fs');
+const path = require('path');
 
 const app = express();
-const port = process.env.PORT || 3001;
-
 app.use(cors());
-app.use(express.json());
+app.use(bodyParser.json());
 
-app.post('/api/ordenes', (req, res) => {
-  const { nombre, edad, descripcion } = req.body;
+app.post('/generar-pdf', async (req, res) => {
+  const { nombre, edad, dolor } = req.body;
 
-  if (!nombre || !edad || !descripcion) {
-    return res.status(400).json({ mensaje: 'Faltan datos requeridos' });
-  }
+  const derivado = dolor.toLowerCase().includes("rodilla")
+    ? "Dr. Jaime Espinoza, Traumatólogo de Rodilla"
+    : "Dr. Cristóbal Huerta, Traumatólogo de Cadera";
 
-  // Lógica simple para sugerir exámenes
-  let examenes = [];
-  const desc = descripcion.toLowerCase();
+  const examen = dolor.toLowerCase().includes("rodilla")
+    ? "Resonancia Magnética de Rodilla"
+    : "Resonancia Magnética de Cadera";
 
-  if (desc.includes('rodilla')) {
-    examenes.push('Resonancia de rodilla');
-  }
-  if (desc.includes('cadera') || desc.includes('inguinal')) {
-    examenes.push('Resonancia de cadera');
-  }
-  if (examenes.length === 0) {
-    examenes.push('Radiografía simple');
-  }
+  const doc = await PDFDocument.create();
+  const page = doc.addPage([595, 842]); // A4
+  const font = await doc.embedFont(StandardFonts.Helvetica);
 
-  res.json({
-    mensaje: 'Orden generada con éxito',
-    orden: {
-      paciente: nombre,
-      edad,
-      examenes,
-    }
+  const logoPath = path.join(__dirname, 'logo.png');
+  const logoBytes = fs.readFileSync(logoPath);
+  const image = await doc.embedPng(logoBytes);
+  const imageDims = image.scale(0.25);
+  page.drawImage(image, {
+    x: 50,
+    y: 770,
+    width: imageDims.width,
+    height: imageDims.height,
   });
+
+  const text = `
+Instituto de Cirugía Articular
+Nombre del paciente: ${nombre}
+Edad: ${edad} años
+
+Se solicita: ${examen}
+Motivo: Dolor en ${dolor}
+
+Favor realizar el examen en centro radiológico de confianza.
+
+Derivar posteriormente con resultados al especialista correspondiente:
+
+${derivado}
+
+
+______________________
+Firma y Timbre Médico
+`;
+
+  const lines = text.trim().split('\n');
+  let y = 730;
+  for (const line of lines) {
+    page.drawText(line, { x: 50, y, size: 12, font });
+    y -= 22;
+  }
+
+  const pdfBytes = await doc.save();
+
+  res.setHeader('Content-Disposition', 'attachment; filename=orden.pdf');
+  res.setHeader('Content-Type', 'application/pdf');
+  res.send(Buffer.from(pdfBytes));
 });
 
-app.listen(port, () => {
-  console.log(`Servidor corriendo en puerto ${port}`);
-});
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Servidor escuchando en puerto ${PORT}`));
