@@ -1,64 +1,43 @@
-const express = require("express");
-const cors = require("cors");
-const PDFDocument = require("pdfkit");
+import express from 'express';
+import cors from 'cors';
 
 const app = express();
+const port = process.env.PORT || 3001;
+
 app.use(cors());
 app.use(express.json());
 
-app.post("/generar-pdf", (req, res) => {
-  const { nombre, edad, antecedentes, alergias, descripcionDolor } = req.body;
+app.post('/api/ordenes', (req, res) => {
+  const { nombre, edad, descripcion } = req.body;
 
-  const doc = new PDFDocument();
-  res.setHeader("Content-Type", "application/pdf");
-
-  // PDF directo al navegador
-  doc.pipe(res);
-
-  // Encabezado
-  doc.fontSize(16).text("Instituto de Cirugía Articular", { align: "center" });
-  doc.moveDown();
-  doc.fontSize(14).text("Orden de Imagenología", { align: "center" });
-  doc.moveDown();
-
-  // Datos del paciente
-  doc.fontSize(12).text(`Nombre: ${nombre}`);
-  doc.text(`Edad: ${edad}`);
-  doc.text(`Antecedentes: ${antecedentes}`);
-  doc.text(`Alergias: ${alergias}`);
-  doc.moveDown();
-
-  // Determinar zona de dolor
-  let tipoExamen = "Resonancia Magnética";
-  let zona = "";
-  let derivado = "";
-
-  const dolor = descripcionDolor.toLowerCase();
-
-  if (dolor.includes("rodilla")) {
-    zona = "de Rodilla";
-    derivado = "Dr. Jaime Espinoza";
-  } else if (dolor.includes("cadera") || dolor.includes("inguinal")) {
-    zona = "de Cadera";
-    derivado = "Dr. Cristóbal Huerta";
-  } else {
-    zona = "según evaluación médica";
-    derivado = "especialista a definir";
+  if (!nombre || !edad || !descripcion) {
+    return res.status(400).json({ mensaje: 'Faltan datos requeridos' });
   }
 
-  doc.text(`Se solicita: ${tipoExamen} ${zona}`);
-  doc.moveDown();
-  doc.text(`Favor acudir con el examen a consulta con: ${derivado}`);
-  doc.moveDown();
+  // Lógica simple para sugerir exámenes
+  let examenes = [];
+  const desc = descripcion.toLowerCase();
 
-  // Firma
-  doc.text("_______________________", { align: "right" });
-  doc.text("Firma y Timbre Médico", { align: "right" });
+  if (desc.includes('rodilla')) {
+    examenes.push('Resonancia de rodilla');
+  }
+  if (desc.includes('cadera') || desc.includes('inguinal')) {
+    examenes.push('Resonancia de cadera');
+  }
+  if (examenes.length === 0) {
+    examenes.push('Radiografía simple');
+  }
 
-  doc.end();
+  res.json({
+    mensaje: 'Orden generada con éxito',
+    orden: {
+      paciente: nombre,
+      edad,
+      examenes,
+    }
+  });
 });
 
-const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
-  console.log(`Servidor escuchando en puerto ${PORT}`);
+app.listen(port, () => {
+  console.log(`Servidor corriendo en puerto ${port}`);
 });
