@@ -1,7 +1,7 @@
 {
   "name": "asistente-ica-backend",
   "version": "1.0.0",
-  "description": "Backend para generar PDF con orden médica y logo para el Instituto de Cirugía Articular",
+  "description": "Backend para generar PDF con orden médica y logo del Instituto de Cirugía Articular",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
