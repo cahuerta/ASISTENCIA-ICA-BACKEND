@@ -8,37 +8,53 @@ app.use(cors());
 app.use(bodyParser.json());
 
 app.post('/generar-pdf', async (req, res) => {
-  const { nombre, edad, dolor, lado } = req.body;
+  const { nombre, rut, edad, dolor, lado } = req.body;
 
+  const fecha = new Date().toLocaleDateString('es-CL');
   const esRodilla = dolor.toLowerCase().includes('rodilla');
-  const examen = esRodilla ? 'Resonancia Magnética de Rodilla' : 'Resonancia Magnética de Cadera';
-  const derivado = esRodilla
-    ? 'Dr. Jaime Espinoza, Traumatólogo de Rodilla'
-    : 'Dr. Cristóbal Huerta, Traumatólogo de Cadera';
+  const examen = esRodilla
+    ? `Resonancia Magnética de Rodilla ${lado}`
+    : `Resonancia Magnética de Cadera ${lado}`;
+  const motivo = `Dolor persistente en ${dolor.toLowerCase()} ${lado.toLowerCase()}`;
+  const indicaciones = esRodilla
+    ? 'Acudir a control con nuestro especialista Dr. Jaime Espinoza.'
+    : 'Acudir a control con nuestro especialista Dr. Cristóbal Huerta.';
+
+  const firmaNombre = esRodilla
+    ? 'Dr. Jaime Espinoza'
+    : 'Dr. Cristóbal Huerta';
+
+  const firmaTitulo = esRodilla
+    ? 'Cirujano de Rodilla'
+    : 'Cirujano de Cadera';
 
   const doc = await PDFDocument.create();
-  const page = doc.addPage([595, 842]); // Tamaño A4
+  const page = doc.addPage([595, 842]); // A4
   const font = await doc.embedFont(StandardFonts.Helvetica);
 
   const lines = [
-    'Instituto de Cirugía Articular',
+    'INSTITUTO DE CIRUGÍA ARTICULAR',
+    'ORDEN MÉDICA - RESONANCIA',
     '',
-    `Nombre del paciente: ${nombre}`,
+    `Paciente: ${nombre}`,
+    `RUT: ${rut}`,
     `Edad: ${edad} años`,
+    `Fecha: ${fecha}`,
     '',
-    `Se solicita: ${examen}`,
-    `Motivo: Dolor en ${dolor} (${lado})`,
+    'Examen solicitado:',
+    examen,
     '',
-    'Favor realizar el examen en centro radiológico de confianza.',
+    'Motivo:',
+    motivo,
     '',
-    'Derivar posteriormente con resultados al especialista correspondiente:',
-    '',
-    derivado,
-    '',
+    'Indicaciones:',
+    indicaciones,
     '',
     '',
-    '__________________________',
-    'Firma y Timbre Médico',
+    'Firma:',
+    firmaNombre,
+    firmaTitulo,
+    'Instituto de Cirugía Articular'
   ];
 
   let y = 780;
