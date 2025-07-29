@@ -8,7 +8,7 @@ app.use(cors());
 app.use(bodyParser.json());
 
 app.post('/generar-pdf', async (req, res) => {
-  const { nombre, edad, dolor } = req.body;
+  const { nombre, edad, dolor, lado } = req.body;
 
   const esRodilla = dolor.toLowerCase().includes('rodilla');
   const examen = esRodilla ? 'Resonancia Magnética de Rodilla' : 'Resonancia Magnética de Cadera';
@@ -17,7 +17,7 @@ app.post('/generar-pdf', async (req, res) => {
     : 'Dr. Cristóbal Huerta, Traumatólogo de Cadera';
 
   const doc = await PDFDocument.create();
-  const page = doc.addPage([595, 842]); // A4
+  const page = doc.addPage([595, 842]); // Tamaño A4
   const font = await doc.embedFont(StandardFonts.Helvetica);
 
   const lines = [
@@ -27,7 +27,7 @@ app.post('/generar-pdf', async (req, res) => {
     `Edad: ${edad} años`,
     '',
     `Se solicita: ${examen}`,
-    `Motivo: Dolor en ${dolor}`,
+    `Motivo: Dolor en ${dolor} (${lado})`,
     '',
     'Favor realizar el examen en centro radiológico de confianza.',
     '',
