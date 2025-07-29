@@ -1,10 +1,13 @@
 {
-  "name": "ica-backend",
+  "name": "asistente-ica-backend",
   "version": "1.0.0",
+  "description": "Backend para generar PDFs con orden médica y logo para Instituto de Cirugía Articular",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
+  "author": "Cristóbal Huerta",
+  "license": "MIT",
   "dependencies": {
     "express": "^4.18.2",
     "cors": "^2.8.5",
