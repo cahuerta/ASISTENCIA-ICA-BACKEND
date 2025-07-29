@@ -12,6 +12,11 @@ app.use(bodyParser.json());
 app.post('/generar-pdf', async (req, res) => {
   try {
     const { nombre, rut, edad, dolor, lado } = req.body;
+
+    if (!nombre || !rut || !edad || !dolor || !lado) {
+      return res.status(400).send('Faltan datos obligatorios');
+    }
+
     const fecha = new Date().toLocaleDateString('es-CL');
 
     const esRodilla = dolor.toLowerCase().includes('rodilla');
@@ -30,7 +35,7 @@ app.post('/generar-pdf', async (req, res) => {
       : 'Cirujano de Cadera';
 
     const pdfDoc = await PDFDocument.create();
-    const page = pdfDoc.addPage([595, 842]); // A4
+    const page = pdfDoc.addPage([595, 842]); // Tamaño A4
 
     const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
     let y = 780;
@@ -50,4 +55,37 @@ app.post('/generar-pdf', async (req, res) => {
       'Motivo:',
       motivo,
       '',
-      'Ind
+      'Indicaciones:',
+      indicaciones,
+      '',
+      '',
+      'Firma:',
+      firmaNombre,
+      firmaTitulo,
+      'Instituto de Cirugía Articular'
+    ];
+
+    for (const line of lines) {
+      page.drawText(line, {
+        x: 50,
+        y,
+        size: 12,
+        font,
+      });
+      y -= 25;
+    }
+
+    const pdfBytes = await pdfDoc.save();
+
+    res.setHeader('Content-Disposition', 'attachment; filename=orden.pdf');
+    res.setHeader('Content-Type', 'application/pdf');
+    res.send(Buffer.from(pdfBytes));
+  } catch (error) {
+    console.error('Error generando PDF:', error);
+    res.status(500).send('Error al generar PDF');
+  }
+});
+
+app.listen(port, () => {
+  console.log(`Servidor escuchando en puerto ${port}`);
+});
