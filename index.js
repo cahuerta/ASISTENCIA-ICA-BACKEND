@@ -8,7 +8,7 @@ const port = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json()); // <- Middleware importante para parsear JSON
 
-app.post('/generar-pdf', async (req, res) => {
+app.post('/ordenes', async (req, res) => {
   try {
     const { nombre, rut, edad, dolor, lado } = req.body;
 
