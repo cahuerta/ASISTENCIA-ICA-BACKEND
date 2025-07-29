@@ -1,6 +1,13 @@
-const fs = require('fs');
-const path = require('path');
+const express = require('express');
+const cors = require('cors');
+const bodyParser = require('body-parser');
 const { PDFDocument, StandardFonts } = require('pdf-lib');
+
+const app = express();
+const port = process.env.PORT || 3000;
+
+app.use(cors());
+app.use(bodyParser.json());
 
 app.post('/generar-pdf', async (req, res) => {
   try {
@@ -25,28 +32,8 @@ app.post('/generar-pdf', async (req, res) => {
     const pdfDoc = await PDFDocument.create();
     const page = pdfDoc.addPage([595, 842]); // A4
 
-    // Cargar logo ica.jpg
-    const logoPath = path.join(__dirname, 'assets', 'ica.jpg');
-
-    if (!fs.existsSync(logoPath)) {
-      console.error('Logo no encontrado en:', logoPath);
-      return res.status(500).send('Logo no encontrado en el servidor.');
-    }
-
-    const logoBytes = fs.readFileSync(logoPath);
-    const logoImage = await pdfDoc.embedJpg(logoBytes);
-    const logoDims = logoImage.scale(0.25);
-
-    // Posicionar logo arriba a la izquierda
-    page.drawImage(logoImage, {
-      x: 50,
-      y: 780,
-      width: logoDims.width,
-      height: logoDims.height,
-    });
-
     const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-    let y = 780 - logoDims.height - 15;
+    let y = 780;
 
     const lines = [
       'INSTITUTO DE CIRUGÍA ARTICULAR',
@@ -63,34 +50,4 @@ app.post('/generar-pdf', async (req, res) => {
       'Motivo:',
       motivo,
       '',
-      'Indicaciones:',
-      indicaciones,
-      '',
-      '',
-      'Firma:',
-      firmaNombre,
-      firmaTitulo,
-      'Instituto de Cirugía Articular'
-    ];
-
-    for (const line of lines) {
-      page.drawText(line, {
-        x: 50,
-        y,
-        size: 12,
-        font,
-      });
-      y -= 25;
-    }
-
-    const pdfBytes = await pdfDoc.save();
-
-    res.setHeader('Content-Disposition', 'attachment; filename=orden.pdf');
-    res.setHeader('Content-Type', 'application/pdf');
-    res.send(Buffer.from(pdfBytes));
-
-  } catch (error) {
-    console.error('Error generando PDF:', error);
-    res.status(500).send('Error al generar PDF');
-  }
-});
+      'Ind
