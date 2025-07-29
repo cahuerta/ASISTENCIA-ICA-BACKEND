@@ -22,20 +22,22 @@ app.post('/generar-pdf', async (req, res) => {
       ? 'Cirujano de Rodilla'
       : 'Cirujano de Cadera';
 
-    const doc = await PDFDocument.create();
-    const page = doc.addPage([595, 842]); // A4
+    const pdfDoc = await PDFDocument.create();
+    const page = pdfDoc.addPage([595, 842]); // A4
 
-    // ✅ Leer e insertar logo
+    // Cargar logo ica.jpg
     const logoPath = path.join(__dirname, 'assets', 'ica.jpg');
+
     if (!fs.existsSync(logoPath)) {
-      return res.status(500).send('Logo no encontrado');
+      console.error('Logo no encontrado en:', logoPath);
+      return res.status(500).send('Logo no encontrado en el servidor.');
     }
 
     const logoBytes = fs.readFileSync(logoPath);
-    const logoImage = await doc.embedJpg(logoBytes);
+    const logoImage = await pdfDoc.embedJpg(logoBytes);
     const logoDims = logoImage.scale(0.25);
 
-    // Posicionar logo arriba izquierda
+    // Posicionar logo arriba a la izquierda
     page.drawImage(logoImage, {
       x: 50,
       y: 780,
@@ -43,7 +45,7 @@ app.post('/generar-pdf', async (req, res) => {
       height: logoDims.height,
     });
 
-    const font = await doc.embedFont(StandardFonts.Helvetica);
+    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
     let y = 780 - logoDims.height - 15;
 
     const lines = [
@@ -81,7 +83,8 @@ app.post('/generar-pdf', async (req, res) => {
       y -= 25;
     }
 
-    const pdfBytes = await doc.save();
+    const pdfBytes = await pdfDoc.save();
+
     res.setHeader('Content-Disposition', 'attachment; filename=orden.pdf');
     res.setHeader('Content-Type', 'application/pdf');
     res.send(Buffer.from(pdfBytes));
