@@ -26,7 +26,7 @@ app.post('/generar-pdf', async (req, res) => {
     const page = doc.addPage([595, 842]); // A4
 
     // ✅ Leer e insertar logo
-    const logoPath = path.join(__dirname, 'assets', 'logo.jpg');
+    const logoPath = path.join(__dirname, 'assets', 'ica.jpg');
     if (!fs.existsSync(logoPath)) {
       return res.status(500).send('Logo no encontrado');
     }
