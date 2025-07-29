@@ -1,7 +1,6 @@
 {
   "name": "ica-backend",
   "version": "1.0.0",
-  "description": "Backend para generación de orden médica en PDF",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
