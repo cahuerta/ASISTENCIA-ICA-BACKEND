@@ -11,7 +11,7 @@ const port = process.env.PORT || 3001;
 app.use(cors());
 app.use(bodyParser.json());
 
-app.post('/generar-pdf', (req, res) => {
+app.post('/pdf', (req, res) => {
   const datos = req.body;
 
   const doc = new PDFDocument({ margin: 50 });
