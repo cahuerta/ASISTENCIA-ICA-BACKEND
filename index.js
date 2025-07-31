@@ -43,20 +43,35 @@ app.post('/generar-pdf', (req, res) => {
   doc.text(`Alergias: ${datos.alergias}`);
   doc.moveDown();
 
-  // Examen y derivación sugerida
+  // Lógica de decisión según edad y zona
   doc.font('Helvetica-Bold').text('Examen solicitado:', { underline: true });
   doc.font('Helvetica');
 
-  if (datos.motivo.toLowerCase().includes('rodilla')) {
-    doc.text('→ Resonancia Magnética de Rodilla');
+  const edadPaciente = parseInt(datos.edad);
+  const motivo = datos.motivo.toLowerCase();
+
+  if (motivo.includes('rodilla')) {
+    if (edadPaciente < 50) {
+      doc.text('→ Resonancia Magnética de Rodilla');
+      doc.text('Justificación: Evaluación de lesiones ligamentarias y meniscales en paciente joven.');
+    } else {
+      doc.text('→ Radiografía de Rodilla (proyección AP y lateral)');
+      doc.text('→ Considerar Resonancia según hallazgos clínicos');
+      doc.text('Justificación: Estudio de artrosis o lesiones degenerativas en paciente mayor.');
+    }
     doc.text('→ Recomendación: Evaluación por Dr. Jaime Espinoza');
-  } else if (
-    datos.motivo.toLowerCase().includes('cadera') ||
-    datos.motivo.toLowerCase().includes('inguinal')
-  ) {
-    doc.text('→ Resonancia Magnética de Cadera');
+  }
+  else if (motivo.includes('cadera') || motivo.includes('inguinal')) {
+    if (edadPaciente < 50) {
+      doc.text('→ Resonancia Magnética de Cadera');
+      doc.text('Justificación: Evaluación de lesiones intraarticulares y choque femoroacetabular en paciente joven.');
+    } else {
+      doc.text('→ Radiografía de Pelvis AP de pie');
+      doc.text('Justificación: Evaluación de artrosis u otras patologías degenerativas.');
+    }
     doc.text('→ Recomendación: Evaluación por Dr. Cristóbal Huerta');
-  } else {
+  }
+  else {
     doc.text('→ Evaluación imagenológica a definir según criterio clínico.');
     doc.text('→ Recomendación: Derivación a especialidad según hallazgos.');
   }
