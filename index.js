@@ -21,12 +21,8 @@ app.post('/generar-pdf', (req, res) => {
 
   // Ruta del logo
   const logoPath = path.join(__dirname, 'assets', 'ica.jpg');
-
-  // Logo
   if (fs.existsSync(logoPath)) {
     doc.image(logoPath, 50, 40, { width: 100 });
-  } else {
-    console.warn('No se encontró el logo en assets/ica.jpg');
   }
 
   // Encabezado
@@ -39,11 +35,9 @@ app.post('/generar-pdf', (req, res) => {
   doc.text(`Nombre del paciente: ${datos.nombre}`);
   doc.text(`Edad: ${datos.edad}`);
   doc.text(`Motivo de consulta: ${datos.motivo}`);
-  doc.text(`Antecedentes médicos: ${datos.enfermedades}`);
-  doc.text(`Alergias: ${datos.alergias}`);
   doc.moveDown();
 
-  // Lógica de decisión según edad y zona
+  // Lógica de decisión
   doc.font('Helvetica-Bold').text('Examen solicitado:', { underline: true });
   doc.font('Helvetica');
 
@@ -77,8 +71,6 @@ app.post('/generar-pdf', (req, res) => {
   }
 
   doc.moveDown(3);
-
-  // Firma
   doc.text('_____________________________', { align: 'left' });
   doc.text('Firma del médico tratante', { align: 'left' });
 
