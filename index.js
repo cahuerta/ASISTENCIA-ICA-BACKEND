@@ -18,7 +18,7 @@ app.get('/', (req, res) => {
 app.post('/generar-pdf', (req, res) => {
   const datos = req.body;
 
-  const doc = new PDFDocument({ margin: 60 });
+  const doc = new PDFDocument({ margin: 60, size: 'A4' });
   const nombreArchivo = `orden-${Date.now()}.pdf`;
   const stream = fs.createWriteStream(nombreArchivo);
   doc.pipe(stream);
@@ -27,7 +27,7 @@ app.post('/generar-pdf', (req, res) => {
   const hoy = new Date();
   const opcionesFecha = { year: 'numeric', month: 'long', day: 'numeric' };
   const fechaFormateada = hoy.toLocaleDateString('es-ES', opcionesFecha);
-  const lugar = 'Talca, Chile'; // Puedes cambiar el lugar aquí
+  const lugar = 'Talca, Chile'; // Cambia aquí si quieres otro lugar
 
   // Logo y encabezado
   const logoPath = path.join(__dirname, 'assets', 'ica.jpg');
@@ -58,11 +58,11 @@ app.post('/generar-pdf', (req, res) => {
   // Datos paciente
   doc.moveDown(2);
   doc.fontSize(12).font('Helvetica-Bold').text('Datos del Paciente:', 50);
-  doc.moveDown(0.5);
+  doc.moveDown(0.8);
   doc.font('Helvetica').fontSize(12);
-  doc.text(`Nombre: ${datos.nombre}`, { indent: 20 });
-  doc.text(`Edad: ${datos.edad} años`, { indent: 20 });
-  doc.text(`Motivo de consulta: ${datos.motivo}`, { indent: 20 });
+  doc.text(`Nombre: ${datos.nombre}`, { indent: 20, lineGap: 6 });
+  doc.text(`Edad: ${datos.edad} años`, { indent: 20, lineGap: 6 });
+  doc.text(`Motivo de consulta: ${datos.motivo}`, { indent: 20, lineGap: 6 });
   doc.moveDown();
 
   // Examen solicitado
@@ -71,36 +71,37 @@ app.post('/generar-pdf', (req, res) => {
 
   const edadPaciente = parseInt(datos.edad);
   const motivo = datos.motivo.toLowerCase();
+  const lado = datos.lado ? datos.lado.toLowerCase() : '';
 
   if (motivo.includes('rodilla')) {
     if (edadPaciente < 50) {
-      doc.text('→ Resonancia Magnética de Rodilla', { indent: 20 });
-      doc.text('Justificación: Evaluación de lesiones ligamentarias y meniscales en paciente joven.', { indent: 20 });
+      doc.text(`→ Resonancia Magnética de Rodilla (${lado})`, { indent: 20, lineGap: 8 });
+      doc.text('Justificación: Evaluación de lesiones ligamentarias y meniscales en paciente joven.', { indent: 20, lineGap: 8 });
     } else {
-      doc.text('→ Radiografía de Rodilla (proyección AP y lateral)', { indent: 20 });
-      doc.text('→ Considerar Resonancia según hallazgos clínicos', { indent: 20 });
-      doc.text('Justificación: Estudio de artrosis o lesiones degenerativas en paciente mayor.', { indent: 20 });
+      doc.text(`→ Radiografía de Rodilla (${lado}) (proyección AP y lateral)`, { indent: 20, lineGap: 8 });
+      doc.text('→ Considerar Resonancia según hallazgos clínicos', { indent: 20, lineGap: 8 });
+      doc.text('Justificación: Estudio de artrosis o lesiones degenerativas en paciente mayor.', { indent: 20, lineGap: 8 });
     }
-    doc.moveDown(0.5);
+    doc.moveDown(1);
     doc.text('Recomendación: Evaluación por Dr. Jaime Espinoza', { indent: 20 });
   }
   else if (motivo.includes('cadera') || motivo.includes('inguinal')) {
     if (edadPaciente < 50) {
-      doc.text('→ Resonancia Magnética de Cadera', { indent: 20 });
-      doc.text('Justificación: Evaluación de lesiones intraarticulares y choque femoroacetabular en paciente joven.', { indent: 20 });
+      doc.text(`→ Resonancia Magnética de Cadera (${lado})`, { indent: 20, lineGap: 8 });
+      doc.text('Justificación: Evaluación de lesiones intraarticulares y choque femoroacetabular en paciente joven.', { indent: 20, lineGap: 8 });
     } else {
-      doc.text('→ Radiografía de Pelvis AP de pie', { indent: 20 });
-      doc.text('Justificación: Evaluación de artrosis u otras patologías degenerativas.', { indent: 20 });
+      doc.text(`→ Radiografía de Pelvis AP de pie (${lado})`, { indent: 20, lineGap: 8 });
+      doc.text('Justificación: Evaluación de artrosis u otras patologías degenerativas.', { indent: 20, lineGap: 8 });
     }
-    doc.moveDown(0.5);
+    doc.moveDown(1);
     doc.text('Recomendación: Evaluación por Dr. Cristóbal Huerta', { indent: 20 });
   }
   else {
-    doc.text('→ Evaluación imagenológica a definir según criterio clínico.', { indent: 20 });
-    doc.text('→ Recomendación: Derivación a especialidad según hallazgos.', { indent: 20 });
+    doc.text('→ Evaluación imagenológica a definir según criterio clínico.', { indent: 20, lineGap: 8 });
+    doc.text('→ Recomendación: Derivación a especialidad según hallazgos.', { indent: 20, lineGap: 8 });
   }
 
-  doc.moveDown(4);
+  doc.moveDown(5);
 
   // Firma y sello con líneas
   const firmaY = doc.y;
