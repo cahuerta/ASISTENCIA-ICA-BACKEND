@@ -43,14 +43,14 @@ app.post('/generar-pdf', (req, res) => {
   }
 
   // Espacio arriba del título (mantenemos posición fija)
-  const titleY = 60;
+  const titleY = 70;
 
   // Títulos a la derecha del logo, en negrita
   doc.font('Helvetica-Bold').fontSize(16).text('INSTITUTO DE CIRUGÍA ARTICULAR', 190, titleY);
   doc.font('Helvetica-Bold').fontSize(12).text('Orden Médica de Imagenología', 190, titleY + 20);
 
   // Datos del paciente debajo del logo, sin superponer
-  let currentY = 70 + logoHeight + 15;
+  let currentY = 150 + logoHeight + 15;
   doc.font('Helvetica').fontSize(13).text(`Nombre: ${nombre}`, 50, currentY);
   currentY += 22;
   doc.text(`Edad: ${edad}`, 50, currentY);
