@@ -32,8 +32,8 @@ app.post('/generar-pdf', (req, res) => {
   const textStartX = 130;  // 40 + 80 + 10 px margen
   const textStartY = 50;
 
-  doc.fontSize(20).text('INSTITUTO DE CIRUGIA ARTICULAR', textStartX, textStartY);
-  doc.fontSize(16).text('Orden Médica de Imagenología', textStartX, textStartY + 25);
+  doc.fontSize(16).text('INSTITUTO DE CIRUGIA ARTICULAR', textStartX, textStartY);
+  doc.fontSize(12).text('Orden Médica de Imagenología', textStartX, textStartY + 25);
 
   doc.moveDown(3);
 
