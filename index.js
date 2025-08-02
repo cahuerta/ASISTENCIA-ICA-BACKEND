@@ -25,30 +25,27 @@ app.post('/generar-pdf', (req, res) => {
 
   doc.pipe(res);
 
-  // Logo arriba izquierda (120 px ancho), mantener ratio
+  // Logo arriba izquierda (120 px ancho), manteniendo proporción
   const logoPath = path.resolve('assets/ica.jpg');
   let logoHeight = 0;
   if (fs.existsSync(logoPath)) {
     try {
-      // Sólo especificamos ancho para mantener proporción
       doc.image(logoPath, 50, 40, { width: 120 });
-      // Para estimar la altura del logo, asumimos aprox 50% del ancho
-      logoHeight = 120 * 0.5; // 60px alto estimado, ajusta si es necesario
+      logoHeight = 120 * 0.5; // aprox 60 px alto, ajustar si necesario
     } catch (err) {
       console.error('Error al insertar imagen:', err.message);
     }
   }
 
-  // Espacio arriba del título: simplemente empezamos el título más abajo
-  // Así que sumamos 20px para separar del borde superior (40 + 20 = 60)
+  // Espacio arriba del título (mantenemos posición fija)
   const titleY = 60;
 
   // Títulos a la derecha del logo, en negrita
   doc.font('Helvetica-Bold').fontSize(16).text('INSTITUTO DE CIRUGÍA ARTICULAR', 190, titleY);
   doc.font('Helvetica-Bold').fontSize(12).text('Orden Médica de Imagenología', 190, titleY + 20);
 
-  // Datos del paciente debajo del logo, sin superponer (logo en Y=40 con altura estimada)
-  let currentY = 40 + logoHeight + 15; // 40 + 60 + 15 = 115 aprox
+  // Datos del paciente debajo del logo, sin superponer
+  let currentY = 40 + logoHeight + 15;
   doc.font('Helvetica').fontSize(13).text(`Nombre: ${nombre}`, 50, currentY);
   currentY += 22;
   doc.text(`Edad: ${edad}`, 50, currentY);
@@ -56,38 +53,45 @@ app.post('/generar-pdf', (req, res) => {
   doc.text(`RUT: ${rut}`, 50, currentY);
   currentY += 30;
 
-  // Descripción de síntomas: título a la izquierda y texto a la derecha, misma línea
+  // Descripción de síntomas con texto "Dolor ..." en la misma línea
   const descX = 50;
   const valorX = 200;
   doc.fontSize(13).text('Descripción de síntomas:', descX, currentY);
   doc.text(`Dolor ${sintomas}`, valorX, currentY);
   currentY += 40;
 
-  // Lógica para examen sugerido
+  // Formatear lado para orden
+  const ladoFormatted = lado
+    ? lado.charAt(0).toUpperCase() + lado.slice(1).toLowerCase()
+    : '';
+
+  // Construcción de orden con lado
   let orden = '';
   if (sintomasLower.includes('rodilla')) {
-    orden = edad < 50
-      ? 'Resonancia Magnética de Rodilla.'
-      : 'Radiografía de Rodilla AP y Lateral.';
+    orden =
+      edad < 50
+        ? `Resonancia Magnética de Rodilla ${ladoFormatted}.`
+        : `Radiografía de Rodilla ${ladoFormatted} AP y Lateral.`;
   } else if (
     sintomasLower.includes('cadera') ||
     sintomasLower.includes('ingle') ||
     sintomasLower.includes('inguinal')
   ) {
-    orden = edad < 50
-      ? 'Resonancia Magnética de Cadera.'
-      : 'Radiografía de Pelvis AP de pie.';
+    orden =
+      edad < 50
+        ? `Resonancia Magnética de Cadera ${ladoFormatted}.`
+        : `Radiografía de Pelvis AP de pie.`; // No lado en pelvis
   } else {
     orden = 'Evaluación pendiente según examen físico.';
   }
 
-  // "Examen sugerido:" normal y orden en negrita y tamaño mayor
+  // Examen sugerido: texto normal + orden en negrita y tamaño mayor
   doc.font('Helvetica').fontSize(13).text('Examen sugerido:', 50, currentY);
   currentY += 22;
   doc.font('Helvetica-Bold').fontSize(14).text(orden, 50, currentY);
   currentY += 40;
 
-  // Nota personalizada en lugar de derivación
+  // Nota personalizada
   let notaEspecialista = '';
   if (
     sintomasLower.includes('cadera') ||
@@ -122,4 +126,3 @@ app.post('/generar-pdf', (req, res) => {
 app.listen(PORT, () => {
   console.log(`Servidor escuchando en http://localhost:${PORT}`);
 });
-Si quieres, te prep
