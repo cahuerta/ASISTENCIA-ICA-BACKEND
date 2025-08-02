@@ -25,28 +25,30 @@ app.post('/generar-pdf', (req, res) => {
 
   doc.pipe(res);
 
-  // Logo arriba izquierda (120 px ancho), mantener ratio original
+  // Logo arriba izquierda (120 px ancho), mantener ratio
   const logoPath = path.resolve('assets/ica.jpg');
   let logoHeight = 0;
   if (fs.existsSync(logoPath)) {
     try {
-      // Solo especificamos ancho para mantener el ratio
+      // Sólo especificamos ancho para mantener proporción
       doc.image(logoPath, 50, 40, { width: 120 });
-      // Podemos obtener la altura tras imagen cargada usando el evento 'pageAdded' o similar,
-      // pero aquí asumimos una altura aproximada para posicionar datos abajo del logo:
-      logoHeight = 120 * 0.4; // ejemplo, ajustar según proporción real (ej: 48px)
+      // Para estimar la altura del logo, asumimos aprox 50% del ancho
+      logoHeight = 120 * 0.5; // 60px alto estimado, ajusta si es necesario
     } catch (err) {
       console.error('Error al insertar imagen:', err.message);
     }
   }
 
-  // Espacio arriba del título
-  // Títulos a la derecha del logo, en negrita
-  doc.font('Helvetica-Bold').fontSize(16).text('INSTITUTO DE CIRUGÍA ARTICULAR', 190, 50);
-  doc.font('Helvetica-Bold').fontSize(12).text('Orden Médica de Imagenología', 190, 70);
+  // Espacio arriba del título: simplemente empezamos el título más abajo
+  // Así que sumamos 20px para separar del borde superior (40 + 20 = 60)
+  const titleY = 60;
 
-  // Datos del paciente debajo del logo, alineados a la izquierda
-  let currentY = 40 + logoHeight + 15;
+  // Títulos a la derecha del logo, en negrita
+  doc.font('Helvetica-Bold').fontSize(16).text('INSTITUTO DE CIRUGÍA ARTICULAR', 190, titleY);
+  doc.font('Helvetica-Bold').fontSize(12).text('Orden Médica de Imagenología', 190, titleY + 20);
+
+  // Datos del paciente debajo del logo, sin superponer (logo en Y=40 con altura estimada)
+  let currentY = 40 + logoHeight + 15; // 40 + 60 + 15 = 115 aprox
   doc.font('Helvetica').fontSize(13).text(`Nombre: ${nombre}`, 50, currentY);
   currentY += 22;
   doc.text(`Edad: ${edad}`, 50, currentY);
@@ -54,7 +56,7 @@ app.post('/generar-pdf', (req, res) => {
   doc.text(`RUT: ${rut}`, 50, currentY);
   currentY += 30;
 
-  // Descripción de síntomas: título a la izquierda y texto a la derecha en la misma línea
+  // Descripción de síntomas: título a la izquierda y texto a la derecha, misma línea
   const descX = 50;
   const valorX = 200;
   doc.fontSize(13).text('Descripción de síntomas:', descX, currentY);
@@ -79,10 +81,10 @@ app.post('/generar-pdf', (req, res) => {
     orden = 'Evaluación pendiente según examen físico.';
   }
 
-  // Examen sugerido en negrita y mayor tamaño
-  doc.font('Helvetica-Bold').fontSize(14).text('Examen sugerido:', 50, currentY);
+  // "Examen sugerido:" normal y orden en negrita y tamaño mayor
+  doc.font('Helvetica').fontSize(13).text('Examen sugerido:', 50, currentY);
   currentY += 22;
-  doc.text(orden, 50, currentY);
+  doc.font('Helvetica-Bold').fontSize(14).text(orden, 50, currentY);
   currentY += 40;
 
   // Nota personalizada en lugar de derivación
@@ -120,3 +122,4 @@ app.post('/generar-pdf', (req, res) => {
 app.listen(PORT, () => {
   console.log(`Servidor escuchando en http://localhost:${PORT}`);
 });
+Si quieres, te prep
