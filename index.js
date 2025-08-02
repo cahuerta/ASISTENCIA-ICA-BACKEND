@@ -50,7 +50,7 @@ app.post('/generar-pdf', (req, res) => {
   doc.font('Helvetica-Bold').fontSize(12).text('Orden Médica de Imagenología', 190, titleY + 20);
 
   // Datos del paciente debajo del logo, sin superponer
-  let currentY = 40 + logoHeight + 15;
+  let currentY = 70 + logoHeight + 15;
   doc.font('Helvetica').fontSize(13).text(`Nombre: ${nombre}`, 50, currentY);
   currentY += 22;
   doc.text(`Edad: ${edad}`, 50, currentY);
