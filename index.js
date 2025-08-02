@@ -2,9 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import bodyParser from 'body-parser';
 import PDFDocument from 'pdfkit';
-import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -12,93 +10,81 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(bodyParser.json());
 
-// Necesario para construir ruta al archivo desde ES module
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+// Endpoint para generar el PDF
+app.post('/pdf', (req, res) => {
+  const { nombre, edad, rut, sintomas, enfermedadesPrevias, cirugiasPrevias, alergias } = req.body;
 
-app.post('/generar-pdf', (req, res) => {
-  const { nombre, rut, edad, dolor, lado } = req.body;
+  const doc = new PDFDocument();
+  const filename = `orden_${nombre.replace(/ /g, '_')}.pdf`;
 
-  if (!nombre || !rut || !edad || !dolor) {
-    return res.status(400).json({ error: 'Faltan datos obligatorios' });
-  }
-
-  let orden = '';
-  if (dolor === 'Rodilla') {
-    orden =
-      edad < 50
-        ? `Resonancia magnética de rodilla ${lado.toLowerCase()}`
-        : `Radiografía de rodilla ${lado.toLowerCase()} AP y lateral de pie`;
-  } else if (dolor === 'Cadera') {
-    orden =
-      edad < 50
-        ? `Resonancia magnética de cadera ${lado.toLowerCase()}`
-        : `Radiografía de pelvis AP de pie`;
-  } else if (dolor === 'Columna lumbar') {
-    orden = 'Resonancia magnética de columna lumbar';
-  } else {
-    orden = 'Examen imagenológico no especificado';
-  }
-
-  const doc = new PDFDocument({ margin: 40, size: 'A4' });
-
+  // Seteo cabeceras para la respuesta
+  res.setHeader('Content-Disposition', `attachment; filename=${filename}`);
   res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', 'attachment; filename=orden_resonancia.pdf');
 
+  // Enviar los datos PDF directamente en la respuesta
   doc.pipe(res);
 
-  // ✅ Insertar logo desde carpeta assets
-  const logoPath = path.join(__dirname, 'assets', 'ica.jpg');
-  if (fs.existsSync(logoPath)) {
-    doc.image(logoPath, 220, 30, { width: 150 });
+  // Logo alineado a la izquierda arriba (asegúrate que el path sea correcto)
+  const logoPath = path.resolve('assets/ica.jpg');
+  doc.image(logoPath, 50, 40, { width: 100 });
+
+  // Títulos
+  doc.fontSize(16).text('Instituto de Cirugía Articular', 160, 60);
+  doc.fontSize(12).text('Orden Médica de Imagenología', 50, 130);
+  doc.moveDown(2);
+
+  // Datos paciente
+  doc.fontSize(10).text(`Nombre: ${nombre}`);
+  doc.text(`Edad: ${edad}`);
+  doc.text(`RUT: ${rut}`);
+  doc.text(`Enfermedades previas: ${enfermedadesPrevias}`);
+  doc.text(`Cirugías previas: ${cirugiasPrevias}`);
+  doc.text(`Alergias: ${alergias}`);
+  doc.moveDown();
+
+  // Descripción de síntomas
+  doc.text(`Descripción de síntomas: ${sintomas}`);
+  doc.moveDown();
+
+  // Lógica para orden según síntomas y edad
+  let orden = '';
+  let derivado = '';
+
+  const sintomasMinus = sintomas.toLowerCase();
+
+  if (sintomasMinus.includes('rodilla')) {
+    if (edad < 50) {
+      orden = 'Resonancia Magnética de Rodilla.';
+    } else {
+      orden = 'Radiografía de Rodilla AP y Lateral.';
+    }
+    derivado = 'Derivado a: Dr. Jaime Espinoza (Rodilla)';
+  } else if (
+    sintomasMinus.includes('cadera') ||
+    sintomasMinus.includes('ingle') ||
+    sintomasMinus.includes('inguinal')
+  ) {
+    if (edad < 50) {
+      orden = 'Resonancia Magnética de Cadera.';
+    } else {
+      orden = 'Radiografía de Pelvis AP de pie.';
+    }
+    derivado = 'Derivado a: Dr. Cristóbal Huerta (Cadera)';
+  } else {
+    orden = 'Evaluación pendiente según examen físico.';
+    derivado = 'Especialidad a definir.';
   }
 
-  doc
-    .moveDown(5)
-    .fontSize(20)
-    .fillColor('#0072CE')
-    .text('Instituto de Cirugía Articular', { align: 'center' })
-    .moveDown(1);
+  doc.fontSize(12).text(`Examen sugerido: ${orden}`);
+  doc.text(derivado);
+  doc.moveDown();
 
-  doc
-    .fontSize(16)
-    .fillColor('black')
-    .text('Orden Médica de Examen Imagenológico', { align: 'center' })
-    .moveDown(2);
-
-  doc
-    .fontSize(12)
-    .text(`Nombre: ${nombre}`)
-    .text(`RUT: ${rut}`)
-    .text(`Edad: ${edad} años`)
-    .moveDown(1);
-
-  doc
-    .fontSize(14)
-    .fillColor('#333')
-    .text(`Motivo / Diagnóstico: Dolor de ${dolor} ${lado}`, { continued: false })
-    .moveDown(1);
-
-  doc
-    .fontSize(14)
-    .fillColor('#0072CE')
-    .text('Orden médica solicitada:')
-    .moveDown(0.5);
-
-  doc
-    .fontSize(13)
-    .fillColor('black')
-    .text(orden)
-    .moveDown(3);
-
-  doc
-    .fontSize(12)
-    .text('_____________________________', { align: 'center' })
-    .text('Firma médico tratante', { align: 'center' });
+  // Firma
+  doc.moveDown(4);
+  doc.text('_________________________', 50);
+  doc.text('Firma y Timbre Médico', 50);
 
   doc.end();
 });
 
-app.listen(PORT, () => {
-  console.log(`Servidor backend corriendo en puerto ${PORT}`);
-});
+// Iniciar serv
