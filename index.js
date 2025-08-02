@@ -25,13 +25,18 @@ app.post('/generar-pdf', (req, res) => {
 
   doc.pipe(res);
 
-  // Logo arriba izquierda (120 px ancho), manteniendo proporción
+  // Insertar logo y medir su altura exacta para separar datos
   const logoPath = path.resolve('assets/ica.jpg');
   let logoHeight = 0;
   if (fs.existsSync(logoPath)) {
     try {
       doc.image(logoPath, 50, 40, { width: 120 });
-      logoHeight = 120 * 0.5; // aprox 60 px alto, ajustar si necesario
+      const img = doc._image;
+      if (img) {
+        logoHeight = (120 / img.width) * img.height;
+      } else {
+        logoHeight = 60; // fallback si no se detecta imagen
+      }
     } catch (err) {
       console.error('Error al insertar imagen:', err.message);
     }
