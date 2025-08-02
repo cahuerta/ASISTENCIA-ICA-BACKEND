@@ -1,132 +1,101 @@
-const express = require('express');
-const cors = require('cors');
-const bodyParser = require('body-parser');
-const PDFDocument = require('pdfkit');
-const fs = require('fs');
-const path = require('path');
+import express from 'express';
+import cors from 'cors';
+import bodyParser from 'body-parser';
+import PDFDocument from 'pdfkit';
 
 const app = express();
-const port = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3001;
 
 app.use(cors());
 app.use(bodyParser.json());
 
-app.get('/', (req, res) => {
-  res.send('Servidor backend del Asistente ICA operativo ✅');
-});
-
 app.post('/generar-pdf', (req, res) => {
-  const datos = req.body;
+  try {
+    const { nombre, rut, edad, dolor, lado } = req.body;
 
-  const doc = new PDFDocument({ margin: 60, size: 'A4' });
-  const nombreArchivo = `orden-${Date.now()}.pdf`;
-  const stream = fs.createWriteStream(nombreArchivo);
-  doc.pipe(stream);
-
-  // Fecha actual y lugar
-  const hoy = new Date();
-  const opcionesFecha = { year: 'numeric', month: 'long', day: 'numeric' };
-  const fechaFormateada = hoy.toLocaleDateString('es-ES', opcionesFecha);
-  const lugar = 'Talca, Chile'; // Cambia aquí si quieres otro lugar
-
-  // Logo y encabezado
-  const logoPath = path.join(__dirname, 'assets', 'ica.jpg');
-  if (fs.existsSync(logoPath)) {
-    doc.image(logoPath, 50, 45, { width: 80 });
-  }
-
-  doc
-    .fontSize(18)
-    .fillColor('#0072CE')
-    .text('Instituto de Cirugía Articular', 150, 50, { align: 'left' });
-
-  // Fecha y lugar arriba a la derecha
-  doc
-    .fontSize(12)
-    .fillColor('black')
-    .text(`${lugar}`, 400, 50, { align: 'right' });
-  doc.text(`${fechaFormateada}`, 400, 65, { align: 'right' });
-
-  doc
-    .fontSize(14)
-    .fillColor('black')
-    .text('ORDEN DE EXAMEN IMAGENOLÓGICO', 50, 110, { align: 'center', underline: true });
-
-  // Línea separadora
-  doc.moveTo(50, 140).lineTo(545, 140).stroke();
-
-  // Datos paciente
-  doc.moveDown(2);
-  doc.fontSize(12).font('Helvetica-Bold').text('Datos del Paciente:', 50);
-  doc.moveDown(0.8);
-  doc.font('Helvetica').fontSize(12);
-  doc.text(`Nombre: ${datos.nombre}`, { indent: 20, lineGap: 6 });
-  doc.text(`Edad: ${datos.edad} años`, { indent: 20, lineGap: 6 });
-  doc.text(`Motivo de consulta: ${datos.motivo}`, { indent: 20, lineGap: 6 });
-  doc.moveDown();
-
-  // Examen solicitado
-  doc.font('Helvetica-Bold').fontSize(12).text('Examen Solicitado:', { underline: true });
-  doc.font('Helvetica').fontSize(12);
-
-  const edadPaciente = parseInt(datos.edad);
-  const motivo = datos.motivo.toLowerCase();
-  const lado = datos.lado ? datos.lado.toLowerCase() : '';
-
-  if (motivo.includes('rodilla')) {
-    if (edadPaciente < 50) {
-      doc.text(`→ Resonancia Magnética de Rodilla (${lado})`, { indent: 20, lineGap: 8 });
-      doc.text('Justificación: Evaluación de lesiones ligamentarias y meniscales en paciente joven.', { indent: 20, lineGap: 8 });
-    } else {
-      doc.text(`→ Radiografía de Rodilla (${lado}) (proyección AP y lateral)`, { indent: 20, lineGap: 8 });
-      doc.text('→ Considerar Resonancia según hallazgos clínicos', { indent: 20, lineGap: 8 });
-      doc.text('Justificación: Estudio de artrosis o lesiones degenerativas en paciente mayor.', { indent: 20, lineGap: 8 });
+    if (!nombre || !rut || !edad || !dolor) {
+      return res.status(400).json({ error: 'Faltan datos requeridos' });
     }
+
+    // Crear documento PDF en memoria
+    const doc = new PDFDocument({ margin: 50, size: 'A4' });
+
+    // Configurar headers para descarga PDF
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'attachment; filename=orden_resonancia.pdf');
+
+    // Pipe del PDF directo a la respuesta HTTP
+    doc.pipe(res);
+
+    // Encabezado
+    doc
+      .fontSize(20)
+      .fillColor('#0072CE')
+      .text('Instituto de Cirugía Articular', { align: 'center' });
+
+    doc.moveDown(0.5);
+    doc
+      .fontSize(16)
+      .fillColor('black')
+      .text('Orden Médica', { align: 'center' });
+
     doc.moveDown(1);
-    doc.text('Recomendación: Evaluación por Dr. Jaime Espinoza', { indent: 20 });
-  }
-  else if (motivo.includes('cadera') || motivo.includes('inguinal')) {
-    if (edadPaciente < 50) {
-      doc.text(`→ Resonancia Magnética de Cadera (${lado})`, { indent: 20, lineGap: 8 });
-      doc.text('Justificación: Evaluación de lesiones intraarticulares y choque femoroacetabular en paciente joven.', { indent: 20, lineGap: 8 });
+
+    // Datos paciente
+    doc
+      .fontSize(12)
+      .text(`Nombre: ${nombre}`)
+      .text(`RUT: ${rut}`)
+      .text(`Edad: ${edad} años`);
+
+    doc.moveDown(1);
+
+    // Determinar orden a solicitar
+    let orden = '';
+
+    if (dolor.toLowerCase() === 'rodilla') {
+      orden = parseInt(edad) < 50
+        ? `Resonancia magnética de rodilla ${lado.toLowerCase()}`
+        : `Radiografía de rodilla ${lado.toLowerCase()} AP y lateral de pie`;
+    } else if (dolor.toLowerCase() === 'cadera') {
+      orden = parseInt(edad) < 50
+        ? `Resonancia magnética de cadera ${lado.toLowerCase()}`
+        : `Radiografía de pelvis AP de pie`;
+    } else if (dolor.toLowerCase() === 'columna lumbar') {
+      orden = 'Resonancia magnética de columna lumbar';
     } else {
-      doc.text(`→ Radiografía de Pelvis AP de pie (${lado})`, { indent: 20, lineGap: 8 });
-      doc.text('Justificación: Evaluación de artrosis u otras patologías degenerativas.', { indent: 20, lineGap: 8 });
+      orden = `Examen imagenológico no especificado`;
     }
-    doc.moveDown(1);
-    doc.text('Recomendación: Evaluación por Dr. Cristóbal Huerta', { indent: 20 });
+
+    doc
+      .fontSize(14)
+      .fillColor('#000')
+      .text('Se solicita:', { underline: true });
+
+    doc.moveDown(0.5);
+
+    doc
+      .fontSize(14)
+      .fillColor('#0072CE')
+      .text(orden);
+
+    doc.moveDown(4);
+
+    // Firma médica
+    doc
+      .fontSize(12)
+      .fillColor('black')
+      .text('_____________________________', { align: 'center' })
+      .text('Médico tratante', { align: 'center' });
+
+    doc.end();
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Error interno del servidor' });
   }
-  else {
-    doc.text('→ Evaluación imagenológica a definir según criterio clínico.', { indent: 20, lineGap: 8 });
-    doc.text('→ Recomendación: Derivación a especialidad según hallazgos.', { indent: 20, lineGap: 8 });
-  }
-
-  doc.moveDown(5);
-
-  // Firma y sello con líneas
-  const firmaY = doc.y;
-  doc.text('_____________________________', 50, firmaY);
-  doc.text('Firma del médico tratante', 50, firmaY + 15);
-
-  doc.text('_____________________________', 350, firmaY);
-  doc.text('Sello', 350, firmaY + 15);
-
-  // Marco alrededor del contenido
-  doc
-    .rect(45, 40, 510, doc.y + 20 - 40)
-    .lineWidth(1)
-    .strokeColor('#0072CE')
-    .stroke();
-
-  doc.end();
-
-  stream.on('finish', () => {
-    res.download(nombreArchivo, () => {
-      fs.unlinkSync(nombreArchivo);
-    });
-  });
 });
 
-app.listen(port, () => {
-  console.log(`Servidor corriendo en puerto ${port}`);
+app.listen(PORT, () => {
+  console.log(`Servidor backend escuchando en puerto ${PORT}`);
 });
