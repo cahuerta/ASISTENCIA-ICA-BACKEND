@@ -26,7 +26,7 @@ app.post('/pdf', (req, res) => {
 
   // Logo alineado a la izquierda arriba (asegúrate que el path sea correcto)
   const logoPath = path.resolve('assets/ica.jpg');
-  doc.image(logoPath, 50, 40, { width: 100 });
+  doc.image(logoPath, 10, 40, { width: 100 });
 
   // Títulos
   doc.fontSize(16).text('Instituto de Cirugía Articular', 160, 60);
