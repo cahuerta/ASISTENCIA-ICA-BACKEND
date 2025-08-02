@@ -25,29 +25,32 @@ app.post('/generar-pdf', (req, res) => {
 
   doc.pipe(res);
 
-  // Logo arriba a la izquierda
+  // Logo más grande (120px ancho) arriba a la izquierda
   const logoPath = path.resolve('assets/ica.jpg');
   if (fs.existsSync(logoPath)) {
     try {
-      doc.image(logoPath, 50, 40, { width: 80 });
+      doc.image(logoPath, 50, 40, { width: 120 });
     } catch (err) {
       console.error('Error al insertar imagen:', err.message);
     }
   }
 
-  // Texto al lado del logo
-  doc.fontSize(16).text('INSTITUTO DE CIRUGIA ARTICULAR', 150, 45);
-  doc.fontSize(12).text('Orden Médica de Imagenología', 150, 65);
+  // Títulos con tamaño reducido y a la derecha del logo
+  doc.fontSize(14).text('INSTITUTO DE CIRUGIA ARTICULAR', 180, 50);
+  doc.fontSize(10).text('Orden Médica de Imagenología', 180, 70);
+
+  // Datos paciente alineados verticalmente a la derecha, debajo del título
+  let posY = 100;
+  doc.fontSize(10).text(`Nombre: ${nombre}`, 180, posY);
+  posY += 15;
+  doc.text(`Edad: ${edad}`, 180, posY);
+  posY += 15;
+  doc.text(`RUT: ${rut}`, 180, posY);
+
   doc.moveDown(3);
 
-  // Datos del paciente
-  doc.fontSize(10).text(`Nombre: ${nombre}`);
-  doc.text(`Edad: ${edad}`);
-  doc.text(`RUT: ${rut}`);
-  doc.moveDown();
-
   // Descripción del síntoma
-  doc.text(`Descripción de síntomas: ${sintomas}`);
+  doc.fontSize(10).text(`Descripción de síntomas: ${sintomas}`);
   doc.moveDown();
 
   // Lógica de orden médica
