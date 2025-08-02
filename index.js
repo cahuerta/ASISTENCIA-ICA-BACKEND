@@ -29,8 +29,8 @@ app.post('/pdf', (req, res) => {
   doc.image(logoPath, 10, 40, { width: 100 });
 
   // Títulos
-  doc.fontSize(16).text('Instituto de Cirugía Articular', 160, 60);
-  doc.fontSize(12).text('Orden Médica de Imagenología', 50, 130);
+  doc.fontSize(20).text('INSTITUTO DE CIRUGIA ARTICULAR', 160, 60);
+  doc.fontSize(16).text('Orden Médica de Imagenología', 160, 130);
   doc.moveDown(2);
 
   // Datos paciente
