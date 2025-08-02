@@ -25,19 +25,22 @@ app.post('/generar-pdf', (req, res) => {
 
   doc.pipe(res);
 
-  // Logo arriba izquierda (120 px ancho)
+  // Logo arriba izquierda (120 px ancho), mantener ratio original
   const logoPath = path.resolve('assets/ica.jpg');
   let logoHeight = 0;
   if (fs.existsSync(logoPath)) {
     try {
-      logoHeight = 80; // asumimos 80 px alto
-      doc.image(logoPath, 50, 40, { width: 120, height: logoHeight });
+      // Solo especificamos ancho para mantener el ratio
+      doc.image(logoPath, 50, 40, { width: 120 });
+      // Podemos obtener la altura tras imagen cargada usando el evento 'pageAdded' o similar,
+      // pero aquí asumimos una altura aproximada para posicionar datos abajo del logo:
+      logoHeight = 120 * 0.4; // ejemplo, ajustar según proporción real (ej: 48px)
     } catch (err) {
       console.error('Error al insertar imagen:', err.message);
     }
   }
 
-  // Espacio arriba del título (dejamos Y=50 para título)
+  // Espacio arriba del título
   // Títulos a la derecha del logo, en negrita
   doc.font('Helvetica-Bold').fontSize(16).text('INSTITUTO DE CIRUGÍA ARTICULAR', 190, 50);
   doc.font('Helvetica-Bold').fontSize(12).text('Orden Médica de Imagenología', 190, 70);
@@ -76,8 +79,8 @@ app.post('/generar-pdf', (req, res) => {
     orden = 'Evaluación pendiente según examen físico.';
   }
 
-  // Examen sugerido
-  doc.fontSize(13).text('Examen sugerido:', 50, currentY);
+  // Examen sugerido en negrita y mayor tamaño
+  doc.font('Helvetica-Bold').fontSize(14).text('Examen sugerido:', 50, currentY);
   currentY += 22;
   doc.text(orden, 50, currentY);
   currentY += 40;
@@ -96,18 +99,20 @@ app.post('/generar-pdf', (req, res) => {
     notaEspecialista = 'cadera o rodilla, Huerta o Espinoza';
   }
 
-  doc.fontSize(13).text('Nota:', 50, currentY);
+  doc.font('Helvetica').fontSize(13).text('Nota:', 50, currentY);
   currentY += 22;
   doc.text(
     `Dado sus motivos y molestias, le sugerimos agendar una hora con nuestro especialista en ${notaEspecialista}, con el examen realizado.`,
     50,
     currentY
   );
-  currentY += 60;
 
-  // Firma
-  doc.text('_________________________', 50, currentY);
-  doc.text('Firma y Timbre Médico', 50, currentY + 20);
+  // Firma centrada al pie de página
+  const footerY = doc.page.height - 100;
+  doc.font('Helvetica').fontSize(13).text('_________________________', 0, footerY, {
+    align: 'center',
+  });
+  doc.text('Firma y Timbre Médico', { align: 'center' });
 
   doc.end();
 });
