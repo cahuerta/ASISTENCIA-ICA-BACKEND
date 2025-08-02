@@ -3,6 +3,7 @@ import cors from 'cors';
 import bodyParser from 'body-parser';
 import PDFDocument from 'pdfkit';
 import path from 'path';
+import fs from 'fs';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -24,18 +25,24 @@ app.post('/generar-pdf', (req, res) => {
   // Enviar los datos PDF directamente en la respuesta
   doc.pipe(res);
 
-  // Logo alineado arriba a la izquierda
+  // Logo arriba a la izquierda
   const logoPath = path.resolve('assets/ica.jpg');
-  doc.image(logoPath, 40, 40, { width: 80 });
+  if (fs.existsSync(logoPath)) {
+    try {
+      doc.image(logoPath, 50, 40, { width: 80 });
+    } catch (err) {
+      console.error('Error al insertar imagen:', err.message);
+    }
+  }
 
-  // Texto al lado derecho del logo
-  const textStartX = 130;
-  const textStartY = 50;
-  doc.fontSize(16).text('INSTITUTO DE CIRUGIA ARTICULAR', textStartX, textStartY);
-  doc.fontSize(12).text('Orden Médica de Imagenología', textStartX, textStartY + 20);
+  // Texto alineado a la derecha del logo
+  doc.fontSize(16).text('INSTITUTO DE CIRUGIA ARTICULAR', 150, 45);
+  doc.fontSize(12).text('Orden Médica de Imagenología', 150, 65);
 
-  // Bajar el cursor manualmente (en lugar de moveDown)
-  doc.y = 140;
+  // Bajar cursor para empezar contenido
+  doc.moveDown();
+  doc.moveDown();
+  doc.moveDown();
 
   // Datos paciente
   doc.fontSize(10).text(`Nombre: ${nombre}`);
@@ -54,7 +61,7 @@ app.post('/generar-pdf', (req, res) => {
   let orden = '';
   let derivado = '';
 
-  const sintomasMinus = sintomas.toLowerCase();
+  const sintomasMinus = sintomas?.toLowerCase() || '';
 
   if (sintomasMinus.includes('rodilla')) {
     orden = edad < 50
@@ -78,8 +85,6 @@ app.post('/generar-pdf', (req, res) => {
   doc.fontSize(12).text(`Examen sugerido: ${orden}`);
   doc.text(derivado);
   doc.moveDown();
-
-  // Firma
   doc.moveDown(4);
   doc.text('_________________________', 50);
   doc.text('Firma y Timbre Médico', 50);
@@ -91,4 +96,3 @@ app.post('/generar-pdf', (req, res) => {
 app.listen(PORT, () => {
   console.log(`Servidor escuchando en http://localhost:${PORT}`);
 });
-
