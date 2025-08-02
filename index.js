@@ -16,7 +16,6 @@ app.post('/generar-pdf', (req, res) => {
     return res.status(400).json({ error: 'Faltan datos obligatorios' });
   }
 
-  // Determinar orden médica según dolor, lado y edad
   let orden = '';
   if (dolor === 'Rodilla') {
     orden =
@@ -36,13 +35,11 @@ app.post('/generar-pdf', (req, res) => {
 
   const doc = new PDFDocument({ margin: 40, size: 'A4' });
 
-  // Preparar respuesta para descarga
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', 'attachment; filename=orden_resonancia.pdf');
 
   doc.pipe(res);
 
-  // Título
   doc
     .fontSize(20)
     .fillColor('#0072CE')
@@ -55,7 +52,6 @@ app.post('/generar-pdf', (req, res) => {
     .text('Orden Médica de Examen Imagenológico', { align: 'center' })
     .moveDown(2);
 
-  // Datos paciente
   doc
     .fontSize(12)
     .text(`Nombre: ${nombre}`)
@@ -63,7 +59,6 @@ app.post('/generar-pdf', (req, res) => {
     .text(`Edad: ${edad} años`)
     .moveDown(1);
 
-  // Motivo y orden
   doc
     .fontSize(14)
     .fillColor('#333')
@@ -82,7 +77,6 @@ app.post('/generar-pdf', (req, res) => {
     .text(orden)
     .moveDown(3);
 
-  // Firma
   doc
     .fontSize(12)
     .text('_____________________________', { align: 'center' })
