@@ -12,6 +12,8 @@ app.use(bodyParser.json());
 app.post('/generar-pdf', (req, res) => {
   const { nombre, rut, edad, dolor, lado } = req.body;
 
+  console.log('Datos recibidos para PDF:', req.body); // Log para ver datos recibidos
+
   if (!nombre || !rut || !edad || !dolor) {
     return res.status(400).json({ error: 'Faltan datos obligatorios' });
   }
