@@ -24,22 +24,26 @@ app.post('/pdf', (req, res) => {
   // Enviar los datos PDF directamente en la respuesta
   doc.pipe(res);
 
-  // Logo alineado a la izquierda arriba (asegúrate que el path sea correcto)
+  // Logo alineado arriba a la izquierda
   const logoPath = path.resolve('assets/ica.jpg');
-  doc.image(logoPath, 10, 40, { width: 100 });
+  doc.image(logoPath, 40, 40, { width: 80 });
 
-  // Títulos
-  doc.fontSize(20).text('INSTITUTO DE CIRUGIA ARTICULAR', 160, 60);
-  doc.fontSize(16).text('Orden Médica de Imagenología', 160, 130);
-  doc.moveDown(2);
+  // Texto al lado derecho del logo, en la misma línea vertical
+  const textStartX = 130;  // 40 + 80 + 10 px margen
+  const textStartY = 50;
+
+  doc.fontSize(20).text('INSTITUTO DE CIRUGIA ARTICULAR', textStartX, textStartY);
+  doc.fontSize(16).text('Orden Médica de Imagenología', textStartX, textStartY + 25);
+
+  doc.moveDown(3);
 
   // Datos paciente
   doc.fontSize(10).text(`Nombre: ${nombre}`);
   doc.text(`Edad: ${edad}`);
   doc.text(`RUT: ${rut}`);
-  doc.text(`Enfermedades previas: ${enfermedadesPrevias}`);
-  doc.text(`Cirugías previas: ${cirugiasPrevias}`);
-  doc.text(`Alergias: ${alergias}`);
+  doc.text(`Enfermedades previas: ${enfermedadesPrevias || '-'}`);
+  doc.text(`Cirugías previas: ${cirugiasPrevias || '-'}`);
+  doc.text(`Alergias: ${alergias || '-'}`);
   doc.moveDown();
 
   // Descripción de síntomas
@@ -53,22 +57,18 @@ app.post('/pdf', (req, res) => {
   const sintomasMinus = sintomas.toLowerCase();
 
   if (sintomasMinus.includes('rodilla')) {
-    if (edad < 50) {
-      orden = 'Resonancia Magnética de Rodilla.';
-    } else {
-      orden = 'Radiografía de Rodilla AP y Lateral.';
-    }
+    orden = edad < 50
+      ? 'Resonancia Magnética de Rodilla.'
+      : 'Radiografía de Rodilla AP y Lateral.';
     derivado = 'Derivado a: Dr. Jaime Espinoza (Rodilla)';
   } else if (
     sintomasMinus.includes('cadera') ||
     sintomasMinus.includes('ingle') ||
     sintomasMinus.includes('inguinal')
   ) {
-    if (edad < 50) {
-      orden = 'Resonancia Magnética de Cadera.';
-    } else {
-      orden = 'Radiografía de Pelvis AP de pie.';
-    }
+    orden = edad < 50
+      ? 'Resonancia Magnética de Cadera.'
+      : 'Radiografía de Pelvis AP de pie.';
     derivado = 'Derivado a: Dr. Cristóbal Huerta (Cadera)';
   } else {
     orden = 'Evaluación pendiente según examen físico.';
@@ -87,4 +87,7 @@ app.post('/pdf', (req, res) => {
   doc.end();
 });
 
-// Iniciar serv
+// Iniciar servidor
+app.listen(PORT, () => {
+  console.log(`Servidor escuchando en http://localhost:${PORT}`);
+});
