@@ -28,14 +28,14 @@ app.post('/generar-pdf', (req, res) => {
   const logoPath = path.resolve('assets/ica.jpg');
   doc.image(logoPath, 40, 40, { width: 80 });
 
-  // Texto al lado derecho del logo, en la misma línea vertical
-  const textStartX = 130;  // 40 + 80 + 10 px margen
+  // Texto al lado derecho del logo
+  const textStartX = 130;
   const textStartY = 50;
-
   doc.fontSize(16).text('INSTITUTO DE CIRUGIA ARTICULAR', textStartX, textStartY);
-  doc.fontSize(12).text('Orden Médica de Imagenología', textStartX, textStartY + 25);
+  doc.fontSize(12).text('Orden Médica de Imagenología', textStartX, textStartY + 20);
 
-  doc.moveDown(3);
+  // Bajar el cursor manualmente (en lugar de moveDown)
+  doc.y = 140;
 
   // Datos paciente
   doc.fontSize(10).text(`Nombre: ${nombre}`);
@@ -91,3 +91,4 @@ app.post('/generar-pdf', (req, res) => {
 app.listen(PORT, () => {
   console.log(`Servidor escuchando en http://localhost:${PORT}`);
 });
+
