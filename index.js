@@ -2,12 +2,19 @@ import express from 'express';
 import cors from 'cors';
 import bodyParser from 'body-parser';
 import PDFDocument from 'pdfkit';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
 app.use(cors());
 app.use(bodyParser.json());
+
+// Necesario para construir ruta al archivo desde ES module
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 app.post('/generar-pdf', (req, res) => {
   const { nombre, rut, edad, dolor, lado } = req.body;
@@ -25,4 +32,73 @@ app.post('/generar-pdf', (req, res) => {
   } else if (dolor === 'Cadera') {
     orden =
       edad < 50
-        ? `Resonancia magnética de cadera ${lado.toLower
+        ? `Resonancia magnética de cadera ${lado.toLowerCase()}`
+        : `Radiografía de pelvis AP de pie`;
+  } else if (dolor === 'Columna lumbar') {
+    orden = 'Resonancia magnética de columna lumbar';
+  } else {
+    orden = 'Examen imagenológico no especificado';
+  }
+
+  const doc = new PDFDocument({ margin: 40, size: 'A4' });
+
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', 'attachment; filename=orden_resonancia.pdf');
+
+  doc.pipe(res);
+
+  // ✅ Insertar logo desde carpeta assets
+  const logoPath = path.join(__dirname, 'assets', 'ica.jpg');
+  if (fs.existsSync(logoPath)) {
+    doc.image(logoPath, 220, 30, { width: 150 });
+  }
+
+  doc
+    .moveDown(5)
+    .fontSize(20)
+    .fillColor('#0072CE')
+    .text('Instituto de Cirugía Articular', { align: 'center' })
+    .moveDown(1);
+
+  doc
+    .fontSize(16)
+    .fillColor('black')
+    .text('Orden Médica de Examen Imagenológico', { align: 'center' })
+    .moveDown(2);
+
+  doc
+    .fontSize(12)
+    .text(`Nombre: ${nombre}`)
+    .text(`RUT: ${rut}`)
+    .text(`Edad: ${edad} años`)
+    .moveDown(1);
+
+  doc
+    .fontSize(14)
+    .fillColor('#333')
+    .text(`Motivo / Diagnóstico: Dolor de ${dolor} ${lado}`, { continued: false })
+    .moveDown(1);
+
+  doc
+    .fontSize(14)
+    .fillColor('#0072CE')
+    .text('Orden médica solicitada:')
+    .moveDown(0.5);
+
+  doc
+    .fontSize(13)
+    .fillColor('black')
+    .text(orden)
+    .moveDown(3);
+
+  doc
+    .fontSize(12)
+    .text('_____________________________', { align: 'center' })
+    .text('Firma médico tratante', { align: 'center' });
+
+  doc.end();
+});
+
+app.listen(PORT, () => {
+  console.log(`Servidor backend corriendo en puerto ${PORT}`);
+});
