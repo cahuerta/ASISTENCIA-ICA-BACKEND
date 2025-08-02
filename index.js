@@ -11,7 +11,7 @@ app.use(cors());
 app.use(bodyParser.json());
 
 // Endpoint para generar el PDF
-app.post('/pdf', (req, res) => {
+app.post('/generar-pdf', (req, res) => {
   const { nombre, edad, rut, sintomas, enfermedadesPrevias, cirugiasPrevias, alergias } = req.body;
 
   const doc = new PDFDocument();
