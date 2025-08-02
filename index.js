@@ -15,6 +15,7 @@ app.post('/generar-pdf', (req, res) => {
   const { nombre, edad, rut, dolor, lado } = req.body;
 
   const sintomas = `${dolor} ${lado || ''}`.trim();
+  const sintomasLower = sintomas.toLowerCase();
 
   const doc = new PDFDocument({ size: 'A4', margin: 50 });
   const filename = `orden_${nombre.replace(/ /g, '_')}.pdf`;
@@ -24,25 +25,25 @@ app.post('/generar-pdf', (req, res) => {
 
   doc.pipe(res);
 
-  // Logo arriba izquierda (grande)
+  // Logo arriba izquierda (120 px ancho)
   const logoPath = path.resolve('assets/ica.jpg');
+  let logoHeight = 0;
   if (fs.existsSync(logoPath)) {
     try {
-      doc.image(logoPath, 50, 40, { width: 120 });
+      logoHeight = 80; // asumimos 80 px alto
+      doc.image(logoPath, 50, 40, { width: 120, height: logoHeight });
     } catch (err) {
       console.error('Error al insertar imagen:', err.message);
     }
   }
 
-  // Espacio arriba del título (simple salto de línea)
-  // Para PDFKit, dejamos espacio ajustando la posición Y inicial del texto
-
+  // Espacio arriba del título (dejamos Y=50 para título)
   // Títulos a la derecha del logo, en negrita
   doc.font('Helvetica-Bold').fontSize(16).text('INSTITUTO DE CIRUGÍA ARTICULAR', 190, 50);
   doc.font('Helvetica-Bold').fontSize(12).text('Orden Médica de Imagenología', 190, 70);
 
-  // Datos del paciente (alineados a la izquierda, debajo del logo)
-  let currentY = 110;
+  // Datos del paciente debajo del logo, alineados a la izquierda
+  let currentY = 40 + logoHeight + 15;
   doc.font('Helvetica').fontSize(13).text(`Nombre: ${nombre}`, 50, currentY);
   currentY += 22;
   doc.text(`Edad: ${edad}`, 50, currentY);
@@ -50,22 +51,19 @@ app.post('/generar-pdf', (req, res) => {
   doc.text(`RUT: ${rut}`, 50, currentY);
   currentY += 30;
 
-  // Descripción de síntomas (con "Dolor" antes)
-  doc.fontSize(13).text('Descripción de síntomas:', 50, currentY);
-  currentY += 20;
-  doc.text(`Dolor ${sintomas}`, 50, currentY);
+  // Descripción de síntomas: título a la izquierda y texto a la derecha en la misma línea
+  const descX = 50;
+  const valorX = 200;
+  doc.fontSize(13).text('Descripción de síntomas:', descX, currentY);
+  doc.text(`Dolor ${sintomas}`, valorX, currentY);
   currentY += 40;
 
-  // Lógica para examen sugerido y derivación
+  // Lógica para examen sugerido
   let orden = '';
-  let derivado = '';
-  const sintomasLower = sintomas.toLowerCase();
-
   if (sintomasLower.includes('rodilla')) {
     orden = edad < 50
       ? 'Resonancia Magnética de Rodilla.'
       : 'Radiografía de Rodilla AP y Lateral.';
-    derivado = 'Dr. Jaime Espinoza (Rodilla)';
   } else if (
     sintomasLower.includes('cadera') ||
     sintomasLower.includes('ingle') ||
@@ -74,22 +72,37 @@ app.post('/generar-pdf', (req, res) => {
     orden = edad < 50
       ? 'Resonancia Magnética de Cadera.'
       : 'Radiografía de Pelvis AP de pie.';
-    derivado = 'Dr. Cristóbal Huerta (Cadera)';
   } else {
     orden = 'Evaluación pendiente según examen físico.';
-    derivado = 'Especialidad a definir.';
   }
 
   // Examen sugerido
   doc.fontSize(13).text('Examen sugerido:', 50, currentY);
   currentY += 22;
-  doc.fontSize(13).text(orden, 50, currentY);
+  doc.text(orden, 50, currentY);
   currentY += 40;
 
-  // Derivación
-  doc.fontSize(13).text('Derivación:', 50, currentY);
+  // Nota personalizada en lugar de derivación
+  let notaEspecialista = '';
+  if (
+    sintomasLower.includes('cadera') ||
+    sintomasLower.includes('ingle') ||
+    sintomasLower.includes('inguinal')
+  ) {
+    notaEspecialista = 'cadera, Dr. Cristóbal Huerta';
+  } else if (sintomasLower.includes('rodilla')) {
+    notaEspecialista = 'rodilla, Dr. Jaime Espinoza';
+  } else {
+    notaEspecialista = 'cadera o rodilla, Huerta o Espinoza';
+  }
+
+  doc.fontSize(13).text('Nota:', 50, currentY);
   currentY += 22;
-  doc.text(derivado, 50, currentY);
+  doc.text(
+    `Dado sus motivos y molestias, le sugerimos agendar una hora con nuestro especialista en ${notaEspecialista}, con el examen realizado.`,
+    50,
+    currentY
+  );
   currentY += 60;
 
   // Firma
