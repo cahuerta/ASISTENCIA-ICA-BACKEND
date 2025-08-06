@@ -124,28 +124,25 @@ app.post('/generar-pdf', (req, res) => {
   const timbrePath = path.resolve('assets/timbre.jpg');
 
   const firmaWidth = 120;
-  const timbreWidth = 100; // tamaño del timbre, ajusta si quieres
+  const timbreWidth = 100;
   const espacioEntre = 20;
 
-  // Posicionamos ambos centrados en conjunto
   const totalWidth = firmaWidth + timbreWidth + espacioEntre;
   const startX = (doc.page.width - totalWidth) / 2;
-  const firmaY = 680; // altura fija para evitar salto de página
+  const firmaY = 680;
 
-  // Insertar firma
   if (fs.existsSync(firmaPath)) {
     try {
-      doc.image(firmaPath, startX, firmaY, { width: firmaWidth });
+      doc.image(firmaPath, startX, firmaY - 40, { width: firmaWidth }); // Ajustado para que la línea quede abajo
     } catch (err) {
       console.error('Error al insertar firma:', err.message);
     }
   }
 
-  // Insertar timbre girado a la derecha de la firma
   if (fs.existsSync(timbrePath)) {
     try {
       const timbreX = startX + firmaWidth + espacioEntre;
-      const timbreY = firmaY + 10; // un poco abajo para efecto visual
+      const timbreY = firmaY - 30;
 
       doc.save();
       doc.rotate(15, { origin: [timbreX + timbreWidth / 2, timbreY + timbreWidth / 2] });
@@ -156,8 +153,7 @@ app.post('/generar-pdf', (req, res) => {
     }
   }
 
-  // Línea de firma debajo de la firma (solo alineada a la firma)
-  const lineaY = firmaY + 60;
+  const lineaY = firmaY + 20;
 
   doc.font('Helvetica').fontSize(13).text('_________________________', startX, lineaY, {
     width: firmaWidth,
@@ -168,7 +164,6 @@ app.post('/generar-pdf', (req, res) => {
     align: 'center',
   });
 
-  // Textos debajo con separación fija, centrados respecto a la firma
   const textoY = lineaY + 40;
 
   doc.font('Helvetica-Bold').fontSize(12).text('Dr. Cristóbal Huerta Cortés', startX, textoY, {
