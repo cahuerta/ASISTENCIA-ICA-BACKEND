@@ -118,45 +118,73 @@ app.post('/generar-pdf', (req, res) => {
     currentY
   );
 
-  // Firma con imagen y texto al pie en posición fija
-  const firmaPath = path.resolve('assets/FIRMA.png');
-  const firmaWidth = 120;
-  const firmaX = (doc.page.width - firmaWidth) / 2;
-  const firmaY = 680; // posición fija para evitar salto de página
+  // --- BLOQUE FIRMA Y TIMBRE INTEGRADO ---
 
+  const firmaPath = path.resolve('assets/FIRMA.png');
+  const timbrePath = path.resolve('assets/timbre.jpg');
+
+  const firmaWidth = 120;
+  const timbreWidth = 100; // tamaño del timbre, ajusta si quieres
+  const espacioEntre = 20;
+
+  // Posicionamos ambos centrados en conjunto
+  const totalWidth = firmaWidth + timbreWidth + espacioEntre;
+  const startX = (doc.page.width - totalWidth) / 2;
+  const firmaY = 680; // altura fija para evitar salto de página
+
+  // Insertar firma
   if (fs.existsSync(firmaPath)) {
     try {
-      doc.image(firmaPath, firmaX, firmaY, { width: firmaWidth });
+      doc.image(firmaPath, startX, firmaY, { width: firmaWidth });
     } catch (err) {
       console.error('Error al insertar firma:', err.message);
     }
   }
 
-  // Línea de firma justo debajo de la imagen
+  // Insertar timbre girado a la derecha de la firma
+  if (fs.existsSync(timbrePath)) {
+    try {
+      const timbreX = startX + firmaWidth + espacioEntre;
+      const timbreY = firmaY + 10; // un poco abajo para efecto visual
+
+      doc.save();
+      doc.rotate(15, { origin: [timbreX + timbreWidth / 2, timbreY + timbreWidth / 2] });
+      doc.image(timbrePath, timbreX, timbreY, { width: timbreWidth });
+      doc.restore();
+    } catch (err) {
+      console.error('Error al insertar timbre:', err.message);
+    }
+  }
+
+  // Línea de firma debajo de la firma (solo alineada a la firma)
   const lineaY = firmaY + 60;
 
-  doc.font('Helvetica').fontSize(13).text('_________________________', 0, lineaY, {
+  doc.font('Helvetica').fontSize(13).text('_________________________', startX, lineaY, {
+    width: firmaWidth,
     align: 'center',
   });
-  doc.text('Firma y Timbre Médico', { align: 'center' });
+  doc.text('Firma y Timbre Médico', startX, lineaY + 18, {
+    width: firmaWidth,
+    align: 'center',
+  });
 
-  // Textos debajo con separación fija
-  const textoY = lineaY + 20;
+  // Textos debajo con separación fija, centrados respecto a la firma
+  const textoY = lineaY + 40;
 
-  doc.font('Helvetica-Bold').fontSize(12).text('Dr. Cristóbal Huerta Cortés', 0, textoY, {
+  doc.font('Helvetica-Bold').fontSize(12).text('Dr. Cristóbal Huerta Cortés', startX, textoY, {
+    width: firmaWidth,
     align: 'center',
   });
-  doc.font('Helvetica').fontSize(12).text('RUT: 14.015.125-4', 0, textoY + 18, {
+  doc.font('Helvetica').fontSize(12).text('RUT: 14.015.125-4', startX, textoY + 18, {
+    width: firmaWidth,
     align: 'center',
   });
-  doc.font('Helvetica-Oblique').fontSize(12).text(
-    'Cirujano de Reconstrucción Articular',
-    0,
-    textoY + 36,
-    {
-      align: 'center',
-    }
-  );
+  doc.font('Helvetica-Oblique').fontSize(12).text('Cirujano de Reconstrucción Articular', startX, textoY + 36, {
+    width: firmaWidth,
+    align: 'center',
+  });
+
+  // --- FIN BLOQUE FIRMA Y TIMBRE ---
 
   doc.end();
 });
