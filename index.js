@@ -11,6 +11,24 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(bodyParser.json());
 
+// 🔔 Nuevo endpoint para recibir confirmación de pago de Mercado Pago
+app.post('/webhook', (req, res) => {
+  const payment = req.body;
+
+  console.log('🔔 Notificación de Mercado Pago recibida:', payment);
+
+  if (payment?.type === 'payment') {
+    const paymentId = payment.data?.id;
+    console.log(`✅ Pago confirmado con ID: ${paymentId}`);
+
+    // Aquí podrías activar lógica para habilitar descarga, marcar pagado, etc.
+
+    return res.sendStatus(200);
+  }
+
+  res.sendStatus(400);
+});
+
 app.post('/generar-pdf', (req, res) => {
   const { nombre, edad, rut, dolor, lado } = req.body;
 
@@ -25,7 +43,6 @@ app.post('/generar-pdf', (req, res) => {
 
   doc.pipe(res);
 
-  // Insertar logo y medir su altura exacta para separar datos
   const logoPath = path.resolve('assets/ica.jpg');
   let logoHeight = 0;
   if (fs.existsSync(logoPath)) {
@@ -35,21 +52,18 @@ app.post('/generar-pdf', (req, res) => {
       if (img) {
         logoHeight = (120 / img.width) * img.height;
       } else {
-        logoHeight = 60; // fallback si no se detecta imagen
+        logoHeight = 60;
       }
     } catch (err) {
       console.error('Error al insertar imagen:', err.message);
     }
   }
 
-  // Espacio arriba del título (posición fija)
   const titleY = 70;
 
-  // Títulos a la derecha del logo, en negrita
   doc.font('Helvetica-Bold').fontSize(16).text('INSTITUTO DE CIRUGÍA ARTICULAR', 190, titleY);
   doc.font('Helvetica-Bold').fontSize(12).text('Orden Médica de Imagenología', 190, titleY + 20);
 
-  // Datos del paciente debajo del logo, sin superponer
   let currentY = 150 + logoHeight + 15;
   doc.font('Helvetica').fontSize(13).text(`Nombre: ${nombre}`, 50, currentY);
   currentY += 22;
@@ -58,19 +72,16 @@ app.post('/generar-pdf', (req, res) => {
   doc.text(`RUT: ${rut}`, 50, currentY);
   currentY += 30;
 
-  // Descripción de síntomas con texto "Dolor ..." en la misma línea
   const descX = 50;
   const valorX = 200;
   doc.fontSize(13).text('Descripción de síntomas:', descX, currentY);
   doc.text(`Dolor ${sintomas}`, valorX, currentY);
   currentY += 40;
 
-  // Formatear lado para orden
   const ladoFormatted = lado
     ? lado.charAt(0).toUpperCase() + lado.slice(1).toLowerCase()
     : '';
 
-  // Construcción de orden con lado
   let orden = '';
   if (sintomasLower.includes('rodilla')) {
     orden =
@@ -85,18 +96,16 @@ app.post('/generar-pdf', (req, res) => {
     orden =
       edad < 50
         ? `Resonancia Magnética de Cadera ${ladoFormatted}.`
-        : `Radiografía de Pelvis AP de pie.`; // No lado en pelvis
+        : `Radiografía de Pelvis AP de pie.`;
   } else {
     orden = 'Evaluación pendiente según examen físico.';
   }
 
-  // Examen sugerido: texto normal + orden en negrita y tamaño mayor
   doc.font('Helvetica').fontSize(13).text('Examen sugerido:', 50, currentY);
   currentY += 22;
   doc.font('Helvetica-Bold').fontSize(14).text(orden, 50, currentY);
   currentY += 40;
 
-  // Nota personalizada
   let notaEspecialista = '';
   if (
     sintomasLower.includes('cadera') ||
@@ -118,8 +127,6 @@ app.post('/generar-pdf', (req, res) => {
     currentY
   );
 
-  // --- BLOQUE FIRMA Y TIMBRE INTEGRADO ---
-
   const firmaPath = path.resolve('assets/FIRMA.png');
   const timbrePath = path.resolve('assets/timbre.jpg');
 
@@ -133,7 +140,7 @@ app.post('/generar-pdf', (req, res) => {
 
   if (fs.existsSync(firmaPath)) {
     try {
-      doc.image(firmaPath, startX, firmaY - 40, { width: firmaWidth }); // Ajustado para que la línea quede abajo
+      doc.image(firmaPath, startX, firmaY - 40, { width: firmaWidth });
     } catch (err) {
       console.error('Error al insertar firma:', err.message);
     }
@@ -178,8 +185,6 @@ app.post('/generar-pdf', (req, res) => {
     width: firmaWidth,
     align: 'center',
   });
-
-  // --- FIN BLOQUE FIRMA Y TIMBRE ---
 
   doc.end();
 });
