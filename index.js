@@ -130,13 +130,13 @@ app.post('/generar-pdf', (req, res) => {
   const firmaPath = path.resolve('assets/FIRMA.png');
   const timbrePath = path.resolve('assets/timbre.jpg');
 
-  const firmaWidth = 120;
+  const firmaWidth = 200;
   const timbreWidth = 100;
   const espacioEntre = 20;
 
   const totalWidth = firmaWidth + timbreWidth + espacioEntre;
   const startX = (doc.page.width - totalWidth) / 2;
-  const firmaY = 680;
+  const firmaY = 650;
 
   if (fs.existsSync(firmaPath)) {
     try {
@@ -152,7 +152,7 @@ app.post('/generar-pdf', (req, res) => {
       const timbreY = firmaY - 30;
 
       doc.save();
-      doc.rotate(15, { origin: [timbreX + timbreWidth / 2, timbreY + timbreWidth / 2] });
+      doc.rotate(20, { origin: [timbreX + timbreWidth / 2, timbreY + timbreWidth / 2] });
       doc.image(timbrePath, timbreX, timbreY, { width: timbreWidth });
       doc.restore();
     } catch (err) {
