@@ -130,7 +130,7 @@ app.post('/generar-pdf', (req, res) => {
   const firmaPath = path.resolve('assets/FIRMA.png');
   const timbrePath = path.resolve('assets/timbre.jpg');
 
-  const firmaWidth = 300;
+  const firmaWidth = 250;
   const timbreWidth = 100;
   const espacioEntre = 20;
 
