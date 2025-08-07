@@ -163,26 +163,26 @@ app.post('/generar-pdf', (req, res) => {
   const lineaY = firmaY + 20;
 
   doc.font('Helvetica').fontSize(13).text('_________________________', startX, lineaY, {
-    width: firmaWidth,
+    width: totalWidth,
     align: 'center',
   });
   doc.text('Firma y Timbre Médico', startX, lineaY + 18, {
-    width: firmaWidth,
+    width: totalWidth,
     align: 'center',
   });
 
   const textoY = lineaY + 40;
 
   doc.font('Helvetica-Bold').fontSize(12).text('Dr. Cristóbal Huerta Cortés', startX, textoY, {
-    width: firmaWidth,
+    width: totalWidth,
     align: 'center',
   });
   doc.font('Helvetica').fontSize(12).text('RUT: 14.015.125-4', startX, textoY + 18, {
-    width: firmaWidth,
+    width: totalWidth,
     align: 'center',
   });
   doc.font('Helvetica-Oblique').fontSize(12).text('Cirujano de Reconstrucción Articular', startX, textoY + 36, {
-    width: firmaWidth,
+    width: totalWidth,
     align: 'center',
   });
 
