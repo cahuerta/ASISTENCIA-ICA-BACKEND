@@ -152,7 +152,7 @@ app.post('/generar-pdf', (req, res) => {
       const timbreY = firmaY - 30;
 
       doc.save();
-      doc.rotate(20, { origin: [timbreX + timbreWidth / 2, timbreY + timbreWidth / 2] });
+      doc.rotate(15, { origin: [timbreX + timbreWidth / 2, timbreY + timbreWidth / 2] });
       doc.image(timbrePath, timbreX, timbreY, { width: timbreWidth });
       doc.restore();
     } catch (err) {
