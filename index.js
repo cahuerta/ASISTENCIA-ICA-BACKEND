@@ -55,7 +55,7 @@ app.post('/crear-pago-khipu', (req, res) => {
   res.json({ ok: true, url: khipuFinalUrl });
 });
 
-// Endpoint para generar PDF por idPago
+// ✅ Generar PDF por idPago
 app.get('/pdf/:idPago', (req, res) => {
   const { idPago } = req.params;
   const datosPaciente = datosTemporales[idPago];
@@ -71,10 +71,17 @@ app.get('/pdf/:idPago', (req, res) => {
   res.setHeader('Content-Type', 'application/pdf');
 
   doc.pipe(res);
-  generarOrdenImagenologia(doc, datosPaciente);
+
+  try {
+    generarOrdenImagenologia(doc, datosPaciente);
+  } catch (error) {
+    console.error('❌ Error al generar contenido del PDF:', error.message);
+    doc.font('Helvetica').fontSize(14).fillColor('red').text('Error al generar el documento PDF.', 100, 100);
+  }
+
   doc.end();
 });
 
 app.listen(PORT, () => {
-  console.log(`Servidor escuchando en puerto ${PORT}`);
+  console.log(`🚀 Servidor escuchando en puerto ${PORT}`);
 });
