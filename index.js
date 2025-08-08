@@ -11,6 +11,30 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(bodyParser.json());
 
+// --- Memoria temporal para guardar datos antes del pago ---
+const datosTemporales = {};
+
+// Guardar datos temporales
+app.post('/guardar-datos', (req, res) => {
+  const { idPago, datosPaciente } = req.body;
+  if (!idPago || !datosPaciente) {
+    return res.status(400).json({ ok: false, error: 'Faltan parámetros' });
+  }
+  datosTemporales[idPago] = datosPaciente;
+  console.log(`💾 Datos guardados para idPago ${idPago}:`, datosPaciente);
+  res.json({ ok: true });
+});
+
+// Recuperar datos temporales
+app.get('/obtener-datos/:idPago', (req, res) => {
+  const { idPago } = req.params;
+  const datos = datosTemporales[idPago];
+  if (!datos) {
+    return res.status(404).json({ ok: false, error: 'No encontrado' });
+  }
+  res.json({ ok: true, datos });
+});
+
 // 🔔 Nuevo endpoint para recibir confirmación de pago de Mercado Pago
 app.post('/webhook', (req, res) => {
   const payment = req.body;
@@ -134,61 +158,18 @@ app.post('/generar-pdf', (req, res) => {
   const timbreWidth = 100;
   const espacioEntre = 20;
 
-  const totalWidth = firmaWidth + timbreWidth + espacioEntre;
-  const startX = (doc.page.width - totalWidth) / 2;
-  const firmaY = 650;
+  let yPosFirma = currentY + 80;
 
   if (fs.existsSync(firmaPath)) {
-    try {
-      doc.image(firmaPath, startX, firmaY - 40, { width: firmaWidth });
-    } catch (err) {
-      console.error('Error al insertar firma:', err.message);
-    }
+    doc.image(firmaPath, 50, yPosFirma, { width: firmaWidth });
   }
-
   if (fs.existsSync(timbrePath)) {
-    try {
-      const timbreX = startX + firmaWidth + espacioEntre;
-      const timbreY = firmaY - 30;
-
-      doc.save();
-      doc.rotate(15, { origin: [timbreX + timbreWidth / 2, timbreY + timbreWidth / 2] });
-      doc.image(timbrePath, timbreX, timbreY, { width: timbreWidth });
-      doc.restore();
-    } catch (err) {
-      console.error('Error al insertar timbre:', err.message);
-    }
+    doc.image(timbrePath, 50 + firmaWidth + espacioEntre, yPosFirma, { width: timbreWidth });
   }
-
-  const lineaY = firmaY + 20;
-
-  doc.font('Helvetica').fontSize(13).text('_________________________', startX, lineaY, {
-    width: totalWidth,
-    align: 'center',
-  });
-  doc.text('Firma y Timbre Médico', startX, lineaY + 18, {
-    width: totalWidth,
-    align: 'center',
-  });
-
-  const textoY = lineaY + 40;
-
-  doc.font('Helvetica-Bold').fontSize(12).text('Dr. Cristóbal Huerta Cortés', startX, textoY, {
-    width: totalWidth,
-    align: 'center',
-  });
-  doc.font('Helvetica').fontSize(12).text('RUT: 14.015.125-4', startX, textoY + 18, {
-    width: totalWidth,
-    align: 'center',
-  });
-  doc.font('Helvetica-Oblique').fontSize(12).text('Cirujano de Reconstrucción Articular', startX, textoY + 36, {
-    width: totalWidth,
-    align: 'center',
-  });
 
   doc.end();
 });
 
 app.listen(PORT, () => {
-  console.log(`Servidor escuchando en http://localhost:${PORT}`);
+  console.log(`Servidor escuchando en puerto ${PORT}`);
 });
