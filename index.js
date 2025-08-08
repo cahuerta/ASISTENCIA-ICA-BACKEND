@@ -36,21 +36,6 @@ app.get('/obtener-datos/:idPago', (req, res) => {
   res.json({ ok: true, datos });
 });
 
-// 🔔 Webhook para Mercado Pago (si decides usarlo también)
-app.post('/webhook', (req, res) => {
-  const payment = req.body;
-
-  console.log('🔔 Notificación de Mercado Pago recibida:', payment);
-
-  if (payment?.type === 'payment') {
-    const paymentId = payment.data?.id;
-    console.log(`✅ Pago confirmado con ID: ${paymentId}`);
-    return res.sendStatus(200);
-  }
-
-  res.sendStatus(400);
-});
-
 // ✅ NUEVO: crear link de pago Khipu con return_url dinámico
 app.post('/crear-pago-khipu', (req, res) => {
   const { idPago } = req.body;
@@ -59,16 +44,14 @@ app.post('/crear-pago-khipu', (req, res) => {
     return res.status(400).json({ ok: false, error: 'Falta idPago' });
   }
 
-  // ⚠️ Reemplaza esta URL con tu propio paymentId generado por Khipu si corresponde
+  // ⚠️ Reemplaza esta URL con tu real paymentId generado por Khipu
   const khipuBaseUrl = 'https://khipu.com/payment/process/zZMWd';
 
-  // URL a la que el paciente será redirigido después del pago
+  // Redirección al frontend con el ID de pago
   const returnUrl = `https://asistencia-ica.vercel.app/?pago=ok&idPago=${idPago}`;
-
-  // Construcción final del link con redirección dinámica
   const khipuFinalUrl = `${khipuBaseUrl}?return_url=${encodeURIComponent(returnUrl)}`;
 
-  console.log(`🔗 Link de pago Khipu generado para ${idPago}: ${khipuFinalUrl}`);
+  console.log(`🔗 Link de Khipu generado: ${khipuFinalUrl}`);
   res.json({ ok: true, url: khipuFinalUrl });
 });
 
