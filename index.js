@@ -53,9 +53,16 @@ app.post('/webhook', (req, res) => {
   res.sendStatus(400);
 });
 
-app.post('/generar-pdf', (req, res) => {
-  const { nombre, edad, rut, dolor, lado } = req.body;
+// Endpoint para generar PDF usando idPago
+app.get('/pdf/:idPago', (req, res) => {
+  const { idPago } = req.params;
+  const datosPaciente = datosTemporales[idPago];
 
+  if (!datosPaciente) {
+    return res.status(404).json({ ok: false, error: 'Datos no encontrados para ese ID de pago' });
+  }
+
+  const { nombre, edad, rut, dolor, lado } = datosPaciente;
   const sintomas = `${dolor} ${lado || ''}`.trim();
   const sintomasLower = sintomas.toLowerCase();
 
