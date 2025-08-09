@@ -45,7 +45,7 @@ app.post('/crear-pago-khipu', (req, res) => {
   }
 
   // ⚠️ Reemplaza esta URL con tu real paymentId generado por Khipu
-  const khipuBaseUrl = 'https://khipu.com/payment/process/zZMWd';
+  const khipuBaseUrl = 'https://khipu.com/payment/process/SbBes';
 
   // Redirección al frontend con el ID de pago
   const returnUrl = `https://asistencia-ica.vercel.app/?pago=ok&idPago=${idPago}`;
