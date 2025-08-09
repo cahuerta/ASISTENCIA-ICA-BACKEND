@@ -77,7 +77,8 @@ app.post('/crear-pago-khipu', async (req, res) => {
       ? 'https://integracion.khipu.com/api/2.0'
       : 'https://khipu.com/api/2.0';
 
-    const amount     = 10000; // CLP (ajusta si corresponde)
+    // 🔒 MONTO FIJO
+    const amount     = 1000; // CLP monto fijo
     const currency   = 'CLP';
     const subject    = 'Orden de Imagenología';
     const return_url = `${backend}/retorno-khipu`;              // HTTPS público
