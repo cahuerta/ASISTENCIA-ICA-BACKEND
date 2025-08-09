@@ -36,12 +36,25 @@ app.get('/obtener-datos/:idPago', (req, res) => {
   res.json({ ok: true, datos });
 });
 
-// ✅ NUEVO: crear link de pago Khipu con return_url dinámico
+// ✅ NUEVO: crear link de pago Khipu con return_url dinámico + modo prueba (guest)
 app.post('/crear-pago-khipu', (req, res) => {
-  const { idPago } = req.body;
+  const { idPago, modoGuest = false, datosPaciente } = req.body;
 
   if (!idPago) {
     return res.status(400).json({ ok: false, error: 'Falta idPago' });
+  }
+
+  // 🧪 MODO GUEST (simulación sin ir a Khipu)
+  if (modoGuest === true) {
+    // opcional: guardar datos si vienen en esta misma llamada
+    if (datosPaciente && typeof datosPaciente === 'object') {
+      datosTemporales[idPago] = datosPaciente;
+      console.log(`💾 [GUEST] Datos guardados para idPago ${idPago}:`, datosPaciente);
+    }
+
+    const returnUrl = `https://asistencia-ica.vercel.app/?pago=ok&idPago=${idPago}`;
+    console.log(`🧪 [GUEST] Redirección simulada a: ${returnUrl}`);
+    return res.json({ ok: true, url: returnUrl });
   }
 
   // ⚠️ Reemplaza esta URL con tu real paymentId generado por Khipu
@@ -73,25 +86,29 @@ app.get('/pdf/:idPago', (req, res) => {
 
   let examen = 'Evaluación imagenológica según clínica.';
   let derivacion = '';
+  let nota = ''; // <- añadido: el PDF usa datos.nota
 
   if (sintomas.includes('rodilla')) {
     examen = !isNaN(edadNum) && edadNum < 50
       ? `Resonancia Magnética de Rodilla ${ladoFmt}.`
       : `Radiografía de Rodilla ${ladoFmt} AP y Lateral.`;
     derivacion = 'Derivar a Dr. Jaime Espinoza (especialista en rodilla).';
+    nota = 'Nota: Se recomienda una evaluación con nuestro especialista en rodilla, Dr. Jaime Espinoza, presentando el informe e imágenes del examen realizado.';
   } 
   else if (sintomas.includes('cadera') || sintomas.includes('ingle') || sintomas.includes('inguinal')) {
     examen = !isNaN(edadNum) && edadNum < 50
       ? `Resonancia Magnética de Cadera ${ladoFmt}.`
       : `Radiografía de Pelvis AP de pie.`;
     derivacion = 'Derivar a Dr. Cristóbal Huerta (especialista en cadera).';
+    nota = 'Nota: Se recomienda una evaluación con nuestro especialista en cadera, Dr. Cristóbal Huerta, presentando el informe e imágenes del examen realizado.';
   }
   else if (sintomas.includes('columna')) {
     examen = 'Resonancia Magnética o Radiografía de Columna lumbar según criterio médico.';
     derivacion = 'Derivar a equipo de columna.';
+    nota = 'Nota: Se recomienda una evaluación con nuestro equipo de columna, presentando el informe e imágenes del examen realizado.';
   }
 
-  const datosConExamen = { ...datosPaciente, examen, derivacion };
+  const datosConExamen = { ...datosPaciente, examen, derivacion, nota }; // <- añadido: nota
   // === FIN LÓGICA CLÍNICA ===
 
   const doc = new PDFDocument({ size: 'A4', margin: 50 });
