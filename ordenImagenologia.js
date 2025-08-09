@@ -102,4 +102,5 @@ export function generarOrdenImagenologia(doc, datos) {
   doc.text('Dr. Cristóbal Huerta Cortés', marginL, baseY + 52, { align: 'center', width: pageW - marginL - marginR });
   doc.text('RUT: 14.015.125-4', { align: 'center', width: pageW - marginL - marginR });
   doc.text('Cirujano de Reconstrucción Articular', { align: 'center', width: pageW - marginL - marginR });
+  doc.text('INSTITUTO DE CIRUGIA ARTICULAR', { align: 'center', width: pageW - marginL - marginR });
 }
