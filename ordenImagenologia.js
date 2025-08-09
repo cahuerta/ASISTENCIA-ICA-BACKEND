@@ -21,7 +21,7 @@ export function generarOrdenImagenologia(doc, datos) {
     console.error('Logo error:', err.message);
   }
 
-  doc.font('Helvetica-Bold').fontSize(18).text('INSTITUTO DE CIRUGÍA ARTICULAR', { align: 'center' });
+  doc.font('Helvetica-Bold').fontSize(18).text('INSTITUTO DE CIRUGÍA ARTICULAR', { align: 'center + 40' });
   doc.moveDown(1.5);
   doc.fontSize(16).text('Orden Médica de Imagenología', { align: 'center', underline: true });
   doc.moveDown(5);
