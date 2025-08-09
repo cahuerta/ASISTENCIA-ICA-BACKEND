@@ -65,17 +65,17 @@ app.post('/crear-pago-khipu', async (req, res) => {
 
     const receiverId = process.env.KHIPU_RECEIVER_ID;
     const secret     = process.env.KHIPU_SECRET;
-    const frontend   = process.env.FRONTEND_BASE || 'https://asistencia-ica.vercel.app';
+    const backend    = process.env.BACKEND_BASE || 'https://asistencia-ica-backend.onrender.com';
 
     if (!receiverId || !secret) {
       return res.status(500).json({ ok: false, error: 'Faltan KHIPU_RECEIVER_ID o KHIPU_SECRET en variables de entorno' });
     }
 
-    const amount     = 10000; // CLP
-    const currency   = 'CLP';
-    const subject    = 'Orden de Imagenología';
-    const return_url = `${frontend}?pago=ok&idPago=${encodeURIComponent(idPago)}`;
-    const cancel_url = `${frontend}?pago=cancelado&idPago=${encodeURIComponent(idPago)}`;
+    const amount      = 10000; // CLP (ajusta si corresponde)
+    const currency    = 'CLP';
+    const subject     = 'Orden de Imagenología';
+    const return_url  = `${backend}/retorno-khipu`;            // ← puente backend
+    const cancel_url  = `${backend}/retorno-khipu-cancelado`;  // ← puente backend
 
     const basicAuth = Buffer.from(`${receiverId}:${secret}`).toString('base64');
 
@@ -118,6 +118,21 @@ app.post('/crear-pago-khipu', async (req, res) => {
     console.error('❌ Excepción creando pago Khipu:', e);
     return res.status(500).json({ ok: false, error: 'Error interno creando pago' });
   }
+});
+
+// ✅ Puente de retorno Khipu -> Frontend con parámetros de tu app
+app.get('/retorno-khipu', (req, res) => {
+  const { transaction_id } = req.query; // Khipu reenvía este id si lo enviaste al crear el pago
+  const frontend = process.env.FRONTEND_BASE || 'https://asistencia-ica.vercel.app';
+  const target = `${frontend}?pago=ok&idPago=${encodeURIComponent(transaction_id || '')}`;
+  return res.redirect(302, target);
+});
+
+app.get('/retorno-khipu-cancelado', (req, res) => {
+  const { transaction_id } = req.query;
+  const frontend = process.env.FRONTEND_BASE || 'https://asistencia-ica.vercel.app';
+  const target = `${frontend}?pago=cancelado&idPago=${encodeURIComponent(transaction_id || '')}`;
+  return res.redirect(302, target);
 });
 
 // ✅ Generar PDF por idPago
