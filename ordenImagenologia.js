@@ -28,7 +28,7 @@ export function generarOrdenImagenologia(doc, datos) {
   doc.moveDown(1.5);
   doc.fontSize(16)
      .text('Orden Médica de Imagenología', 180, undefined, { underline: true });
-  doc.moveDown(5);
+  doc.moveDown(4);
   
  // 🔧 Resetear X para que el resto parta en el margen izquierdo
   doc.x = doc.page.margins.left;
@@ -49,7 +49,7 @@ export function generarOrdenImagenologia(doc, datos) {
   doc.font('Helvetica-Bold').text('Examen sugerido:');
   doc.moveDown(4);
   doc.font('Helvetica-Bold').fontSize(18).text(examen || 'Evaluación imagenológica según clínica.');
-  doc.moveDown(6);
+  doc.moveDown(5);
 
   // --------- NOTA ---------
   doc.font('Helvetica').fontSize(12).text(
@@ -97,7 +97,7 @@ export function generarOrdenImagenologia(doc, datos) {
     console.error('Timbre error:', err.message);
   }
 
-  doc.font('Helvetica').fontSize(10);
+  doc.font('Helvetica').fontSize(12);
   doc.text('Dr. Cristóbal Huerta Cortés', marginL, baseY + 52, { align: 'center', width: pageW - marginL - marginR });
   doc.text('RUT: 14.015.125-4', { align: 'center', width: pageW - marginL - marginR });
   doc.text('Cirujano de Reconstrucción Articular', { align: 'center', width: pageW - marginL - marginR });
