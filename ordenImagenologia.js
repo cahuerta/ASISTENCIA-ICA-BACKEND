@@ -15,15 +15,15 @@ export function generarOrdenImagenologia(doc, datos) {
   try {
     const logoPath = path.join(__dirname, 'assets', 'ica.jpg');
     if (fs.existsSync(logoPath)) {
-      doc.image(logoPath, 50, 40, { width: 100 });
+      doc.image(logoPath, 50, 40, { width: 120 });
     }
   } catch (err) {
     console.error('Logo error:', err.message);
   }
 
-  doc.font('Helvetica-Bold').fontSize(16).text('INSTITUTO DE CIRUGÍA ARTICULAR', { align: 'center' });
+  doc.font('Helvetica-Bold').fontSize(18).text('INSTITUTO DE CIRUGÍA ARTICULAR', { align: 'center' });
   doc.moveDown(1.5);
-  doc.fontSize(14).text('Orden Médica de Imagenología', { align: 'center', underline: true });
+  doc.fontSize(16).text('Orden Médica de Imagenología', { align: 'center', underline: true });
   doc.moveDown(5);
 
   // --------- DATOS PACIENTE ---------
@@ -37,8 +37,8 @@ export function generarOrdenImagenologia(doc, datos) {
 
   // --------- EXAMEN (viene desde index.js) ---------
   doc.font('Helvetica-Bold').text('Examen sugerido:');
-  doc.font('Helvetica').fontSize(15).text(examen || 'Evaluación imagenológica según clínica.');
-  doc.moveDown(2);
+  doc.font('Helvetica').fontSize(18).text(examen || 'Evaluación imagenológica según clínica.');
+  doc.moveDown(6);
 
   // --------- NOTA ---------
   doc.font('Helvetica').fontSize(12).text(
@@ -79,7 +79,7 @@ export function generarOrdenImagenologia(doc, datos) {
     const timbrePath = path.join(__dirname, 'assets', 'timbre.jpg');
     if (fs.existsSync(timbrePath)) {
       const timbreW = 110;
-      const timbreX = firmaX + firmaW + 10;
+      const timbreX = firmaX + firmaW;
       const timbreY = firmaY - 20;
 
       doc.save();
