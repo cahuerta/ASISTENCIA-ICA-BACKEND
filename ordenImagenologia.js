@@ -22,6 +22,7 @@ export function generarOrdenImagenologia(doc, datos) {
   }
 
   // ✅ Texto a la derecha del logo, sin cambiar espacios originales
+    doc.moveDown(1.5);
   doc.font('Helvetica-Bold')
      .fontSize(18)
      .text('INSTITUTO DE CIRUGÍA ARTICULAR', 180, 50);
