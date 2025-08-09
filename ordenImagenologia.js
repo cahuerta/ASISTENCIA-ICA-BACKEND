@@ -30,13 +30,17 @@ export function generarOrdenImagenologia(doc, datos) {
   const sintomas = `${dolor ?? ''} ${lado ?? ''}`.trim();
   doc.font('Helvetica').fontSize(14);
   doc.text(`Nombre: ${nombre ?? ''}`);
+  doc.moveDown(1);
   doc.text(`Edad: ${edad ?? ''}`);
+  doc.moveDown(0.5);
   doc.text(`RUT: ${rut ?? ''}`);
+  doc.moveDown(0.5);
   doc.text(`Descripción de síntomas: ${sintomas}`);
   doc.moveDown(2);
 
   // --------- EXAMEN (viene desde index.js) ---------
   doc.font('Helvetica-Bold').text('Examen sugerido:');
+  doc.moveDown(4);
   doc.font('Helvetica').fontSize(18).text(examen || 'Evaluación imagenológica según clínica.');
   doc.moveDown(6);
 
