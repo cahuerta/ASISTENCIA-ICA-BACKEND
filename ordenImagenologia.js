@@ -29,6 +29,9 @@ export function generarOrdenImagenologia(doc, datos) {
   doc.fontSize(16)
      .text('Orden Médica de Imagenología', 180, undefined, { underline: true });
   doc.moveDown(5);
+  
+ // 🔧 Resetear X para que el resto parta en el margen izquierdo
+  doc.x = doc.page.margins.left;
 
   // --------- DATOS PACIENTE ---------
   const sintomas = `${dolor ?? ''} ${lado ?? ''}`.trim();
