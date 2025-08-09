@@ -4,6 +4,7 @@ import bodyParser from 'body-parser';
 import PDFDocument from 'pdfkit';
 import path from 'path';
 import fs from 'fs';
+import fetch from 'node-fetch';
 import { generarOrdenImagenologia } from './ordenImagenologia.js';
 
 const app = express();
@@ -36,36 +37,87 @@ app.get('/obtener-datos/:idPago', (req, res) => {
   res.json({ ok: true, datos });
 });
 
-// ✅ NUEVO: crear link de pago Khipu con return_url dinámico + modo prueba (guest)
-app.post('/crear-pago-khipu', (req, res) => {
+// ✅ Crear link de pago Khipu con API real + modo prueba (guest)
+app.post('/crear-pago-khipu', async (req, res) => {
   const { idPago, modoGuest = false, datosPaciente } = req.body;
 
   if (!idPago) {
     return res.status(400).json({ ok: false, error: 'Falta idPago' });
   }
 
-  // 🧪 MODO GUEST (simulación sin ir a Khipu)
+  // 🧪 MODO GUEST (sin ir a Khipu)
   if (modoGuest === true) {
-    // opcional: guardar datos si vienen en esta misma llamada
     if (datosPaciente && typeof datosPaciente === 'object') {
       datosTemporales[idPago] = datosPaciente;
       console.log(`💾 [GUEST] Datos guardados para idPago ${idPago}:`, datosPaciente);
     }
-
-    const returnUrl = `https://asistencia-ica.vercel.app/?pago=ok&idPago=${idPago}`;
+    const returnUrl = `${process.env.FRONTEND_BASE || 'https://asistencia-ica.vercel.app'}?pago=ok&idPago=${encodeURIComponent(idPago)}`;
     console.log(`🧪 [GUEST] Redirección simulada a: ${returnUrl}`);
     return res.json({ ok: true, url: returnUrl });
   }
 
-  // ⚠️ Reemplaza esta URL con tu real paymentId generado por Khipu
-  const khipuBaseUrl = 'https://khipu.com/payment/process/SbBes';
+  // 🚀 PAGO REAL CON API DE KHIPU
+  try {
+    if (datosPaciente && typeof datosPaciente === 'object') {
+      datosTemporales[idPago] = datosPaciente;
+      console.log(`💾 [REAL] Datos guardados para idPago ${idPago}:`, datosPaciente);
+    }
 
-  // Redirección al frontend con el ID de pago
-  const returnUrl = `https://asistencia-ica.vercel.app/?pago=ok&idPago=${idPago}`;
-  const khipuFinalUrl = `${khipuBaseUrl}?return_url=${encodeURIComponent(returnUrl)}`;
+    const receiverId = process.env.KHIPU_RECEIVER_ID;
+    const secret     = process.env.KHIPU_SECRET;
+    const frontend   = process.env.FRONTEND_BASE || 'https://asistencia-ica.vercel.app';
 
-  console.log(`🔗 Link de Khipu generado: ${khipuFinalUrl}`);
-  res.json({ ok: true, url: khipuFinalUrl });
+    if (!receiverId || !secret) {
+      return res.status(500).json({ ok: false, error: 'Faltan KHIPU_RECEIVER_ID o KHIPU_SECRET en variables de entorno' });
+    }
+
+    const amount     = 10000; // CLP
+    const currency   = 'CLP';
+    const subject    = 'Orden de Imagenología';
+    const return_url = `${frontend}?pago=ok&idPago=${encodeURIComponent(idPago)}`;
+    const cancel_url = `${frontend}?pago=cancelado&idPago=${encodeURIComponent(idPago)}`;
+
+    const basicAuth = Buffer.from(`${receiverId}:${secret}`).toString('base64');
+
+    const resp = await fetch('https://khipu.com/api/2.0/payments', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Basic ${basicAuth}`,
+        'Content-Type': 'application/json',
+        'X-Khipu-Api-Version': '2.0',
+        'X-Khipu-Client-Id': 'ICA-Backend',
+      },
+      body: JSON.stringify({
+        transaction_id: idPago,
+        amount,
+        currency,
+        subject,
+        return_url,
+        cancel_url,
+        body: 'Pago de orden de imagenología',
+      }),
+    });
+
+    if (!resp.ok) {
+      const errTxt = await resp.text();
+      console.error('❌ Error Khipu:', resp.status, errTxt);
+      return res.status(502).json({ ok: false, error: 'No se pudo crear el pago en Khipu' });
+    }
+
+    const json = await resp.json();
+    const paymentUrl = json.payment_url || json.app_url || json.mobile_url;
+
+    if (!paymentUrl) {
+      console.error('❌ Respuesta Khipu sin payment_url:', json);
+      return res.status(502).json({ ok: false, error: 'Khipu no retornó payment_url' });
+    }
+
+    console.log(`🔗 Khipu payment_url: ${paymentUrl}`);
+    return res.json({ ok: true, url: paymentUrl });
+  } catch (e) {
+    console.error('❌ Excepción creando pago Khipu:', e);
+    return res.status(500).json({ ok: false, error: 'Error interno creando pago' });
+  }
 });
 
 // ✅ Generar PDF por idPago
@@ -86,7 +138,7 @@ app.get('/pdf/:idPago', (req, res) => {
 
   let examen = 'Evaluación imagenológica según clínica.';
   let derivacion = '';
-  let nota = ''; // <- añadido: el PDF usa datos.nota
+  let nota = '';
 
   if (sintomas.includes('rodilla')) {
     examen = !isNaN(edadNum) && edadNum < 50
@@ -108,7 +160,7 @@ app.get('/pdf/:idPago', (req, res) => {
     nota = 'Nota: Se recomienda una evaluación con nuestro equipo de columna, presentando el informe e imágenes del examen realizado.';
   }
 
-  const datosConExamen = { ...datosPaciente, examen, derivacion, nota }; // <- añadido: nota
+  const datosConExamen = { ...datosPaciente, examen, derivacion, nota };
   // === FIN LÓGICA CLÍNICA ===
 
   const doc = new PDFDocument({ size: 'A4', margin: 50 });
