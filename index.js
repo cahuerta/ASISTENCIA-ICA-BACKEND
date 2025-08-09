@@ -64,7 +64,7 @@ app.get('/pdf/:idPago', (req, res) => {
     return res.status(404).json({ ok: false, error: 'Datos no encontrados para ese ID de pago' });
   }
 
-  // === LÓGICA CLÍNICA: definir EXAMEN aquí (RX vs RNM) ===
+  // === LÓGICA CLÍNICA: definir EXAMEN y DERIVACIÓN ===
   const { nombre, edad, rut, dolor, lado } = datosPaciente;
 
   const edadNum = parseInt(edad, 10);
@@ -72,17 +72,26 @@ app.get('/pdf/:idPago', (req, res) => {
   const ladoFmt = lado ? lado[0].toUpperCase() + lado.slice(1).toLowerCase() : '';
 
   let examen = 'Evaluación imagenológica según clínica.';
+  let derivacion = '';
+
   if (sintomas.includes('rodilla')) {
     examen = !isNaN(edadNum) && edadNum < 50
       ? `Resonancia Magnética de Rodilla ${ladoFmt}.`
       : `Radiografía de Rodilla ${ladoFmt} AP y Lateral.`;
-  } else if (sintomas.includes('cadera') || sintomas.includes('ingle') || sintomas.includes('inguinal')) {
+    derivacion = 'Derivar a Dr. Jaime Espinoza (especialista en rodilla).';
+  } 
+  else if (sintomas.includes('cadera') || sintomas.includes('ingle') || sintomas.includes('inguinal')) {
     examen = !isNaN(edadNum) && edadNum < 50
       ? `Resonancia Magnética de Cadera ${ladoFmt}.`
       : `Radiografía de Pelvis AP de pie.`;
+    derivacion = 'Derivar a Dr. Cristóbal Huerta (especialista en cadera).';
+  }
+  else if (sintomas.includes('columna')) {
+    examen = 'Resonancia Magnética o Radiografía de Columna lumbar según criterio médico.';
+    derivacion = 'Derivar a equipo de columna.';
   }
 
-  const datosConExamen = { ...datosPaciente, examen };
+  const datosConExamen = { ...datosPaciente, examen, derivacion };
   // === FIN LÓGICA CLÍNICA ===
 
   const doc = new PDFDocument({ size: 'A4', margin: 50 });
