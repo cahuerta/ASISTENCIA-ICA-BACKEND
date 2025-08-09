@@ -22,9 +22,9 @@ export function generarOrdenImagenologia(doc, datos) {
   }
 
   doc.font('Helvetica-Bold').fontSize(16).text('INSTITUTO DE CIRUGÍA ARTICULAR', { align: 'center' });
-  doc.moveDown(0.5);
+  doc.moveDown(1.5);
   doc.fontSize(14).text('Orden Médica de Imagenología', { align: 'center', underline: true });
-  doc.moveDown(2);
+  doc.moveDown(5);
 
   // --------- DATOS PACIENTE ---------
   const sintomas = `${dolor ?? ''} ${lado ?? ''}`.trim();
@@ -33,12 +33,12 @@ export function generarOrdenImagenologia(doc, datos) {
   doc.text(`Edad: ${edad ?? ''}`);
   doc.text(`RUT: ${rut ?? ''}`);
   doc.text(`Descripción de síntomas: ${sintomas}`);
-  doc.moveDown();
+  doc.moveDown(2);
 
   // --------- EXAMEN (viene desde index.js) ---------
   doc.font('Helvetica-Bold').text('Examen sugerido:');
   doc.font('Helvetica').fontSize(13).text(examen || 'Evaluación imagenológica según clínica.');
-  doc.moveDown();
+  doc.moveDown(2);
 
   // --------- NOTA ---------
   doc.font('Helvetica').fontSize(12).text(
@@ -61,7 +61,7 @@ export function generarOrdenImagenologia(doc, datos) {
   doc.text('Firma y Timbre Médico', marginL, baseY + 18, { align: 'center', width: pageW - marginL - marginR });
 
   // Firma centrada encima de la línea
-  const firmaW = 180;
+  const firmaW = 250;
   const firmaX = (pageW - firmaW) / 2;
   const firmaY = baseY - 45;
 
