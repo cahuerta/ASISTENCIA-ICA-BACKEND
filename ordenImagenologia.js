@@ -22,7 +22,7 @@ export function generarOrdenImagenologia(doc, datos) {
   }
 
   // ✅ Texto a la derecha del logo, sin cambiar espacios originales
-    doc.moveDown(1.5);
+  doc.moveDown(1.5);
   doc.font('Helvetica-Bold')
      .fontSize(18)
      .text('INSTITUTO DE CIRUGÍA ARTICULAR', 180, 50);
@@ -31,7 +31,7 @@ export function generarOrdenImagenologia(doc, datos) {
      .text('Orden Médica de Imagenología', 180, undefined, { underline: true });
   doc.moveDown(4);
   
- // 🔧 Resetear X para que el resto parta en el margen izquierdo
+  // 🔧 Resetear X para que el resto parta en el margen izquierdo
   doc.x = doc.page.margins.left;
 
   // --------- DATOS PACIENTE ---------
@@ -52,9 +52,9 @@ export function generarOrdenImagenologia(doc, datos) {
   doc.font('Helvetica-Bold').fontSize(18).text(examen || 'Evaluación imagenológica según clínica.');
   doc.moveDown(5);
 
-  // --------- NOTA ---------
+  // --------- NOTA (solo diseño, viene desde index) ---------
   doc.font('Helvetica').fontSize(12).text(
-    'Nota:\n\nDado sus motivos y molestias, le sugerimos agendar una hora con nuestro \nespecialista en cadera o rodilla, Huerta o Espinoza, con el examen realizado.',
+    datos.nota || 'Nota:\n\nSe recomienda coordinar evaluación con la especialidad correspondiente, presentándose con el estudio realizado.',
     { align: 'left' }
   );
 
