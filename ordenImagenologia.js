@@ -28,7 +28,7 @@ export function generarOrdenImagenologia(doc, datos) {
 
   // --------- DATOS PACIENTE ---------
   const sintomas = `${dolor ?? ''} ${lado ?? ''}`.trim();
-  doc.font('Helvetica').fontSize(12);
+  doc.font('Helvetica').fontSize(14);
   doc.text(`Nombre: ${nombre ?? ''}`);
   doc.text(`Edad: ${edad ?? ''}`);
   doc.text(`RUT: ${rut ?? ''}`);
@@ -37,7 +37,7 @@ export function generarOrdenImagenologia(doc, datos) {
 
   // --------- EXAMEN (viene desde index.js) ---------
   doc.font('Helvetica-Bold').text('Examen sugerido:');
-  doc.font('Helvetica').fontSize(13).text(examen || 'Evaluación imagenológica según clínica.');
+  doc.font('Helvetica').fontSize(15).text(examen || 'Evaluación imagenológica según clínica.');
   doc.moveDown(2);
 
   // --------- NOTA ---------
@@ -79,7 +79,7 @@ export function generarOrdenImagenologia(doc, datos) {
     const timbrePath = path.join(__dirname, 'assets', 'timbre.jpg');
     if (fs.existsSync(timbrePath)) {
       const timbreW = 110;
-      const timbreX = firmaX + firmaW + 40;
+      const timbreX = firmaX + firmaW + 10;
       const timbreY = firmaY - 20;
 
       doc.save();
