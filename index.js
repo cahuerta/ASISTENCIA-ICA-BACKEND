@@ -64,8 +64,29 @@ app.get('/pdf/:idPago', (req, res) => {
     return res.status(404).json({ ok: false, error: 'Datos no encontrados para ese ID de pago' });
   }
 
+  // === LÓGICA CLÍNICA: definir EXAMEN aquí (RX vs RNM) ===
+  const { nombre, edad, rut, dolor, lado } = datosPaciente;
+
+  const edadNum = parseInt(edad, 10);
+  const sintomas = `${(dolor || '')} ${(lado || '')}`.toLowerCase();
+  const ladoFmt = lado ? lado[0].toUpperCase() + lado.slice(1).toLowerCase() : '';
+
+  let examen = 'Evaluación imagenológica según clínica.';
+  if (sintomas.includes('rodilla')) {
+    examen = !isNaN(edadNum) && edadNum < 50
+      ? `Resonancia Magnética de Rodilla ${ladoFmt}.`
+      : `Radiografía de Rodilla ${ladoFmt} AP y Lateral.`;
+  } else if (sintomas.includes('cadera') || sintomas.includes('ingle') || sintomas.includes('inguinal')) {
+    examen = !isNaN(edadNum) && edadNum < 50
+      ? `Resonancia Magnética de Cadera ${ladoFmt}.`
+      : `Radiografía de Pelvis AP de pie.`;
+  }
+
+  const datosConExamen = { ...datosPaciente, examen };
+  // === FIN LÓGICA CLÍNICA ===
+
   const doc = new PDFDocument({ size: 'A4', margin: 50 });
-  const filename = `orden_${datosPaciente.nombre.replace(/ /g, '_')}.pdf`;
+  const filename = `orden_${nombre?.replace(/ /g, '_') || 'paciente'}.pdf`;
 
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   res.setHeader('Content-Type', 'application/pdf');
@@ -73,7 +94,7 @@ app.get('/pdf/:idPago', (req, res) => {
   doc.pipe(res);
 
   try {
-    generarOrdenImagenologia(doc, datosPaciente);
+    generarOrdenImagenologia(doc, datosConExamen);
   } catch (error) {
     console.error('❌ Error al generar contenido del PDF:', error.message);
     doc.font('Helvetica').fontSize(14).fillColor('red').text('Error al generar el documento PDF.', 100, 100);
