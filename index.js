@@ -98,10 +98,15 @@ app.post('/crear-pago-khipu', async (req, res) => {
       }),
     });
 
+    // 🔧 ÚNICA MODIFICACIÓN: devolver detalle del error de Khipu para diagnosticar
     if (!resp.ok) {
       const errTxt = await resp.text();
       console.error('❌ Error Khipu:', resp.status, errTxt);
-      return res.status(502).json({ ok: false, error: 'No se pudo crear el pago en Khipu' });
+      return res.status(502).json({
+        ok: false,
+        error: `Khipu respondió ${resp.status}`,
+        detail: errTxt.slice(0, 500)
+      });
     }
 
     const json = await resp.json();
