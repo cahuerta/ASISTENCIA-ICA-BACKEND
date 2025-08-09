@@ -37,7 +37,7 @@ app.get('/obtener-datos/:idPago', (req, res) => {
   res.json({ ok: true, datos });
 });
 
-// ✅ Crear link de pago Khipu con API real + modo prueba (guest)
+// ✅ Crear link de pago Khipu con API Key (Bearer) + modo prueba (guest)
 app.post('/crear-pago-khipu', async (req, res) => {
   const { idPago, modoGuest = false, datosPaciente } = req.body;
 
@@ -56,20 +56,19 @@ app.post('/crear-pago-khipu', async (req, res) => {
     return res.json({ ok: true, url: returnUrl });
   }
 
-  // 🚀 PAGO REAL CON API DE KHIPU
+  // 🚀 PAGO REAL CON API DE KHIPU (API KEY)
   try {
     if (datosPaciente && typeof datosPaciente === 'object') {
       datosTemporales[idPago] = datosPaciente;
       console.log(`💾 [REAL] Datos guardados para idPago ${idPago}:`, datosPaciente);
     }
 
-    const receiverId = process.env.KHIPU_RECEIVER_ID;
-    const secret     = process.env.KHIPU_SECRET;
-    const backend    = process.env.BACKEND_BASE  || 'https://asistencia-ica-backend.onrender.com';
-    const frontend   = process.env.FRONTEND_BASE || 'https://asistencia-ica.vercel.app';
+    const apiKey   = process.env.KHIPU_API_KEY;
+    const backend  = process.env.BACKEND_BASE  || 'https://asistencia-ica-backend.onrender.com';
+    const frontend = process.env.FRONTEND_BASE || 'https://asistencia-ica.vercel.app';
 
-    if (!receiverId || !secret) {
-      return res.status(500).json({ ok: false, error: 'Faltan KHIPU_RECEIVER_ID o KHIPU_SECRET en variables de entorno' });
+    if (!apiKey) {
+      return res.status(500).json({ ok: false, error: 'Falta KHIPU_API_KEY en variables de entorno' });
     }
 
     // Selección de ambiente
@@ -85,19 +84,17 @@ app.post('/crear-pago-khipu', async (req, res) => {
     const cancel_url = `${backend}/retorno-khipu-cancelado`;
     const notify_url = `${backend}/webhook-khipu`;              // servidor-a-servidor
 
-    const basicAuth = Buffer.from(`${receiverId}:${secret}`).toString('base64');
-
-    console.log(`➡️  Creando pago Khipu [env=${env}] receiver=${receiverId} tx=${idPago}`);
+    console.log(`➡️  Creando pago Khipu [env=${env}] tx=${idPago}`);
     const resp = await fetch(`${baseUrl}/payments`, {
       method: 'POST',
       headers: {
-        'Authorization': `Basic ${basicAuth}`,
+        'Authorization': `Bearer ${apiKey}`,    // ← API KEY
         'Content-Type': 'application/json',
         'X-Khipu-Api-Version': '2.0',
         'X-Khipu-Client-Id': 'ICA-Backend',
       },
       body: JSON.stringify({
-        transaction_id: idPago,
+        transaction_id: idPago,      // único por comercio
         amount,
         currency,
         subject,
@@ -108,7 +105,7 @@ app.post('/crear-pago-khipu', async (req, res) => {
       }),
     });
 
-    // Devolver detalle del error de Khipu para diagnosticar
+    // Log detallado si falla
     if (!resp.ok) {
       const errTxt = await resp.text();
       console.error('❌ Error Khipu:', resp.status, errTxt);
@@ -139,7 +136,7 @@ app.post('/crear-pago-khipu', async (req, res) => {
 app.post('/webhook-khipu', (req, res) => {
   try {
     console.log('🔔 Webhook Khipu:', req.body);
-    // Aquí podrías validar firma y marcar pago como confirmado (persistencia real).
+    // TODO: (opcional) Validar firma si la configuras y marcar pago como confirmado.
     res.sendStatus(200);
   } catch (e) {
     console.error('❌ Error en webhook-khipu:', e);
