@@ -4,14 +4,14 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-// Asegura __dirname en ES Modules
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+// __dirname para ES Modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 export function generarOrdenImagenologia(doc, datos) {
   const { nombre, edad, rut, dolor, lado, examen } = datos;
 
   // --------- ENCABEZADO ---------
-  // Logo (opcional, si existe)
   try {
     const logoPath = path.join(__dirname, 'assets', 'ica.jpg');
     if (fs.existsSync(logoPath)) {
@@ -21,24 +21,17 @@ export function generarOrdenImagenologia(doc, datos) {
     console.error('Logo error:', err.message);
   }
 
-  // Títulos
-  doc
-    .font('Helvetica-Bold')
-    .fontSize(16)
-    .text('INSTITUTO DE CIRUGÍA ARTICULAR', { align: 'center' });
+  doc.font('Helvetica-Bold').fontSize(16).text('INSTITUTO DE CIRUGÍA ARTICULAR', { align: 'center' });
   doc.moveDown(0.5);
-  doc
-    .fontSize(14)
-    .text('Orden Médica de Imagenología', { align: 'center', underline: true });
-
+  doc.fontSize(14).text('Orden Médica de Imagenología', { align: 'center', underline: true });
   doc.moveDown(2);
 
   // --------- DATOS PACIENTE ---------
+  const sintomas = `${dolor ?? ''} ${lado ?? ''}`.trim();
   doc.font('Helvetica').fontSize(12);
   doc.text(`Nombre: ${nombre ?? ''}`);
   doc.text(`Edad: ${edad ?? ''}`);
   doc.text(`RUT: ${rut ?? ''}`);
-  const sintomas = `${dolor ?? ''} ${lado ?? ''}`.trim();
   doc.text(`Descripción de síntomas: ${sintomas}`);
   doc.moveDown();
 
@@ -59,9 +52,48 @@ export function generarOrdenImagenologia(doc, datos) {
   const marginL = doc.page.margins.left || 50;
   const marginR = doc.page.margins.right || 50;
 
-  // Altura base para el pie (ajustado para no crear nueva página)
-  const baseY = pageH - 170; // más espacio como pediste
+  // Base cerca del final de la página (sin crear otra hoja)
+  const baseY = pageH - 170;
 
-  // Línea de firma y texto "Firma y Timbre"
+  // Línea y texto
   doc.font('Helvetica').fontSize(12);
-  doc.text('_________________________', marginL, baseY, { align: 'center', width: pageW - marginL - margi_
+  doc.text('_________________________', marginL, baseY, { align: 'center', width: pageW - marginL - marginR });
+  doc.text('Firma y Timbre Médico', marginL, baseY + 18, { align: 'center', width: pageW - marginL - marginR });
+
+  // Firma centrada encima de la línea
+  const firmaW = 180;
+  const firmaX = (pageW - firmaW) / 2;
+  const firmaY = baseY - 45;
+
+  try {
+    const firmaPath = path.join(__dirname, 'assets', 'FIRMA.png');
+    if (fs.existsSync(firmaPath)) {
+      doc.image(firmaPath, firmaX, firmaY, { width: firmaW });
+    }
+  } catch (err) {
+    console.error('Firma error:', err.message);
+  }
+
+  // Timbre rotado 20°
+  try {
+    const timbrePath = path.join(__dirname, 'assets', 'timbre.jpg');
+    if (fs.existsSync(timbrePath)) {
+      const timbreW = 110;
+      const timbreX = firmaX + firmaW + 40;
+      const timbreY = firmaY - 20;
+
+      doc.save();
+      doc.rotate(20, { origin: [timbreX + timbreW / 2, timbreY + timbreW / 2] });
+      doc.image(timbrePath, timbreX, timbreY, { width: timbreW });
+      doc.restore();
+    }
+  } catch (err) {
+    console.error('Timbre error:', err.message);
+  }
+
+  // Datos del médico
+  doc.font('Helvetica').fontSize(10);
+  doc.text('Dr. Cristóbal Huerta Cortés', marginL, baseY + 52, { align: 'center', width: pageW - marginL - marginR });
+  doc.text('RUT: 14.015.125-4', { align: 'center', width: pageW - marginL - marginR });
+  doc.text('Cirujano de Reconstrucción Articular', { align: 'center', width: pageW - marginL - marginR });
+}
