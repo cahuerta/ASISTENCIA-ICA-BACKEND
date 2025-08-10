@@ -76,8 +76,9 @@ app.post('/crear-pago-khipu', async (req, res) => {
     // 🔒 Monto y metadatos
     const amount     = Number(process.env.KHIPU_AMOUNT || 1000); // CLP
     const subject    = 'Orden de Imagenología';
-    const return_url = `${backend}/retorno-khipu`;          // backend redirige al frontend
-    const cancel_url = `${backend}/retorno-khipu-cancelado`;
+    // 👉 Fuerza idPago en el retorno/cancelación para que el front SIEMPRE lo reciba
+    const return_url = `${backend}/retorno-khipu?idPago=${encodeURIComponent(idPago)}`;
+    const cancel_url = `${backend}/retorno-khipu-cancelado?idPago=${encodeURIComponent(idPago)}`;
     const notify_url = `${backend}/webhook-khipu`;
 
     const body = {
@@ -167,16 +168,23 @@ app.post('/webhook-khipu', (req, res) => {
 
 // ✅ Puente de retorno Khipu -> Frontend (sin auto-descarga; muestra botón en el front)
 app.get('/retorno-khipu', (req, res) => {
-  const { transaction_id } = req.query; // Khipu reenvía este id si lo enviaste al crear el pago
+  // Acepta varios nombres por robustez
+  const { idPago, transaction_id, payment_id, tx } = req.query;
+  const finalId = idPago || transaction_id || payment_id || tx || '';
+  console.log('↩️ retorno-khipu query:', req.query, 'finalId=', finalId);
+
   const frontend = process.env.FRONTEND_BASE || 'https://asistencia-ica.vercel.app';
-  const target = `${frontend}?pago=ok&idPago=${encodeURIComponent(transaction_id || '')}`;
+  const target = `${frontend}?pago=ok&idPago=${encodeURIComponent(finalId)}`;
   return res.redirect(302, target);
 });
 
 app.get('/retorno-khipu-cancelado', (req, res) => {
-  const { transaction_id } = req.query;
+  const { idPago, transaction_id, payment_id, tx } = req.query;
+  const finalId = idPago || transaction_id || payment_id || tx || '';
+  console.log('↩️ retorno-khipu-cancelado query:', req.query, 'finalId=', finalId);
+
   const frontend = process.env.FRONTEND_BASE || 'https://asistencia-ica.vercel.app';
-  const target = `${frontend}?pago=cancelado&idPago=${encodeURIComponent(transaction_id || '')}`;
+  const target = `${frontend}?pago=cancelado&idPago=${encodeURIComponent(finalId)}`;
   return res.redirect(302, target);
 });
 
