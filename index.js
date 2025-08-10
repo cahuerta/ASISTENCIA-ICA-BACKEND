@@ -11,7 +11,10 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 app.use(cors());
+
+// 👇 Acepta JSON y también x-www-form-urlencoded (muchos PSP envían así el webhook)
 app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: false }));
 
 // --- Memoria temporal para guardar datos antes del pago ---
 const datosTemporales = {};
@@ -89,7 +92,7 @@ app.post('/crear-pago-khipu', async (req, res) => {
       return_url,
       cancel_url,
       notify_url,
-      // description, payer, etc. si lo necesitas
+      // description, payer, etc.
     };
 
     console.log(`➡️  Creando pago Khipu v3 tx=${idPago} amount=${amount}`);
@@ -138,18 +141,21 @@ app.post('/crear-pago-khipu', async (req, res) => {
   }
 });
 
-// ✅ Webhook Khipu: marca pagado=true
+// ✅ Webhook Khipu: marca pagado=true (POST)
+// Nota: ahora acepta application/x-www-form-urlencoded y application/json
 app.post('/webhook-khipu', (req, res) => {
   try {
-    const noti = req.body;
-    console.log('🔔 Webhook Khipu:', JSON.stringify(noti));
+    console.log('🔔 CT:', req.headers['content-type']);
+    console.log('🔔 Webhook Khipu body:', req.body);
 
     // Intenta extraer transaction_id desde rutas comunes
+    const noti = req.body || {};
     const tx =
       noti?.transaction_id ||
       noti?.payment?.transaction_id ||
       noti?.data?.transaction_id ||
       noti?.payment_id ||
+      noti?.id || // por si acaso
       null;
 
     if (tx && datosTemporales[tx]) {
@@ -164,6 +170,19 @@ app.post('/webhook-khipu', (req, res) => {
     console.error('❌ Error en webhook-khipu:', e);
     res.sendStatus(500);
   }
+});
+
+// (Opcional) Webhook GET para pruebas / depuración
+app.get('/webhook-khipu', (req, res) => {
+  console.log('🔔 Webhook Khipu (GET):', req.query);
+  const tx = req.query?.transaction_id || req.query?.payment_id || req.query?.id || null;
+  if (tx && datosTemporales[tx]) {
+    datosTemporales[tx].pagado = true;
+    console.log(`✅ Marcado como pagado (GET) idPago=${tx}`);
+  } else {
+    console.warn('⚠️ GET webhook no encontró tx en memoria:', tx);
+  }
+  res.sendStatus(200);
 });
 
 // ✅ Puente de retorno Khipu -> Frontend (sin auto-descarga; muestra botón en el front)
