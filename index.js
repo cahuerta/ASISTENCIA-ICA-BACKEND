@@ -37,7 +37,7 @@ app.get('/obtener-datos/:idPago', (req, res) => {
   res.json({ ok: true, datos });
 });
 
-// ✅ Crear link de pago Khipu con API Key (Bearer) + modo prueba (guest)
+// ✅ Crear link de pago Khipu con API Key v3 + modo prueba (guest)
 app.post('/crear-pago-khipu', async (req, res) => {
   const { idPago, modoGuest = false, datosPaciente } = req.body;
 
@@ -56,79 +56,84 @@ app.post('/crear-pago-khipu', async (req, res) => {
     return res.json({ ok: true, url: returnUrl });
   }
 
-  // 🚀 PAGO REAL CON API DE KHIPU (API KEY)
+  // 🚀 PAGO REAL CON KHIPU v3 (API Key en header x-api-key)
   try {
     if (datosPaciente && typeof datosPaciente === 'object') {
       datosTemporales[idPago] = datosPaciente;
       console.log(`💾 [REAL] Datos guardados para idPago ${idPago}:`, datosPaciente);
     }
 
-    const apiKey   = process.env.KHIPU_API_KEY;
+    const apiKey   = process.env.KHIPU_API_KEY; // 👈 API Key v3
     const backend  = process.env.BACKEND_BASE  || 'https://asistencia-ica-backend.onrender.com';
     const frontend = process.env.FRONTEND_BASE || 'https://asistencia-ica.vercel.app';
 
     if (!apiKey) {
-      return res.status(500).json({ ok: false, error: 'Falta KHIPU_API_KEY en variables de entorno' });
+      return res.status(500).json({ ok: false, error: 'Falta KHIPU_API_KEY (v3) en variables de entorno' });
     }
 
-    // Selección de ambiente
-    const env = (process.env.KHIPU_ENV || 'production').toLowerCase();
-    const baseUrl = env === 'integration'
-      ? 'https://integracion.khipu.com/api/2.0'
-      : 'https://khipu.com/api/2.0';
+    // v3 usa este host; el ambiente (integración/producción) depende de la key
+    const baseUrl = 'https://payment-api.khipu.com';
 
-    // 🔒 MONTO FIJO
-    const amount     = 1000; // CLP monto fijo
-    const currency   = 'CLP';
+    // 🔒 Monto y metadatos
+    const amount     = Number(process.env.KHIPU_AMOUNT || 1000); // CLP
     const subject    = 'Orden de Imagenología';
-    const return_url = `${backend}/retorno-khipu`;              // HTTPS público
+    const return_url = `${backend}/retorno-khipu`;          // tu backend redirige al frontend
     const cancel_url = `${backend}/retorno-khipu-cancelado`;
-    const notify_url = `${backend}/webhook-khipu`;              // servidor-a-servidor
+    const notify_url = `${backend}/webhook-khipu`;
 
-    console.log(`➡️  Creando pago Khipu [env=${env}] tx=${idPago}`);
-    const resp = await fetch(`${baseUrl}/payments`, {
+    const body = {
+      transaction_id: idPago,
+      amount,
+      currency: 'CLP',
+      subject,
+      return_url,
+      cancel_url,
+      notify_url,
+      // body opcional: description, payer, etc.
+    };
+
+    console.log(`➡️  Creando pago Khipu v3 tx=${idPago} amount=${amount}`);
+    const resp = await fetch(`${baseUrl}/v3/payments`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${apiKey}`,    // ← API KEY
         'Content-Type': 'application/json',
-        'X-Khipu-Api-Version': '2.0',
-        'X-Khipu-Client-Id': 'ICA-Backend',
+        'x-api-key': apiKey, // 👈 autenticación v3
       },
-      body: JSON.stringify({
-        transaction_id: idPago,      // único por comercio
-        amount,
-        currency,
-        subject,
-        return_url,
-        cancel_url,
-        notify_url,
-        body: 'Pago de orden de imagenología',
-      }),
+      body: JSON.stringify(body),
     });
 
-    // Log detallado si falla
     if (!resp.ok) {
       const errTxt = await resp.text();
-      console.error('❌ Error Khipu:', resp.status, errTxt);
+      console.error('❌ Error Khipu v3:', resp.status, errTxt);
       return res.status(502).json({
         ok: false,
-        error: `Khipu respondió ${resp.status}`,
+        error: `Khipu v3 respondió ${resp.status}`,
         detail: errTxt.slice(0, 2000),
       });
     }
 
     const json = await resp.json();
-    const paymentUrl = json.payment_url || json.app_url || json.mobile_url;
+
+    // v3 devuelve una URL para redirigir al usuario
+    const paymentUrl =
+      json.payment_url ||
+      json.app_url ||
+      json.simplified_transfer_url ||
+      json.transfer_url;
 
     if (!paymentUrl) {
-      console.error('❌ Respuesta Khipu sin payment_url:', json);
-      return res.status(502).json({ ok: false, error: 'Khipu no retornó payment_url', detail: JSON.stringify(json).slice(0,2000) });
+      console.error('❌ Respuesta Khipu v3 sin payment_url:', json);
+      return res.status(502).json({
+        ok: false,
+        error: 'Khipu v3 no retornó payment_url',
+        detail: JSON.stringify(json).slice(0, 2000),
+      });
     }
 
-    console.log(`🔗 Khipu payment_url: ${paymentUrl}`);
+    console.log(`🔗 Khipu v3 payment_url: ${paymentUrl}`);
     return res.json({ ok: true, url: paymentUrl });
   } catch (e) {
-    console.error('❌ Excepción creando pago Khipu:', e);
+    console.error('❌ Excepción creando pago Khipu v3:', e);
     return res.status(500).json({ ok: false, error: 'Error interno creando pago' });
   }
 });
