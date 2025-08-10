@@ -16,25 +16,25 @@ app.use(bodyParser.json());
 // --- Memoria temporal para guardar datos antes del pago ---
 const datosTemporales = {};
 
-// Guardar datos temporales
+// Guardar datos temporales (marcamos pagado:false)
 app.post('/guardar-datos', (req, res) => {
   const { idPago, datosPaciente } = req.body;
   if (!idPago || !datosPaciente) {
     return res.status(400).json({ ok: false, error: 'Faltan parámetros' });
   }
-  datosTemporales[idPago] = datosPaciente;
-  console.log(`💾 Datos guardados para idPago ${idPago}:`, datosPaciente);
+  datosTemporales[idPago] = { ...datosPaciente, pagado: false };
+  console.log(`💾 Datos guardados para idPago ${idPago}:`, datosTemporales[idPago]);
   res.json({ ok: true });
 });
 
-// Recuperar datos temporales
+// Recuperar datos temporales (exponemos flag pagado)
 app.get('/obtener-datos/:idPago', (req, res) => {
   const { idPago } = req.params;
   const datos = datosTemporales[idPago];
   if (!datos) {
     return res.status(404).json({ ok: false, error: 'No encontrado' });
   }
-  res.json({ ok: true, datos });
+  res.json({ ok: true, datos, pagado: !!datos.pagado });
 });
 
 // ✅ Crear link de pago Khipu con API Key v3 + modo prueba (guest)
@@ -48,8 +48,8 @@ app.post('/crear-pago-khipu', async (req, res) => {
   // 🧪 MODO GUEST (sin ir a Khipu)
   if (modoGuest === true) {
     if (datosPaciente && typeof datosPaciente === 'object') {
-      datosTemporales[idPago] = datosPaciente;
-      console.log(`💾 [GUEST] Datos guardados para idPago ${idPago}:`, datosPaciente);
+      datosTemporales[idPago] = { ...datosPaciente, pagado: false };
+      console.log(`💾 [GUEST] Datos guardados para idPago ${idPago}:`, datosTemporales[idPago]);
     }
     const returnUrl = `${process.env.FRONTEND_BASE || 'https://asistencia-ica.vercel.app'}?pago=ok&idPago=${encodeURIComponent(idPago)}`;
     console.log(`🧪 [GUEST] Redirección simulada a: ${returnUrl}`);
@@ -59,8 +59,8 @@ app.post('/crear-pago-khipu', async (req, res) => {
   // 🚀 PAGO REAL CON KHIPU v3 (API Key en header x-api-key)
   try {
     if (datosPaciente && typeof datosPaciente === 'object') {
-      datosTemporales[idPago] = datosPaciente;
-      console.log(`💾 [REAL] Datos guardados para idPago ${idPago}:`, datosPaciente);
+      datosTemporales[idPago] = { ...datosPaciente, pagado: false };
+      console.log(`💾 [REAL] Datos guardados para idPago ${idPago}:`, datosTemporales[idPago]);
     }
 
     const apiKey   = process.env.KHIPU_API_KEY; // 👈 API Key v3
@@ -71,13 +71,12 @@ app.post('/crear-pago-khipu', async (req, res) => {
       return res.status(500).json({ ok: false, error: 'Falta KHIPU_API_KEY (v3) en variables de entorno' });
     }
 
-    // v3 usa este host; el ambiente (integración/producción) depende de la key
     const baseUrl = 'https://payment-api.khipu.com';
 
     // 🔒 Monto y metadatos
     const amount     = Number(process.env.KHIPU_AMOUNT || 1000); // CLP
     const subject    = 'Orden de Imagenología';
-    const return_url = `${backend}/retorno-khipu`;          // tu backend redirige al frontend
+    const return_url = `${backend}/retorno-khipu`;          // backend redirige al frontend
     const cancel_url = `${backend}/retorno-khipu-cancelado`;
     const notify_url = `${backend}/webhook-khipu`;
 
@@ -89,7 +88,7 @@ app.post('/crear-pago-khipu', async (req, res) => {
       return_url,
       cancel_url,
       notify_url,
-      // body opcional: description, payer, etc.
+      // description, payer, etc. si lo necesitas
     };
 
     console.log(`➡️  Creando pago Khipu v3 tx=${idPago} amount=${amount}`);
@@ -97,7 +96,7 @@ app.post('/crear-pago-khipu', async (req, res) => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': apiKey, // 👈 autenticación v3
+        'x-api-key': apiKey,
       },
       body: JSON.stringify(body),
     });
@@ -138,11 +137,27 @@ app.post('/crear-pago-khipu', async (req, res) => {
   }
 });
 
-// ✅ Webhook Khipu (básico)
+// ✅ Webhook Khipu: marca pagado=true
 app.post('/webhook-khipu', (req, res) => {
   try {
-    console.log('🔔 Webhook Khipu:', req.body);
-    // TODO: (opcional) Validar firma si la configuras y marcar pago como confirmado.
+    const noti = req.body;
+    console.log('🔔 Webhook Khipu:', JSON.stringify(noti));
+
+    // Intenta extraer transaction_id desde rutas comunes
+    const tx =
+      noti?.transaction_id ||
+      noti?.payment?.transaction_id ||
+      noti?.data?.transaction_id ||
+      noti?.payment_id ||
+      null;
+
+    if (tx && datosTemporales[tx]) {
+      datosTemporales[tx].pagado = true;
+      console.log(`✅ Marcado como pagado idPago=${tx}`);
+    } else {
+      console.warn('⚠️ No se pudo marcar pagado; tx no encontrado en memoria:', tx);
+    }
+
     res.sendStatus(200);
   } catch (e) {
     console.error('❌ Error en webhook-khipu:', e);
@@ -150,7 +165,7 @@ app.post('/webhook-khipu', (req, res) => {
   }
 });
 
-// ✅ Puente de retorno Khipu -> Frontend con parámetros de tu app
+// ✅ Puente de retorno Khipu -> Frontend (sin auto-descarga; muestra botón en el front)
 app.get('/retorno-khipu', (req, res) => {
   const { transaction_id } = req.query; // Khipu reenvía este id si lo enviaste al crear el pago
   const frontend = process.env.FRONTEND_BASE || 'https://asistencia-ica.vercel.app';
@@ -165,7 +180,7 @@ app.get('/retorno-khipu-cancelado', (req, res) => {
   return res.redirect(302, target);
 });
 
-// ✅ Generar PDF por idPago
+// ✅ Generar PDF por idPago (se descarga manualmente desde el botón)
 app.get('/pdf/:idPago', (req, res) => {
   const { idPago } = req.params;
   const datosPaciente = datosTemporales[idPago];
@@ -209,7 +224,7 @@ app.get('/pdf/:idPago', (req, res) => {
   // === FIN LÓGICA CLÍNICA ===
 
   const doc = new PDFDocument({ size: 'A4', margin: 50 });
-  const filename = `orden_${nombre?.replace(/ /g, '_') || 'paciente'}.pdf`;
+  const filename = `orden_${(nombre || 'paciente').replace(/ /g, '_')}.pdf`;
 
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   res.setHeader('Content-Type', 'application/pdf');
