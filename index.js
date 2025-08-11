@@ -246,7 +246,7 @@ app.get('/pdf/:idPago', (req, res) => {
     nota = 'Nota: Se recomienda una evaluación con nuestro especialista en cadera, Dr. Cristóbal Huerta, presentando el informe e imágenes del examen realizado.';
   }
   else if (sintomas.includes('columna')) {
-    examen = 'Resonancia Magnética o Radiografía de Columna lumbar según criterio médico.';
+    examen = 'Resonancia Magnética de Columna Lumbar';
     derivacion = 'Derivar a equipo de columna.';
     nota = 'Nota: Se recomienda una evaluación con nuestro equipo de columna, presentando el informe e imágenes del examen realizado.';
   }
