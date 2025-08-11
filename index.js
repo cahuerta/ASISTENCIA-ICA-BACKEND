@@ -12,14 +12,14 @@ const PORT = process.env.PORT || 3001;
 
 app.use(cors());
 
-// 👇 Acepta JSON y también x-www-form-urlencoded (muchos PSP envían así el webhook)
+// ✅ Acepta JSON y también x-www-form-urlencoded (muchos PSP envían así el webhook)
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: false }));
 
 // --- Memoria temporal para guardar datos antes del pago ---
 const datosTemporales = {};
 
-// Guardar datos temporales (marcamos pagado:false)
+// Guardar datos temporales (marcamos pagado:false por defecto)
 app.post('/guardar-datos', (req, res) => {
   const { idPago, datosPaciente } = req.body;
   if (!idPago || !datosPaciente) {
@@ -48,10 +48,10 @@ app.post('/crear-pago-khipu', async (req, res) => {
     return res.status(400).json({ ok: false, error: 'Falta idPago' });
   }
 
-  // 🧪 MODO GUEST (sin ir a Khipu)
+  // 🧪 MODO GUEST (sin ir a Khipu) — lo marcamos como pagado para poder descargar
   if (modoGuest === true) {
     if (datosPaciente && typeof datosPaciente === 'object') {
-      datosTemporales[idPago] = { ...datosPaciente, pagado: false };
+      datosTemporales[idPago] = { ...datosPaciente, pagado: true }; // 👈 guest = pagado
       console.log(`💾 [GUEST] Datos guardados para idPago ${idPago}:`, datosTemporales[idPago]);
     }
     const returnUrl = `${process.env.FRONTEND_BASE || 'https://asistencia-ica.vercel.app'}?pago=ok&idPago=${encodeURIComponent(idPago)}`;
@@ -68,7 +68,6 @@ app.post('/crear-pago-khipu', async (req, res) => {
 
     const apiKey   = process.env.KHIPU_API_KEY; // 👈 API Key v3
     const backend  = process.env.BACKEND_BASE  || 'https://asistencia-ica-backend.onrender.com';
-    const frontend = process.env.FRONTEND_BASE || 'https://asistencia-ica.vercel.app';
 
     if (!apiKey) {
       return res.status(500).json({ ok: false, error: 'Falta KHIPU_API_KEY (v3) en variables de entorno' });
@@ -207,13 +206,18 @@ app.get('/retorno-khipu-cancelado', (req, res) => {
   return res.redirect(302, target);
 });
 
-// ✅ Generar PDF por idPago (se descarga manualmente desde el botón)
+// ✅ Generar PDF por idPago (bloquea si no se pagó)
 app.get('/pdf/:idPago', (req, res) => {
   const { idPago } = req.params;
   const datosPaciente = datosTemporales[idPago];
 
   if (!datosPaciente) {
     return res.status(404).json({ ok: false, error: 'Datos no encontrados para ese ID de pago' });
+  }
+
+  // ⛔️ Bloquea descarga si NO está pagado
+  if (datosPaciente.pagado !== true) {
+    return res.status(402).json({ ok: false, error: 'Pago no confirmado' }); // 402 Payment Required
   }
 
   // === LÓGICA CLÍNICA: definir EXAMEN y DERIVACIÓN ===
