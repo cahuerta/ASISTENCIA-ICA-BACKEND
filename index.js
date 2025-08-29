@@ -44,7 +44,7 @@ const KHIPU_MODE =
     : "integration";
 
 const KHIPU_API_KEY = process.env.KHIPU_API_KEY || "";
-const KHIPU_API_BASE = "https://khipu.com/api/3.0"; // v3.0 con x-api-key
+const KHIPU_API_BASE = "https://khipu.com/api/2.0"; // ⬅️ v2.0 estable
 const KHIPU_AMOUNT = Number(process.env.KHIPU_AMOUNT || 10000); // CLP
 const KHIPU_SUBJECT = process.env.KHIPU_SUBJECT || "Orden médica ICA";
 const CURRENCY = "CLP";
@@ -217,13 +217,12 @@ async function crearPagoHandler(req, res) {
       notify_url: `${backendBase}/webhook`,
     };
 
-    // Llamado a Khipu (v3.0 con x-api-key)
+    // Llamado a Khipu (v2.0 con Bearer)
     const r = await fetch(`${KHIPU_API_BASE}/payments`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "x-api-key": KHIPU_API_KEY,
-        // NO se envían firmas HMAC para evitar 403 "mensaje no firmado"
+        Authorization: `Bearer ${KHIPU_API_KEY}`,
       },
       body: JSON.stringify(payload),
     });
@@ -398,7 +397,9 @@ app.get("/pdf-generales/:idPago", async (req, res) => {
 // ===== 404 handler explícito (para depurar rutas mal llamadas)
 app.use((req, res) => {
   console.warn("404 no encontrada:", req.method, req.originalUrl);
-  res.status(404).json({ ok: false, error: "Ruta no encontrada", path: req.originalUrl });
+  res
+    .status(404)
+    .json({ ok: false, error: "Ruta no encontrada", path: req.originalUrl });
 });
 
 // ===== Arranque
