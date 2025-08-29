@@ -16,29 +16,23 @@ app.use(bodyParser.json());
 const PORT = process.env.PORT || 3001;
 const RETURN_BASE = process.env.RETURN_BASE || 'https://asistencia-ica.vercel.app';
 
-// ===== Memoria simple (cámbialo a Redis/DB si necesitas persistencia)
+// ===== Memoria simple
 const memoria = new Map();
 const ns = (s, id) => `${s}:${id}`;
 const sanitize = (t) => String(t || '').replace(/[^a-zA-Z0-9_-]+/g, '_');
 
-// ===== Helpers (ACTUALIZADAS)
-// Devuelve un ARREGLO de líneas con los exámenes a solicitar (sin paréntesis del lado)
+// ===== Helpers (lógica imagenología coherente con preview)
 function sugerirExamenImagenologia(dolor = '', lado = '', edad = null) {
   const d = String(dolor || '').toLowerCase();
   const L = String(lado || '').trim();
-  const ladoTxt = L ? ` ${L.toUpperCase()}` : ''; // ← SIN paréntesis
+  const ladoTxt = L ? ` ${L.toUpperCase()}` : '';
   const edadNum = Number(edad);
   const mayor60 = Number.isFinite(edadNum) ? edadNum > 60 : false;
 
-  // Columna: resonancia (sin lado)
-  if (d.includes('columna')) {
-    return ['RESONANCIA DE COLUMNA LUMBAR.'];
-  }
+  if (d.includes('columna')) return ['RESONANCIA DE COLUMNA LUMBAR.'];
 
-  // Rodilla
   if (d.includes('rodilla')) {
     if (mayor60) {
-      // TELERADIOGRAFIA en línea separada
       return [
         `RX DE RODILLA${ladoTxt} — AP, LATERAL, AXIAL PATELA.`,
         'TELERADIOGRAFIA DE EEII.',
@@ -51,37 +45,27 @@ function sugerirExamenImagenologia(dolor = '', lado = '', edad = null) {
     }
   }
 
-  // Cadera
   if (d.includes('cadera')) {
-    if (mayor60) {
-      // Mantener en una sola línea como pediste
-      return ['RX DE PELVIS AP, Y LOWESTAIN.'];
-    } else {
-      return [`RESONANCIA MAGNETICA DE CADERA${ladoTxt}.`];
-    }
+    if (mayor60) return ['RX DE PELVIS AP, Y LOWESTAIN.'];
+    return [`RESONANCIA MAGNETICA DE CADERA${ladoTxt}.`];
   }
 
-  // Fallback explícito
   return ['Evaluación imagenológica según clínica.'];
 }
 
 function notaAsistencia(dolor = '') {
   const d = String(dolor || '').toLowerCase();
   const base = 'Presentarse con esta orden. Ayuno NO requerido salvo indicación.';
-  if (d.includes('rodilla')) {
-    return `${base}\nConsultar con nuestro especialista en rodilla Dr Jaime Espinoza.`;
-  }
-  if (d.includes('cadera')) {
-    return `${base}\nConsultar con nuestro especialista en cadera Dr Cristóbal Huerta.`;
-  }
+  if (d.includes('rodilla')) return `${base}\nConsultar con nuestro especialista en rodilla Dr Jaime Espinoza.`;
+  if (d.includes('cadera')) return `${base}\nConsultar con nuestro especialista en cadera Dr Cristóbal Huerta.`;
   return base;
 }
 
-// ===== Cargas dinámicas (ESM) de generadores PDF
+// ===== Cargas dinámicas de generadores PDF
 let _genTrauma = null;
 async function loadOrdenImagenologia() {
   if (_genTrauma) return _genTrauma;
-  const m = await import('./ordenImagenologia.js'); // ESM
+  const m = await import('./ordenImagenologia.js');
   _genTrauma = m.generarOrdenImagenologia;
   return _genTrauma;
 }
@@ -89,21 +73,20 @@ async function loadOrdenImagenologia() {
 let _genPreopLab = null, _genPreopOdonto = null;
 async function loadPreop() {
   if (!_genPreopLab) {
-    const mLab = await import('./preopOrdenLab.js');     // ESM
+    const mLab = await import('./preopOrdenLab.js');
     _genPreopLab = mLab.generarOrdenPreopLab;
   }
   if (!_genPreopOdonto) {
-    const mOd = await import('./preopOdonto.js');        // ESM
+    const mOd = await import('./preopOdonto.js');
     _genPreopOdonto = mOd.generarPreopOdonto;
   }
   return { _genPreopLab, _genPreopOdonto };
 }
 
-// Generales
 let _genGenerales = null;
 async function loadGenerales() {
   if (_genGenerales) return _genGenerales;
-  const m = await import('./generalesOrden.js'); // ESM
+  const m = await import('./generalesOrden.js');
   _genGenerales = m.generarOrdenGenerales;
   return _genGenerales;
 }
@@ -111,7 +94,7 @@ async function loadGenerales() {
 // ===== Salud
 app.get('/health', (_req, res) => res.json({ ok: true }));
 
-// ===== Endpoint para PREVIEW (usa la MISMA lógica que el PDF)
+// ===== Preview coherente con PDF
 app.get('/sugerir-imagenologia', (req, res) => {
   const { dolor = '', lado = '', edad = '' } = req.query || {};
   try {
@@ -119,30 +102,16 @@ app.get('/sugerir-imagenologia', (req, res) => {
     const nota = notaAsistencia(dolor);
     res.json({ ok: true, examLines: lines, examen: lines.join('\n'), nota });
   } catch (e) {
-    console.error('sugerir-imagenologia error:', e);
     res.status(500).json({ ok: false, error: 'No se pudo sugerir el examen' });
   }
 });
 
-/* === Helper mínimo para crear pago Khipu con ENV (backend) ===
-   No altera tu frontend. El botón "Pagar ahora" seguirá llamando
-   a /crear-pago-khipu, que ahora devuelve la URL real de Khipu.
-   ENV requeridas en Render:
-     - KHIPU_RECEIVER_ID
-     - KHIPU_SECRET
-   Opcionales:
-     - KHIPU_ENDPOINT         (default: https://khipu.com/api/2.0)
-     - KHIPU_NOTIFY_URL
-     - KHIPU_AMOUNT_TRAUMA / KHIPU_AMOUNT_PREOP / KHIPU_AMOUNT_GENERALES
-     - KHIPU_AMOUNT_DEFAULT   (fallback si no defines los anteriores)
-*/
-async function crearCobroKhipuReal({ idPago, modulo = 'trauma', datosPaciente }) {
+/* === Helper para crear pago Khipu con ENV (backend) === */
+async function crearCobroKhipuReal({ idPago, modulo = 'trauma' }) {
   const endpoint = (process.env.KHIPU_ENDPOINT || 'https://khipu.com/api/2.0').replace(/\/+$/, '');
   const receiverId = process.env.KHIPU_RECEIVER_ID;
   const secret = process.env.KHIPU_SECRET;
-  if (!receiverId || !secret) {
-    throw new Error('Faltan KHIPU_RECEIVER_ID o KHIPU_SECRET en ENV');
-  }
+  if (!receiverId || !secret) throw new Error('Faltan KHIPU_RECEIVER_ID o KHIPU_SECRET en ENV');
 
   const amounts = {
     trauma: Number(process.env.KHIPU_AMOUNT_TRAUMA || 0),
@@ -164,58 +133,49 @@ async function crearCobroKhipuReal({ idPago, modulo = 'trauma', datosPaciente })
 
   const auth = Buffer.from(`${receiverId}:${secret}`).toString('base64');
 
-  const body = {
-    subject,
-    amount,
-    currency: 'CLP',
-    transaction_id: idPago,
-    custom: modulo,
-    return_url,
-    cancel_url,
-    ...(notify_url ? { notify_url } : {}),
-  };
-
   const r = await fetch(`${endpoint}/payments`, {
     method: 'POST',
     headers: {
       'Authorization': `Basic ${auth}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify(body),
+    body: JSON.stringify({
+      subject,
+      amount,
+      currency: 'CLP',
+      transaction_id: idPago,
+      custom: modulo,
+      return_url,
+      cancel_url,
+      ...(notify_url ? { notify_url } : {}),
+    }),
   });
 
-  if (!r.ok) {
-    const txt = await r.text().catch(() => '');
-    throw new Error(`Khipu HTTP ${r.status} ${txt || ''}`);
-  }
+  if (!r.ok) throw new Error(`Khipu HTTP ${r.status} ${await r.text().catch(() => '')}`);
   const data = await r.json();
-  const url = data.payment_url || data.app_url || data.paymentURL || null;
-  if (!url) throw new Error('Khipu no devolvió payment_url');
-  return url;
+  return data.payment_url || data.app_url || data.paymentURL || null;
 }
 
 // =====================================================
 // ===============   TRAUMA (IMAGENOLOGÍA)  ============
 // =====================================================
 
-// Guarda datos de TRAUMA
 app.post('/guardar-datos', (req, res) => {
   const { idPago, datosPaciente } = req.body || {};
   if (!idPago || !datosPaciente) return res.status(400).json({ ok: false, error: 'Faltan idPago o datosPaciente' });
-  memoria.set(ns('trauma', idPago), { ...datosPaciente, pagoConfirmado: true }); // pon false si validarás pago real
+  memoria.set(ns('trauma', idPago), { ...datosPaciente, pagoConfirmado: true });
   res.json({ ok: true });
 });
 
-// Obtener datos de TRAUMA
 app.get('/obtener-datos/:idPago', (req, res) => {
   const d = memoria.get(ns('trauma', req.params.idPago));
   if (!d) return res.status(404).json({ ok: false });
   res.json({ ok: true, datos: d });
 });
 
-// Crear pago (guest opcional; real: URL Khipu)
+// ⬇️ Esta ruta devuelve SIEMPRE la URL REAL de Khipu (sin modo invitado)
 app.post('/crear-pago-khipu', async (req, res) => {
-  const { idPago, modoGuest, datosPaciente, modulo } = req.body || {};
+  const { idPago, datosPaciente, modulo } = req.body || {};
   if (!idPago) return res.status(400).json({ ok: false, error: 'Falta idPago' });
 
   const space =
@@ -223,27 +183,15 @@ app.post('/crear-pago-khipu', async (req, res) => {
     (modulo === 'generales' || String(idPago).startsWith('generales_')) ? 'generales' :
     'trauma';
 
-  // Guarda/actualiza sin alterar tu bandera
+  // Guarda/actualiza (sin tocar pagoConfirmado)
   if (datosPaciente) {
     const prev = memoria.get(ns(space, idPago)) || {};
     memoria.set(ns(space, idPago), { ...prev, ...datosPaciente, pagoConfirmado: prev.pagoConfirmado ?? false });
   }
 
-  // === MODO INVITADO (igual que antes)
-  if (modoGuest === true) {
-    const d = memoria.get(ns(space, idPago)) || {};
-    memoria.set(ns(space, idPago), { ...d, pagoConfirmado: true });
-
-    const url = new URL(RETURN_BASE);
-    url.searchParams.set('pago', 'ok');
-    url.searchParams.set('idPago', idPago);
-    url.searchParams.set('guest', '1');
-    return res.json({ ok: true, url: url.toString() });
-  }
-
-  // === MODO REAL: generar URL de Khipu usando tus ENV
   try {
-    const urlKhipu = await crearCobroKhipuReal({ idPago, modulo: space, datosPaciente });
+    const urlKhipu = await crearCobroKhipuReal({ idPago, modulo: space });
+    if (!urlKhipu) return res.status(500).json({ ok: false, error: 'Khipu no devolvió URL' });
     return res.json({ ok: true, url: urlKhipu });
   } catch (e) {
     console.error('Error creando cobro Khipu:', e);
@@ -256,11 +204,9 @@ app.get('/pdf/:idPago', async (req, res) => {
   try {
     const d = memoria.get(ns('trauma', req.params.idPago));
     if (!d) return res.sendStatus(404);
-    // if (!d.pagoConfirmado) return res.sendStatus(402);
 
     const generar = await loadOrdenImagenologia();
 
-    // Usa la lógica de líneas y las une con saltos para el PDF
     const lines = sugerirExamenImagenologia(d.dolor, d.lado, d.edad);
     const examen = (d.examen && typeof d.examen === 'string')
       ? d.examen
@@ -285,10 +231,9 @@ app.get('/pdf/:idPago', async (req, res) => {
 });
 
 // =====================================================
-// ===============   PREOP (PDF 2 PÁGINAS)  ============
+// ===============   PREOP (2 páginas)  ================
 // =====================================================
 
-// Guarda datos PREOP
 app.post('/guardar-datos-preop', (req, res) => {
   const { idPago, datosPaciente } = req.body || {};
   if (!idPago || !datosPaciente) return res.status(400).json({ ok: false, error: 'Faltan idPago o datosPaciente' });
@@ -296,19 +241,16 @@ app.post('/guardar-datos-preop', (req, res) => {
   res.json({ ok: true });
 });
 
-// Obtener datos PREOP
 app.get('/obtener-datos-preop/:idPago', (req, res) => {
   const d = memoria.get(ns('preop', req.params.idPago));
   if (!d) return res.status(404).json({ ok: false });
   res.json({ ok: true, datos: d });
 });
 
-// Descargar PREOP (1 PDF con 2 páginas: LAB/ECG + Odonto)
 app.get('/pdf-preop/:idPago', async (req, res) => {
   try {
     const d = memoria.get(ns('preop', req.params.idPago));
     if (!d) return res.sendStatus(404);
-    // if (!d.pagoConfirmado) return res.sendStatus(402);
 
     const { _genPreopLab, _genPreopOdonto } = await loadPreop();
 
@@ -331,10 +273,9 @@ app.get('/pdf-preop/:idPago', async (req, res) => {
 });
 
 // =====================================================
-// ============   GENERALES (1 PDF)  ===================
+// ============   GENERALES (1 página)  =================
 // =====================================================
 
-// Guarda datos GENERALES
 app.post('/guardar-datos-generales', (req, res) => {
   const { idPago, datosPaciente } = req.body || {};
   if (!idPago || !datosPaciente) return res.status(400).json({ ok: false, error: 'Faltan idPago o datosPaciente' });
@@ -342,19 +283,16 @@ app.post('/guardar-datos-generales', (req, res) => {
   res.json({ ok: true });
 });
 
-// Obtener datos GENERALES (para warm-up)
 app.get('/obtener-datos-generales/:idPago', (req, res) => {
   const d = memoria.get(ns('generales', req.params.idPago));
   if (!d) return res.status(404).json({ ok: false });
   res.json({ ok: true, datos: d });
 });
 
-// Descargar PDF GENERALES (lista depende de género)
 app.get('/pdf-generales/:idPago', async (req, res) => {
   try {
     const d = memoria.get(ns('generales', req.params.idPago));
     if (!d) return res.sendStatus(404);
-    // if (!d.pagoConfirmado) return res.sendStatus(402);
 
     const generar = await loadGenerales();
 
