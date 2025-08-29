@@ -16,10 +16,6 @@ app.use(bodyParser.json());
 const PORT = process.env.PORT || 3001;
 const RETURN_BASE = process.env.RETURN_BASE || 'https://asistencia-ica.vercel.app';
 
-// ✅ Opcional: URL directa a Khipu si ya la tienes configurada por entorno.
-//    Puedes incluir "{idPago}" y se reemplaza por el id recibido.
-const KHIPU_REDIRECT_URL = process.env.KHIPU_REDIRECT_URL || '';
-
 // ===== Memoria simple (cámbialo a Redis/DB si necesitas persistencia)
 const memoria = new Map();
 const ns = (s, id) => `${s}:${id}`;
@@ -58,6 +54,7 @@ function sugerirExamenImagenologia(dolor = '', lado = '', edad = null) {
   // Cadera
   if (d.includes('cadera')) {
     if (mayor60) {
+      // Mantener en una sola línea como pediste
       return ['RX DE PELVIS AP, Y LOWESTAIN.'];
     } else {
       return [`RESONANCIA MAGNETICA DE CADERA${ladoTxt}.`];
@@ -127,6 +124,76 @@ app.get('/sugerir-imagenologia', (req, res) => {
   }
 });
 
+/* === Helper mínimo para crear pago Khipu con ENV (backend) ===
+   No altera tu frontend. El botón "Pagar ahora" seguirá llamando
+   a /crear-pago-khipu, que ahora devuelve la URL real de Khipu.
+   ENV requeridas en Render:
+     - KHIPU_RECEIVER_ID
+     - KHIPU_SECRET
+   Opcionales:
+     - KHIPU_ENDPOINT         (default: https://khipu.com/api/2.0)
+     - KHIPU_NOTIFY_URL
+     - KHIPU_AMOUNT_TRAUMA / KHIPU_AMOUNT_PREOP / KHIPU_AMOUNT_GENERALES
+     - KHIPU_AMOUNT_DEFAULT   (fallback si no defines los anteriores)
+*/
+async function crearCobroKhipuReal({ idPago, modulo = 'trauma', datosPaciente }) {
+  const endpoint = (process.env.KHIPU_ENDPOINT || 'https://khipu.com/api/2.0').replace(/\/+$/, '');
+  const receiverId = process.env.KHIPU_RECEIVER_ID;
+  const secret = process.env.KHIPU_SECRET;
+  if (!receiverId || !secret) {
+    throw new Error('Faltan KHIPU_RECEIVER_ID o KHIPU_SECRET en ENV');
+  }
+
+  const amounts = {
+    trauma: Number(process.env.KHIPU_AMOUNT_TRAUMA || 0),
+    preop: Number(process.env.KHIPU_AMOUNT_PREOP || 0),
+    generales: Number(process.env.KHIPU_AMOUNT_GENERALES || 0),
+  };
+  const amount = amounts[modulo] > 0 ? amounts[modulo] : Number(process.env.KHIPU_AMOUNT_DEFAULT || 1) || 1;
+
+  const subjects = {
+    trauma: 'Pago Orden Médica Imagenológica',
+    preop: 'Pago Exámenes Preoperatorios',
+    generales: 'Pago Exámenes Generales',
+  };
+  const subject = subjects[modulo] || 'Pago Servicios Médicos';
+
+  const return_url = `${RETURN_BASE}?pago=ok&idPago=${encodeURIComponent(idPago)}`;
+  const cancel_url = `${RETURN_BASE}?pago=cancelado&idPago=${encodeURIComponent(idPago)}`;
+  const notify_url = process.env.KHIPU_NOTIFY_URL || undefined;
+
+  const auth = Buffer.from(`${receiverId}:${secret}`).toString('base64');
+
+  const body = {
+    subject,
+    amount,
+    currency: 'CLP',
+    transaction_id: idPago,
+    custom: modulo,
+    return_url,
+    cancel_url,
+    ...(notify_url ? { notify_url } : {}),
+  };
+
+  const r = await fetch(`${endpoint}/payments`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Basic ${auth}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!r.ok) {
+    const txt = await r.text().catch(() => '');
+    throw new Error(`Khipu HTTP ${r.status} ${txt || ''}`);
+  }
+  const data = await r.json();
+  const url = data.payment_url || data.app_url || data.paymentURL || null;
+  if (!url) throw new Error('Khipu no devolvió payment_url');
+  return url;
+}
+
 // =====================================================
 // ===============   TRAUMA (IMAGENOLOGÍA)  ============
 // =====================================================
@@ -135,7 +202,7 @@ app.get('/sugerir-imagenologia', (req, res) => {
 app.post('/guardar-datos', (req, res) => {
   const { idPago, datosPaciente } = req.body || {};
   if (!idPago || !datosPaciente) return res.status(400).json({ ok: false, error: 'Faltan idPago o datosPaciente' });
-  memoria.set(ns('trauma', idPago), { ...datosPaciente, pagoConfirmado: true }); // (se mantiene tal cual)
+  memoria.set(ns('trauma', idPago), { ...datosPaciente, pagoConfirmado: true }); // pon false si validarás pago real
   res.json({ ok: true });
 });
 
@@ -146,7 +213,7 @@ app.get('/obtener-datos/:idPago', (req, res) => {
   res.json({ ok: true, datos: d });
 });
 
-// Crear pago (guest opcional; real: redirige a Khipu)
+// Crear pago (guest opcional; real: URL Khipu)
 app.post('/crear-pago-khipu', async (req, res) => {
   const { idPago, modoGuest, datosPaciente, modulo } = req.body || {};
   if (!idPago) return res.status(400).json({ ok: false, error: 'Falta idPago' });
@@ -156,7 +223,7 @@ app.post('/crear-pago-khipu', async (req, res) => {
     (modulo === 'generales' || String(idPago).startsWith('generales_')) ? 'generales' :
     'trauma';
 
-  // Guarda/actualiza (se mantiene NO intrusivo con tu lógica)
+  // Guarda/actualiza sin alterar tu bandera
   if (datosPaciente) {
     const prev = memoria.get(ns(space, idPago)) || {};
     memoria.set(ns(space, idPago), { ...prev, ...datosPaciente, pagoConfirmado: prev.pagoConfirmado ?? false });
@@ -174,23 +241,10 @@ app.post('/crear-pago-khipu', async (req, res) => {
     return res.json({ ok: true, url: url.toString() });
   }
 
-  // === MODO REAL: devolver URL de Khipu (sin tocar tu frontend)
+  // === MODO REAL: generar URL de Khipu usando tus ENV
   try {
-    // Opción A (rápida): desde variable de entorno (puede contener {idPago})
-    if (KHIPU_REDIRECT_URL) {
-      const realUrl = KHIPU_REDIRECT_URL.replace('{idPago}', encodeURIComponent(idPago));
-      return res.json({ ok: true, url: realUrl });
-    }
-
-    // Opción B (tu implementación real en backend):
-    // Descomenta si tienes ./khipuReal.js con export crearCobroKhipuReal
-    // const { crearCobroKhipuReal } = await import('./khipuReal.js');
-    // const urlKhipu = await crearCobroKhipuReal({ idPago, datosPaciente, modulo });
-    // if (!urlKhipu) return res.status(500).json({ ok: false, error: 'Khipu no devolvió URL' });
-    // return res.json({ ok: true, url: urlKhipu });
-
-    // Si no hay A ni B, devuelve error controlado
-    return res.status(501).json({ ok: false, error: 'Integración Khipu real no configurada.' });
+    const urlKhipu = await crearCobroKhipuReal({ idPago, modulo: space, datosPaciente });
+    return res.json({ ok: true, url: urlKhipu });
   } catch (e) {
     console.error('Error creando cobro Khipu:', e);
     return res.status(500).json({ ok: false, error: 'Error creando cobro Khipu' });
