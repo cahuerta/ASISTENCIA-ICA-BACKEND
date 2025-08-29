@@ -14,28 +14,58 @@ app.use(cors());
 app.use(bodyParser.json());
 
 const PORT = process.env.PORT || 3001;
-const RETURN_BASE = process.env.RETURN_BASE || 'https://asistencia-ica.vercel.app';
+
+// === Khipu (lee TUS 4 variables en Render)
+const FRONTEND_BASE =
+  process.env.FRONTEND_BASE ||
+  process.env.frontend_base || // por si estuviera en minúsculas
+  process.env.fronted_base ||  // typo histórico
+  'https://asistencia-ica.vercel.app';
+
+const KHIPU_ENV = (process.env.KHIPU_ENV || process.env.khipu_env || 'production').toLowerCase();
+const KHIPU_ENDPOINT = (KHIPU_ENV === 'sandbox'
+  ? 'https://khipu.com/apiSandbox/2.0'
+  : 'https://khipu.com/api/2.0').replace(/\/+$/, '');
+
+const KHIPU_API_KEY = process.env.KHIPU_API_KEY || process.env.khipu_api_key || '';
+
+const AMOUNTS = {
+  trauma: Number(process.env.KHIPU_AMOUNT_TRAUMA || 0),
+  preop: Number(process.env.KHIPU_AMOUNT_PREOP || 0),
+  generales: Number(process.env.KHIPU_AMOUNT_GENERALES || 0),
+};
+const DEFAULT_AMOUNT = Number(process.env.KHIPU_AMOUNT_DEFAULT || 1) || 1;
+
+function khipuAuthHeaders() {
+  const h = { 'Content-Type': 'application/json' };
+  if (!KHIPU_API_KEY) return h;
+  if (KHIPU_API_KEY.includes(':')) {
+    // Formato "receiver_id:secret" -> Basic
+    h.Authorization = 'Basic ' + Buffer.from(KHIPU_API_KEY).toString('base64');
+  } else {
+    // Token único -> Bearer
+    h.Authorization = 'Bearer ' + KHIPU_API_KEY;
+  }
+  return h;
+}
 
 // ===== Memoria simple (cámbialo a Redis/DB si necesitas persistencia)
 const memoria = new Map();
 const ns = (s, id) => `${s}:${id}`;
 const sanitize = (t) => String(t || '').replace(/[^a-zA-Z0-9_-]+/g, '_');
 
-// ===== Helpers (misma lógica que preview/pdf)
-// Devuelve un ARREGLO de líneas (sin paréntesis para el lado)
+// ===== Helpers (misma lógica para PREVIEW y PDF)
 function sugerirExamenImagenologia(dolor = '', lado = '', edad = null) {
   const d = String(dolor || '').toLowerCase();
   const L = String(lado || '').trim();
-  const ladoTxt = L ? ` ${L.toUpperCase()}` : '';
+  const ladoTxt = L ? ` ${L.toUpperCase()}` : ''; // SIN paréntesis
   const edadNum = Number(edad);
   const mayor60 = Number.isFinite(edadNum) ? edadNum > 60 : false;
 
-  // Columna
   if (d.includes('columna')) {
     return ['RESONANCIA DE COLUMNA LUMBAR.'];
   }
 
-  // Rodilla
   if (d.includes('rodilla')) {
     if (mayor60) {
       return [
@@ -50,7 +80,6 @@ function sugerirExamenImagenologia(dolor = '', lado = '', edad = null) {
     }
   }
 
-  // Cadera
   if (d.includes('cadera')) {
     if (mayor60) {
       return ['RX DE PELVIS AP, Y LOWESTAIN.'];
@@ -86,21 +115,20 @@ async function loadOrdenImagenologia() {
 let _genPreopLab = null, _genPreopOdonto = null;
 async function loadPreop() {
   if (!_genPreopLab) {
-    const mLab = await import('./preopOrdenLab.js');     // ESM
+    const mLab = await import('./preopOrdenLab.js');
     _genPreopLab = mLab.generarOrdenPreopLab;
   }
   if (!_genPreopOdonto) {
-    const mOd = await import('./preopOdonto.js');        // ESM
+    const mOd = await import('./preopOdonto.js');
     _genPreopOdonto = mOd.generarPreopOdonto;
   }
   return { _genPreopLab, _genPreopOdonto };
 }
 
-// Generales
 let _genGenerales = null;
 async function loadGenerales() {
   if (_genGenerales) return _genGenerales;
-  const m = await import('./generalesOrden.js'); // ESM
+  const m = await import('./generalesOrden.js');
   _genGenerales = m.generarOrdenGenerales;
   return _genGenerales;
 }
@@ -108,7 +136,7 @@ async function loadGenerales() {
 // ===== Salud
 app.get('/health', (_req, res) => res.json({ ok: true }));
 
-// ===== Endpoint para PREVIEW (usa la MISMA lógica que el PDF)
+// ===== Preview (misma lógica que PDF)
 app.get('/sugerir-imagenologia', (req, res) => {
   const { dolor = '', lado = '', edad = '' } = req.query || {};
   try {
@@ -125,11 +153,11 @@ app.get('/sugerir-imagenologia', (req, res) => {
 // ===============   TRAUMA (IMAGENOLOGÍA)  ============
 // =====================================================
 
-// Guarda datos de TRAUMA (previo al pago)
+// Guarda datos de TRAUMA
 app.post('/guardar-datos', (req, res) => {
   const { idPago, datosPaciente } = req.body || {};
   if (!idPago || !datosPaciente) return res.status(400).json({ ok: false, error: 'Faltan idPago o datosPaciente' });
-  memoria.set(ns('trauma', idPago), { ...datosPaciente, pagoConfirmado: true }); // se deja true como antes
+  memoria.set(ns('trauma', idPago), { ...datosPaciente, pagoConfirmado: true }); // (ajusta a false si validas notificación)
   res.json({ ok: true });
 });
 
@@ -140,33 +168,74 @@ app.get('/obtener-datos/:idPago', (req, res) => {
   res.json({ ok: true, datos: d });
 });
 
-// Fallback invitado (guest) para compatibilidad con botones antiguos
-app.post('/crear-pago-khipu', (req, res) => {
-  const { idPago, modoGuest, datosPaciente, modulo } = req.body || {};
-  if (!idPago) return res.status(400).json({ ok: false, error: 'Falta idPago' });
+// Crear pago Khipu (REAL desde backend) + guest opcional
+app.post('/crear-pago-khipu', async (req, res) => {
+  try {
+    const { idPago, modoGuest, datosPaciente, modulo } = req.body || {};
+    if (!idPago) return res.status(400).json({ ok: false, error: 'Falta idPago' });
 
-  const space =
-    (modulo === 'preop' || String(idPago).startsWith('preop_')) ? 'preop' :
-    (modulo === 'generales' || String(idPago).startsWith('generales_')) ? 'generales' :
-    'trauma';
+    const space =
+      (modulo === 'preop' || String(idPago).startsWith('preop_')) ? 'preop' :
+      (modulo === 'generales' || String(idPago).startsWith('generales_')) ? 'generales' :
+      'trauma';
 
-  if (datosPaciente) {
-    const prev = memoria.get(ns(space, idPago)) || {};
-    memoria.set(ns(space, idPago), { ...prev, ...datosPaciente, pagoConfirmado: prev.pagoConfirmado ?? false });
+    if (datosPaciente) {
+      const prev = memoria.get(ns(space, idPago)) || {};
+      memoria.set(ns(space, idPago), { ...prev, ...datosPaciente, pagoConfirmado: prev.pagoConfirmado ?? false });
+    }
+
+    // Modo invitado (simula OK)
+    if (modoGuest === true) {
+      const url = new URL(FRONTEND_BASE);
+      url.searchParams.set('pago', 'ok');
+      url.searchParams.set('idPago', idPago);
+      url.searchParams.set('guest', '1');
+      return res.json({ ok: true, url: url.toString() });
+    }
+
+    // Pago real
+    if (!KHIPU_API_KEY) {
+      return res.status(500).json({ ok: false, error: 'Falta KHIPU_API_KEY en backend' });
+    }
+
+    const subject =
+      space === 'preop' ? 'Pago Exámenes Preoperatorios' :
+      space === 'generales' ? 'Pago Exámenes Generales' :
+      'Pago Orden Médica Imagenológica';
+
+    const amount = AMOUNTS[space] > 0 ? AMOUNTS[space] : DEFAULT_AMOUNT;
+
+    const return_url = `${FRONTEND_BASE}?pago=ok&idPago=${encodeURIComponent(idPago)}`;
+    const cancel_url = `${FRONTEND_BASE}?pago=cancelado&idPago=${encodeURIComponent(idPago)}`;
+
+    const r = await fetch(`${KHIPU_ENDPOINT}/payments`, {
+      method: 'POST',
+      headers: khipuAuthHeaders(),
+      body: JSON.stringify({
+        subject,
+        amount,
+        currency: 'CLP',
+        transaction_id: idPago,
+        custom: space,
+        return_url,
+        cancel_url,
+      }),
+    });
+
+    if (!r.ok) {
+      const txt = await r.text().catch(() => '');
+      return res.status(502).json({ ok: false, error: `Khipu HTTP ${r.status}`, detail: txt });
+    }
+
+    const data = await r.json().catch(() => ({}));
+    const url = data.payment_url || data.app_url || data.paymentURL || null;
+    if (!url) return res.status(502).json({ ok: false, error: 'Khipu no devolvió payment_url' });
+
+    res.json({ ok: true, url });
+  } catch (e) {
+    console.error('crear-pago-khipu error:', e);
+    res.status(500).json({ ok: false, error: e.message });
   }
-
-  // Solo guest aquí; el pago REAL ahora se hace desde el frontend directo a Khipu
-  if (modoGuest === true) {
-    const d = memoria.get(ns(space, idPago)) || {};
-    memoria.set(ns(space, idPago), { ...d, pagoConfirmado: true });
-    const url = new URL(RETURN_BASE);
-    url.searchParams.set('pago', 'ok');
-    url.searchParams.set('idPago', idPago);
-    url.searchParams.set('guest', '1');
-    return res.json({ ok: true, url: url.toString() });
-  }
-
-  return res.status(400).json({ ok: false, error: 'Pago real: usar Khipu directo desde el frontend' });
 });
 
 // Descargar PDF TRAUMA
@@ -178,7 +247,6 @@ app.get('/pdf/:idPago', async (req, res) => {
 
     const generar = await loadOrdenImagenologia();
 
-    // Arma texto examen desde lógica de líneas
     const lines = sugerirExamenImagenologia(d.dolor, d.lado, d.edad);
     const examen = (d.examen && typeof d.examen === 'string')
       ? d.examen
@@ -205,7 +273,6 @@ app.get('/pdf/:idPago', async (req, res) => {
 // ===============   PREOP (PDF 2 PÁGINAS)  ============
 // =====================================================
 
-// Guarda datos PREOP
 app.post('/guardar-datos-preop', (req, res) => {
   const { idPago, datosPaciente } = req.body || {};
   if (!idPago || !datosPaciente) return res.status(400).json({ ok: false, error: 'Faltan idPago o datosPaciente' });
@@ -213,14 +280,13 @@ app.post('/guardar-datos-preop', (req, res) => {
   res.json({ ok: true });
 });
 
-// Obtener datos PREOP
 app.get('/obtener-datos-preop/:idPago', (req, res) => {
   const d = memoria.get(ns('preop', req.params.idPago));
   if (!d) return res.status(404).json({ ok: false });
   res.json({ ok: true, datos: d });
 });
 
-// Descargar PREOP (1 PDF con 2 páginas: LAB/ECG + Odonto)
+// 1 PDF con 2 páginas (Lab/ECG + Odonto)
 app.get('/pdf-preop/:idPago', async (req, res) => {
   try {
     const d = memoria.get(ns('preop', req.params.idPago));
@@ -251,7 +317,6 @@ app.get('/pdf-preop/:idPago', async (req, res) => {
 // ============   GENERALES (1 PDF)  ===================
 // =====================================================
 
-// Guarda datos GENERALES
 app.post('/guardar-datos-generales', (req, res) => {
   const { idPago, datosPaciente } = req.body || {};
   if (!idPago || !datosPaciente) return res.status(400).json({ ok: false, error: 'Faltan idPago o datosPaciente' });
@@ -259,14 +324,12 @@ app.post('/guardar-datos-generales', (req, res) => {
   res.json({ ok: true });
 });
 
-// Obtener datos GENERALES (para warm-up)
 app.get('/obtener-datos-generales/:idPago', (req, res) => {
   const d = memoria.get(ns('generales', req.params.idPago));
   if (!d) return res.status(404).json({ ok: false });
   res.json({ ok: true, datos: d });
 });
 
-// Descargar PDF GENERALES (lista depende de género)
 app.get('/pdf-generales/:idPago', async (req, res) => {
   try {
     const d = memoria.get(ns('generales', req.params.idPago));
