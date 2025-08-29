@@ -21,39 +21,48 @@ const memoria = new Map();
 const ns = (s, id) => `${s}:${id}`;
 const sanitize = (t) => String(t || '').replace(/[^a-zA-Z0-9_-]+/g, '_');
 
-// ===== Helpers (ACTUALIZADOS)
+// ===== Helpers (ACTUALIZADAS)
+// Devuelve un ARREGLO de líneas con los exámenes a solicitar (sin paréntesis del lado)
 function sugerirExamenImagenologia(dolor = '', lado = '', edad = null) {
   const d = String(dolor || '').toLowerCase();
   const L = String(lado || '').trim();
-  const ladoTxt = L ? ` (${L.toUpperCase()})` : '';
+  const ladoTxt = L ? ` ${L.toUpperCase()}` : ''; // ← SIN paréntesis
   const edadNum = Number(edad);
   const mayor60 = Number.isFinite(edadNum) ? edadNum > 60 : false;
 
-  // Columna: resonancia (sin lado) a cualquier edad (según acuerdo)
+  // Columna: resonancia (sin lado)
   if (d.includes('columna')) {
-    return 'RESONANCIA DE COLUMNA LUMBAR.';
+    return ['RESONANCIA DE COLUMNA LUMBAR.'];
   }
 
   // Rodilla
   if (d.includes('rodilla')) {
     if (mayor60) {
-      return `RX DE RODILLA${ladoTxt} — AP, LATERAL, AXIAL PATELA; TELERADIOGRAFIA DE EEII.`;
+      // TELERADIOGRAFIA en línea separada
+      return [
+        `RX DE RODILLA${ladoTxt} — AP, LATERAL, AXIAL PATELA.`,
+        'TELERADIOGRAFIA DE EEII.',
+      ];
     } else {
-      return `RESONANCIA MAGNETICA DE RODILLA${ladoTxt} Y TELERADIOGRAFIA DE EEII.`;
+      return [
+        `RESONANCIA MAGNETICA DE RODILLA${ladoTxt}.`,
+        'TELERADIOGRAFIA DE EEII.',
+      ];
     }
   }
 
   // Cadera
   if (d.includes('cadera')) {
     if (mayor60) {
-      return 'RX DE PELVIS AP, Y LOWESTAIN.';
+      // Mantengo en una sola línea (pedido específico fue separar Teleradiografía)
+      return ['RX DE PELVIS AP, Y LOWESTAIN.'];
     } else {
-      return `RESONANCIA MAGNETICA DE CADERA${ladoTxt}.`;
+      return [`RESONANCIA MAGNETICA DE CADERA${ladoTxt}.`];
     }
   }
 
   // Fallback explícito
-  return 'Evaluación imagenológica según clínica.';
+  return ['Evaluación imagenológica según clínica.'];
 }
 
 function notaAsistencia(dolor = '') {
@@ -90,7 +99,7 @@ async function loadPreop() {
   return { _genPreopLab, _genPreopOdonto };
 }
 
-// 👇 Generales
+// Generales
 let _genGenerales = null;
 async function loadGenerales() {
   if (_genGenerales) return _genGenerales;
@@ -101,6 +110,19 @@ async function loadGenerales() {
 
 // ===== Salud
 app.get('/health', (_req, res) => res.json({ ok: true }));
+
+// ===== Endpoint para PREVIEW (usa la MISMA lógica que el PDF)
+app.get('/sugerir-imagenologia', (req, res) => {
+  const { dolor = '', lado = '', edad = '' } = req.query || {};
+  try {
+    const lines = sugerirExamenImagenologia(dolor, lado, edad);
+    const nota = notaAsistencia(dolor);
+    res.json({ ok: true, examLines: lines, examen: lines.join('\n'), nota });
+  } catch (e) {
+    console.error('sugerir-imagenologia error:', e);
+    res.status(500).json({ ok: false, error: 'No se pudo sugerir el examen' });
+  }
+});
 
 // =====================================================
 // ===============   TRAUMA (IMAGENOLOGÍA)  ============
@@ -126,7 +148,6 @@ app.post('/crear-pago-khipu', (req, res) => {
   const { idPago, modoGuest, datosPaciente, modulo } = req.body || {};
   if (!idPago) return res.status(400).json({ ok: false, error: 'Falta idPago' });
 
-  // decide espacio según módulo/ID
   const space =
     (modulo === 'preop' || String(idPago).startsWith('preop_')) ? 'preop' :
     (modulo === 'generales' || String(idPago).startsWith('generales_')) ? 'generales' :
@@ -136,7 +157,6 @@ app.post('/crear-pago-khipu', (req, res) => {
     memoria.set(ns(space, idPago), { ...datosPaciente, pagoConfirmado: true });
   }
 
-  // Retorno al frontend
   const url = new URL(RETURN_BASE);
   url.searchParams.set('pago', 'ok');
   url.searchParams.set('idPago', idPago);
@@ -152,15 +172,15 @@ app.get('/pdf/:idPago', async (req, res) => {
 
     const generar = await loadOrdenImagenologia();
 
-    // ⬇️ Usa tu lógica exacta (edad, dolor, lado) y arma la nota con especialista
-    const examen = d.examen || sugerirExamenImagenologia(d.dolor, d.lado, d.edad);
-    const nota = notaAsistencia(d.dolor);
+    // Usa la lógica de líneas y las une con saltos para el PDF
+    const lines = sugerirExamenImagenologia(d.dolor, d.lado, d.edad);
+    const examen = (d.examen && typeof d.examen === 'string')
+      ? d.examen
+      : Array.isArray(lines) ? lines.join('\n') : String(lines || '');
 
-    const datos = {
-      ...d,
-      examen,
-      nota,
-    };
+    const nota = d.nota || notaAsistencia(d.dolor);
+
+    const datos = { ...d, examen, nota };
 
     const filename = `orden_${sanitize(d.nombre || 'paciente')}.pdf`;
     res.setHeader('Content-Type', 'application/pdf');
@@ -211,10 +231,7 @@ app.get('/pdf-preop/:idPago', async (req, res) => {
     const doc = new PDFDocument({ size: 'A4', margin: 50 });
     doc.pipe(res);
 
-    // Página 1: LAB/ECG (usa la lista exacta en preopOrdenLab.js)
     _genPreopLab(doc, d);
-
-    // Página 2: Odontología
     doc.addPage();
     _genPreopOdonto(doc, d);
 
@@ -259,7 +276,7 @@ app.get('/pdf-generales/:idPago', async (req, res) => {
 
     const doc = new PDFDocument({ size: 'A4', margin: 50 });
     doc.pipe(res);
-    generar(doc, d); // ← imprime lista según d.genero
+    generar(doc, d);
     doc.end();
   } catch (e) {
     console.error('pdf-generales/:idPago error:', e);
