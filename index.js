@@ -16,6 +16,10 @@ app.use(bodyParser.json());
 const PORT = process.env.PORT || 3001;
 const RETURN_BASE = process.env.RETURN_BASE || 'https://asistencia-ica.vercel.app';
 
+// ✅ Opcional: URL directa a Khipu si ya la tienes configurada por entorno.
+//    Puedes incluir "{idPago}" y se reemplaza por el id recibido.
+const KHIPU_REDIRECT_URL = process.env.KHIPU_REDIRECT_URL || '';
+
 // ===== Memoria simple (cámbialo a Redis/DB si necesitas persistencia)
 const memoria = new Map();
 const ns = (s, id) => `${s}:${id}`;
@@ -54,7 +58,6 @@ function sugerirExamenImagenologia(dolor = '', lado = '', edad = null) {
   // Cadera
   if (d.includes('cadera')) {
     if (mayor60) {
-      // Mantengo en una sola línea (pedido específico fue separar Teleradiografía)
       return ['RX DE PELVIS AP, Y LOWESTAIN.'];
     } else {
       return [`RESONANCIA MAGNETICA DE CADERA${ladoTxt}.`];
@@ -132,7 +135,7 @@ app.get('/sugerir-imagenologia', (req, res) => {
 app.post('/guardar-datos', (req, res) => {
   const { idPago, datosPaciente } = req.body || {};
   if (!idPago || !datosPaciente) return res.status(400).json({ ok: false, error: 'Faltan idPago o datosPaciente' });
-  memoria.set(ns('trauma', idPago), { ...datosPaciente, pagoConfirmado: true }); // pon false si validarás pago real
+  memoria.set(ns('trauma', idPago), { ...datosPaciente, pagoConfirmado: true }); // (se mantiene tal cual)
   res.json({ ok: true });
 });
 
@@ -143,8 +146,8 @@ app.get('/obtener-datos/:idPago', (req, res) => {
   res.json({ ok: true, datos: d });
 });
 
-// Crear pago (mock/guest o integra Khipu real dentro)
-app.post('/crear-pago-khipu', (req, res) => {
+// Crear pago (guest opcional; real: redirige a Khipu)
+app.post('/crear-pago-khipu', async (req, res) => {
   const { idPago, modoGuest, datosPaciente, modulo } = req.body || {};
   if (!idPago) return res.status(400).json({ ok: false, error: 'Falta idPago' });
 
@@ -153,14 +156,45 @@ app.post('/crear-pago-khipu', (req, res) => {
     (modulo === 'generales' || String(idPago).startsWith('generales_')) ? 'generales' :
     'trauma';
 
-  if (modoGuest && datosPaciente) {
-    memoria.set(ns(space, idPago), { ...datosPaciente, pagoConfirmado: true });
+  // Guarda/actualiza (se mantiene NO intrusivo con tu lógica)
+  if (datosPaciente) {
+    const prev = memoria.get(ns(space, idPago)) || {};
+    memoria.set(ns(space, idPago), { ...prev, ...datosPaciente, pagoConfirmado: prev.pagoConfirmado ?? false });
   }
 
-  const url = new URL(RETURN_BASE);
-  url.searchParams.set('pago', 'ok');
-  url.searchParams.set('idPago', idPago);
-  res.json({ ok: true, url: url.toString() });
+  // === MODO INVITADO (igual que antes)
+  if (modoGuest === true) {
+    const d = memoria.get(ns(space, idPago)) || {};
+    memoria.set(ns(space, idPago), { ...d, pagoConfirmado: true });
+
+    const url = new URL(RETURN_BASE);
+    url.searchParams.set('pago', 'ok');
+    url.searchParams.set('idPago', idPago);
+    url.searchParams.set('guest', '1');
+    return res.json({ ok: true, url: url.toString() });
+  }
+
+  // === MODO REAL: devolver URL de Khipu (sin tocar tu frontend)
+  try {
+    // Opción A (rápida): desde variable de entorno (puede contener {idPago})
+    if (KHIPU_REDIRECT_URL) {
+      const realUrl = KHIPU_REDIRECT_URL.replace('{idPago}', encodeURIComponent(idPago));
+      return res.json({ ok: true, url: realUrl });
+    }
+
+    // Opción B (tu implementación real en backend):
+    // Descomenta si tienes ./khipuReal.js con export crearCobroKhipuReal
+    // const { crearCobroKhipuReal } = await import('./khipuReal.js');
+    // const urlKhipu = await crearCobroKhipuReal({ idPago, datosPaciente, modulo });
+    // if (!urlKhipu) return res.status(500).json({ ok: false, error: 'Khipu no devolvió URL' });
+    // return res.json({ ok: true, url: urlKhipu });
+
+    // Si no hay A ni B, devuelve error controlado
+    return res.status(501).json({ ok: false, error: 'Integración Khipu real no configurada.' });
+  } catch (e) {
+    console.error('Error creando cobro Khipu:', e);
+    return res.status(500).json({ ok: false, error: 'Error creando cobro Khipu' });
+  }
 });
 
 // Descargar PDF TRAUMA
