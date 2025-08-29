@@ -4,17 +4,13 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-// __dirname para ES Modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 /**
- * datos esperados:
- * {
- *   nombre, rut, edad, dolor, lado,
- *   observaciones?: string,
- *   conclusion?: 'APTO' | 'APTO CON RESERVAS' | 'NO APTO'
- * }
+ * datos esperados (los mismos básicos):
+ * { nombre, rut, edad, dolor, lado, observaciones?, conclusion? }
+ * - conclusion: 'APTO' | 'APTO CON RESERVAS' | 'NO APTO' (opcional)
  */
 export function generarPreopOdonto(doc, datos = {}) {
   const { nombre, rut, edad, dolor, lado, observaciones, conclusion } = datos;
@@ -40,7 +36,7 @@ export function generarPreopOdonto(doc, datos = {}) {
   doc.text(`Motivo/Clínica: Dolor en ${sintomas || '—'}`);
   doc.moveDown(2);
 
-  // ----- FORMATO DE EVALUACIÓN -----
+  // ----- EVALUACIÓN -----
   doc.font('Helvetica-Bold').text('Evaluación Clínica:');
   doc.moveDown(0.5);
   doc.font('Helvetica').fontSize(12);
@@ -54,7 +50,9 @@ export function generarPreopOdonto(doc, datos = {}) {
 
   doc.moveDown(1.5);
   doc.font('Helvetica-Bold').text('Observaciones:');
-  doc.font('Helvetica').fontSize(12).text(observaciones || '_____________________________________________________________\n_____________________________________________________________\n_____________________________________________________________');
+  doc.font('Helvetica').fontSize(12).text(
+    observaciones || '_____________________________________________________________\n_____________________________________________________________\n_____________________________________________________________'
+  );
 
   doc.moveDown(1.5);
   doc.font('Helvetica-Bold').text('Conclusión:');
