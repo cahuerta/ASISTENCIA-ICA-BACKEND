@@ -55,10 +55,6 @@ export function generarOrdenPreopLab(doc, datos = {}) {
   doc.font('Helvetica').fontSize(12);
   EXAMENES_FIJOS.forEach(e => doc.text(`• ${e}`));
 
-  doc.moveDown(2);
-  doc.text('Indicaciones:');
-  doc.text('• Presentar esta orden y documento de identidad.');
-  doc.text('• Seguir instrucciones del laboratorio según corresponda.');
   doc.moveDown(3);
 
   // Nota opcional
