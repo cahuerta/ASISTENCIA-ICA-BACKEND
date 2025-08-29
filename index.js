@@ -1,4 +1,4 @@
-// index.js — ESM puro (Node >=18)
+// index.js — ESM (Node >=18)
 import express from 'express';
 import cors from 'cors';
 import bodyParser from 'body-parser';
@@ -14,47 +14,22 @@ app.use(cors());
 app.use(bodyParser.json());
 
 const PORT = process.env.PORT || 3001;
+const RETURN_BASE = process.env.RETURN_BASE || process.env.FRONTEND_BASE || 'https://asistencia-ica.vercel.app';
 
-// === Khipu (lee TUS 4 variables en Render)
-const FRONTEND_BASE =
-  process.env.FRONTEND_BASE ||
-  process.env.frontend_base || // por si estuviera en minúsculas
-  process.env.fronted_base ||  // typo histórico
-  'https://asistencia-ica.vercel.app';
+// === Khipu (real o guest, controlado por env/flag)
+const KHIPU_ENV = (process.env.KHIPU_ENV || 'prod').toLowerCase(); // 'prod' | 'guest'
+const KHIPU_API_KEY = process.env.KHIPU_API_KEY || '';             // API Key real (Render)
+const KHIPU_API_BASE = 'https://khipu.com/api/3.0';
+const KHIPU_AMOUNT = Number(process.env.KHIPU_AMOUNT || 4990);     // 💰 monto por defecto (CLP)
+const KHIPU_SUBJECT = process.env.KHIPU_SUBJECT || 'Orden médica ICA';
+const CURRENCY = 'CLP';
 
-const KHIPU_ENV = (process.env.KHIPU_ENV || process.env.khipu_env || 'production').toLowerCase();
-const KHIPU_ENDPOINT = (KHIPU_ENV === 'sandbox'
-  ? 'https://khipu.com/apiSandbox/2.0'
-  : 'https://khipu.com/api/2.0').replace(/\/+$/, '');
-
-const KHIPU_API_KEY = process.env.KHIPU_API_KEY || process.env.khipu_api_key || '';
-
-const AMOUNTS = {
-  trauma: Number(process.env.KHIPU_AMOUNT_TRAUMA || 0),
-  preop: Number(process.env.KHIPU_AMOUNT_PREOP || 0),
-  generales: Number(process.env.KHIPU_AMOUNT_GENERALES || 0),
-};
-const DEFAULT_AMOUNT = Number(process.env.KHIPU_AMOUNT_DEFAULT || 1) || 1;
-
-function khipuAuthHeaders() {
-  const h = { 'Content-Type': 'application/json' };
-  if (!KHIPU_API_KEY) return h;
-  if (KHIPU_API_KEY.includes(':')) {
-    // Formato "receiver_id:secret" -> Basic
-    h.Authorization = 'Basic ' + Buffer.from(KHIPU_API_KEY).toString('base64');
-  } else {
-    // Token único -> Bearer
-    h.Authorization = 'Bearer ' + KHIPU_API_KEY;
-  }
-  return h;
-}
-
-// ===== Memoria simple (cámbialo a Redis/DB si necesitas persistencia)
+// ===== Memoria simple
 const memoria = new Map();
 const ns = (s, id) => `${s}:${id}`;
 const sanitize = (t) => String(t || '').replace(/[^a-zA-Z0-9_-]+/g, '_');
 
-// ===== Helpers (misma lógica para PREVIEW y PDF)
+// ===== Helpers  (para TRAUMA)
 function sugerirExamenImagenologia(dolor = '', lado = '', edad = null) {
   const d = String(dolor || '').toLowerCase();
   const L = String(lado || '').trim();
@@ -62,9 +37,7 @@ function sugerirExamenImagenologia(dolor = '', lado = '', edad = null) {
   const edadNum = Number(edad);
   const mayor60 = Number.isFinite(edadNum) ? edadNum > 60 : false;
 
-  if (d.includes('columna')) {
-    return ['RESONANCIA DE COLUMNA LUMBAR.'];
-  }
+  if (d.includes('columna')) return ['RESONANCIA DE COLUMNA LUMBAR.'];
 
   if (d.includes('rodilla')) {
     if (mayor60) {
@@ -81,11 +54,8 @@ function sugerirExamenImagenologia(dolor = '', lado = '', edad = null) {
   }
 
   if (d.includes('cadera')) {
-    if (mayor60) {
-      return ['RX DE PELVIS AP, Y LOWESTAIN.'];
-    } else {
-      return [`RESONANCIA MAGNETICA DE CADERA${ladoTxt}.`];
-    }
+    if (mayor60) return ['RX DE PELVIS AP, Y LOWESTAIN.'];
+    return [`RESONANCIA MAGNETICA DE CADERA${ladoTxt}.`];
   }
 
   return ['Evaluación imagenológica según clínica.'];
@@ -94,20 +64,16 @@ function sugerirExamenImagenologia(dolor = '', lado = '', edad = null) {
 function notaAsistencia(dolor = '') {
   const d = String(dolor || '').toLowerCase();
   const base = 'Presentarse con esta orden. Ayuno NO requerido salvo indicación.';
-  if (d.includes('rodilla')) {
-    return `${base}\nConsultar con nuestro especialista en rodilla Dr Jaime Espinoza.`;
-  }
-  if (d.includes('cadera')) {
-    return `${base}\nConsultar con nuestro especialista en cadera Dr Cristóbal Huerta.`;
-  }
+  if (d.includes('rodilla')) return `${base}\nConsultar con nuestro especialista en rodilla Dr Jaime Espinoza.`;
+  if (d.includes('cadera'))  return `${base}\nConsultar con nuestro especialista en cadera Dr Cristóbal Huerta.`;
   return base;
 }
 
-// ===== Cargas dinámicas (ESM) de generadores PDF
+// ===== Carga de generadores PDF (ESM dinámico)
 let _genTrauma = null;
 async function loadOrdenImagenologia() {
   if (_genTrauma) return _genTrauma;
-  const m = await import('./ordenImagenologia.js'); // ESM
+  const m = await import('./ordenImagenologia.js');
   _genTrauma = m.generarOrdenImagenologia;
   return _genTrauma;
 }
@@ -136,7 +102,7 @@ async function loadGenerales() {
 // ===== Salud
 app.get('/health', (_req, res) => res.json({ ok: true }));
 
-// ===== Preview (misma lógica que PDF)
+// ===== Preview consistente con PDF
 app.get('/sugerir-imagenologia', (req, res) => {
   const { dolor = '', lado = '', edad = '' } = req.query || {};
   try {
@@ -153,89 +119,85 @@ app.get('/sugerir-imagenologia', (req, res) => {
 // ===============   TRAUMA (IMAGENOLOGÍA)  ============
 // =====================================================
 
-// Guarda datos de TRAUMA
 app.post('/guardar-datos', (req, res) => {
   const { idPago, datosPaciente } = req.body || {};
   if (!idPago || !datosPaciente) return res.status(400).json({ ok: false, error: 'Faltan idPago o datosPaciente' });
-  memoria.set(ns('trauma', idPago), { ...datosPaciente, pagoConfirmado: true }); // (ajusta a false si validas notificación)
+  memoria.set(ns('trauma', idPago), { ...datosPaciente, pagoConfirmado: true }); // pon false si validarás post-notify
   res.json({ ok: true });
 });
 
-// Obtener datos de TRAUMA
-app.get('/obtener-datos/:idPago', (req, res) => {
-  const d = memoria.get(ns('trauma', req.params.idPago));
-  if (!d) return res.status(404).json({ ok: false });
-  res.json({ ok: true, datos: d });
-});
-
-// Crear pago Khipu (REAL desde backend) + guest opcional
+// 🔴 AQUÍ: crea pago Khipu real (o guest si lo pides)
 app.post('/crear-pago-khipu', async (req, res) => {
   try {
     const { idPago, modoGuest, datosPaciente, modulo } = req.body || {};
     if (!idPago) return res.status(400).json({ ok: false, error: 'Falta idPago' });
 
+    // Espacio (no cambia nada de tu lógica)
     const space =
       (modulo === 'preop' || String(idPago).startsWith('preop_')) ? 'preop' :
       (modulo === 'generales' || String(idPago).startsWith('generales_')) ? 'generales' :
       'trauma';
 
-    if (datosPaciente) {
-      const prev = memoria.get(ns(space, idPago)) || {};
-      memoria.set(ns(space, idPago), { ...prev, ...datosPaciente, pagoConfirmado: prev.pagoConfirmado ?? false });
-    }
+    // Guardado rápido para warm-up/cache
+    if (datosPaciente) memoria.set(ns(space, idPago), { ...datosPaciente });
 
-    // Modo invitado (simula OK)
-    if (modoGuest === true) {
-      const url = new URL(FRONTEND_BASE);
+    // Guest explícito o forzado por env
+    if (modoGuest === true || KHIPU_ENV === 'guest') {
+      const url = new URL(RETURN_BASE);
       url.searchParams.set('pago', 'ok');
       url.searchParams.set('idPago', idPago);
-      url.searchParams.set('guest', '1');
-      return res.json({ ok: true, url: url.toString() });
+      return res.json({ ok: true, url: url.toString(), guest: true });
     }
 
-    // Pago real
+    // ===== Khipu real con x-api-key (sin firmas HMAC extra)
     if (!KHIPU_API_KEY) {
-      return res.status(500).json({ ok: false, error: 'Falta KHIPU_API_KEY en backend' });
+      return res.status(500).json({ ok: false, error: 'Falta KHIPU_API_KEY en el backend' });
     }
 
-    const subject =
-      space === 'preop' ? 'Pago Exámenes Preoperatorios' :
-      space === 'generales' ? 'Pago Exámenes Generales' :
-      'Pago Orden Médica Imagenológica';
+    const payload = {
+      amount: KHIPU_AMOUNT,
+      currency: CURRENCY,
+      subject: KHIPU_SUBJECT,
+      transaction_id: idPago,
+      return_url: `${RETURN_BASE}?pago=ok&idPago=${encodeURIComponent(idPago)}`,
+      cancel_url: `${RETURN_BASE}?pago=cancelado&idPago=${encodeURIComponent(idPago)}`
+      // Puedes agregar notify_url si quieres confirmar server-to-server
+    };
 
-    const amount = AMOUNTS[space] > 0 ? AMOUNTS[space] : DEFAULT_AMOUNT;
-
-    const return_url = `${FRONTEND_BASE}?pago=ok&idPago=${encodeURIComponent(idPago)}`;
-    const cancel_url = `${FRONTEND_BASE}?pago=cancelado&idPago=${encodeURIComponent(idPago)}`;
-
-    const r = await fetch(`${KHIPU_ENDPOINT}/payments`, {
+    const r = await fetch(`${KHIPU_API_BASE}/payments`, {
       method: 'POST',
-      headers: khipuAuthHeaders(),
-      body: JSON.stringify({
-        subject,
-        amount,
-        currency: 'CLP',
-        transaction_id: idPago,
-        custom: space,
-        return_url,
-        cancel_url,
-      }),
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': KHIPU_API_KEY
+      },
+      body: JSON.stringify(payload)
     });
 
+    const j = await r.json().catch(() => ({}));
     if (!r.ok) {
-      const txt = await r.text().catch(() => '');
-      return res.status(502).json({ ok: false, error: `Khipu HTTP ${r.status}`, detail: txt });
+      // Evita 403 por firmas erróneas: NO mandamos headers de firma.
+      const msg = j?.message || `Error Khipu (${r.status})`;
+      return res.status(502).json({ ok: false, error: msg, detail: j || null });
     }
 
-    const data = await r.json().catch(() => ({}));
-    const url = data.payment_url || data.app_url || data.paymentURL || null;
-    if (!url) return res.status(502).json({ ok: false, error: 'Khipu no devolvió payment_url' });
+    // Campos posibles según versión: payment_url o url
+    const urlPago = j?.payment_url || j?.url;
+    if (!urlPago) {
+      return res.status(502).json({ ok: false, error: 'Khipu no entregó payment_url', detail: j || null });
+    }
 
-    res.json({ ok: true, url });
+    return res.json({ ok: true, url: urlPago });
   } catch (e) {
     console.error('crear-pago-khipu error:', e);
     res.status(500).json({ ok: false, error: e.message });
   }
+});
+
+// Obtener datos TRAUMA
+app.get('/obtener-datos/:idPago', (req, res) => {
+  const d = memoria.get(ns('trauma', req.params.idPago));
+  if (!d) return res.status(404).json({ ok: false });
+  res.json({ ok: true, datos: d });
 });
 
 // Descargar PDF TRAUMA
@@ -246,12 +208,10 @@ app.get('/pdf/:idPago', async (req, res) => {
     // if (!d.pagoConfirmado) return res.sendStatus(402);
 
     const generar = await loadOrdenImagenologia();
-
     const lines = sugerirExamenImagenologia(d.dolor, d.lado, d.edad);
     const examen = (d.examen && typeof d.examen === 'string')
       ? d.examen
       : Array.isArray(lines) ? lines.join('\n') : String(lines || '');
-
     const nota = d.nota || notaAsistencia(d.dolor);
     const datos = { ...d, examen, nota };
 
@@ -286,7 +246,6 @@ app.get('/obtener-datos-preop/:idPago', (req, res) => {
   res.json({ ok: true, datos: d });
 });
 
-// 1 PDF con 2 páginas (Lab/ECG + Odonto)
 app.get('/pdf-preop/:idPago', async (req, res) => {
   try {
     const d = memoria.get(ns('preop', req.params.idPago));
