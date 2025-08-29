@@ -52,6 +52,15 @@ async function loadPreop() {
   return { _genPreopLab, _genPreopOdonto };
 }
 
+// 👇 NUEVO: Generales
+let _genGenerales = null;
+async function loadGenerales() {
+  if (_genGenerales) return _genGenerales;
+  const m = await import('./generalesOrden.js'); // ESM
+  _genGenerales = m.generarOrdenGenerales;
+  return _genGenerales;
+}
+
 // ===== Salud
 app.get('/health', (_req, res) => res.json({ ok: true }));
 
@@ -79,8 +88,11 @@ app.post('/crear-pago-khipu', (req, res) => {
   const { idPago, modoGuest, datosPaciente, modulo } = req.body || {};
   if (!idPago) return res.status(400).json({ ok: false, error: 'Falta idPago' });
 
-  // Decide espacio de guardado según módulo
-  const space = (modulo === 'preop' || String(idPago).startsWith('preop_')) ? 'preop' : 'trauma';
+  // 👇 NUEVO: decide espacio según módulo/ID
+  const space =
+    (modulo === 'preop' || String(idPago).startsWith('preop_')) ? 'preop' :
+    (modulo === 'generales' || String(idPago).startsWith('generales_')) ? 'generales' :
+    'trauma';
 
   if (modoGuest && datosPaciente) {
     memoria.set(ns(space, idPago), { ...datosPaciente, pagoConfirmado: true });
@@ -167,6 +179,48 @@ app.get('/pdf-preop/:idPago', async (req, res) => {
     doc.end();
   } catch (e) {
     console.error('pdf-preop/:idPago error:', e);
+    res.sendStatus(500);
+  }
+});
+
+// =====================================================
+// ============   GENERALES (1 PDF)  ===================
+// =====================================================
+
+// 👇 NUEVO: Guarda datos GENERALES
+app.post('/guardar-datos-generales', (req, res) => {
+  const { idPago, datosPaciente } = req.body || {};
+  if (!idPago || !datosPaciente) return res.status(400).json({ ok: false, error: 'Faltan idPago o datosPaciente' });
+  memoria.set(ns('generales', idPago), { ...datosPaciente, pagoConfirmado: true });
+  res.json({ ok: true });
+});
+
+// 👇 NUEVO: Obtener datos GENERALES (para warm-up)
+app.get('/obtener-datos-generales/:idPago', (req, res) => {
+  const d = memoria.get(ns('generales', req.params.idPago));
+  if (!d) return res.status(404).json({ ok: false });
+  res.json({ ok: true, datos: d });
+});
+
+// 👇 NUEVO: Descargar PDF GENERALES (lista depende de género)
+app.get('/pdf-generales/:idPago', async (req, res) => {
+  try {
+    const d = memoria.get(ns('generales', req.params.idPago));
+    if (!d) return res.sendStatus(404);
+    // if (!d.pagoConfirmado) return res.sendStatus(402);
+
+    const generar = await loadGenerales();
+
+    const filename = `generales_${sanitize(d.nombre || 'paciente')}.pdf`;
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+
+    const doc = new PDFDocument({ size: 'A4', margin: 50 });
+    doc.pipe(res);
+    generar(doc, d); // ← imprime lista según d.genero
+    doc.end();
+  } catch (e) {
+    console.error('pdf-generales/:idPago error:', e);
     res.sendStatus(500);
   }
 });
