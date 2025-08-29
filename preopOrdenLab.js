@@ -8,7 +8,7 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Lista EXACTA que nos diste (orden respetado)
+// Lista EXACTA entregada por ti
 const EXAMENES_FIJOS = [
   'HEMOGRAMA',
   'VHS',
@@ -25,14 +25,6 @@ const EXAMENES_FIJOS = [
   'ECG DE REPOSO',
 ];
 
-/**
- * datos esperados:
- * {
- *   nombre, rut, edad, dolor, lado,
- *   nota?: string
- * }
- * Renderiza tus EXAMENES_FIJOS tal cual.
- */
 export function generarOrdenPreopLab(doc, datos = {}) {
   const { nombre, rut, edad, dolor, lado, nota } = datos;
 
@@ -57,7 +49,7 @@ export function generarOrdenPreopLab(doc, datos = {}) {
   doc.text(`Descripción de síntomas: Dolor en ${sintomas || '—'}`);
   doc.moveDown(2);
 
-  // ----- EXÁMENES (fijos) -----
+  // ----- EXÁMENES (fijos)
   doc.font('Helvetica-Bold').text('Solicito los siguientes exámenes:');
   doc.moveDown(0.5);
   doc.font('Helvetica').fontSize(12);
