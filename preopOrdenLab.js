@@ -16,6 +16,7 @@ const EXAMENES_FIJOS = [
   'ELECTROLITOS PLASMATICOS',
   'PERFIL BIOQUIMICO',
   'PERFIL LIPIDICO',
+  'PERFIL HEPATICO',
   'CREATININA',
   'TTPK',
   'HEMOGLOBINA GLICOSILADA',
@@ -46,7 +47,7 @@ export function generarOrdenPreopLab(doc, datos = {}) {
   doc.text(`Nombre: ${nombre ?? ''}`);      doc.moveDown(1);
   doc.text(`Edad: ${edad ?? ''}`);          doc.moveDown(0.5);
   doc.text(`RUT: ${rut ?? ''}`);            doc.moveDown(0.5);
-  doc.text(`Descripción de síntomas: Dolor en ${sintomas || '—'}`);
+  doc.text(`Descripción de síntomas: Artroplastia total en ${sintomas || '—'}`);
   doc.moveDown(2);
 
   // ----- EXÁMENES (fijos)
