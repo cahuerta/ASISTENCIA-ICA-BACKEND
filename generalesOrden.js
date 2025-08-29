@@ -106,13 +106,6 @@ export function generarOrdenGenerales(doc, datos = {}) {
   drawBulletList(doc, lista, { fontSize: 13, indent: 14, lineGap: 2 });
   doc.moveDown(2);
 
-  // --------- NOTA ---------
-  doc.font('Helvetica').fontSize(12).text(
-    datos.nota ||
-    'Nota:\n\nSe solicita realizar los exámenes indicados y presentar resultados en control.',
-    { align: 'left' }
-  );
-
   // --------- PIE DE PÁGINA: FIRMA + TIMBRE ---------
   const pageW = doc.page.width;
   const pageH = doc.page.height;
