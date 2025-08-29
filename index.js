@@ -21,13 +21,51 @@ const memoria = new Map();
 const ns = (s, id) => `${s}:${id}`;
 const sanitize = (t) => String(t || '').replace(/[^a-zA-Z0-9_-]+/g, '_');
 
-// ===== Helpers
-function sugerirExamenImagenologia(dolor = '', lado = '') {
-  const l = (lado || '').trim();
-  if (/rodilla/i.test(dolor)) return `Radiografías de Rodilla${l ? ` (${l})` : ''} — AP/Lateral y patela (Merchant)`;
-  if (/cadera/i.test(dolor))  return `Radiografías de Cadera${l ? ` (${l})` : ''} — AP/Lateral y pelvis AP`;
-  if (/columna/i.test(dolor)) return `Radiografías de Columna lumbar — AP y Lateral`;
-  return `Evaluación imagenológica según clínica`;
+// ===== Helpers (ACTUALIZADOS)
+function sugerirExamenImagenologia(dolor = '', lado = '', edad = null) {
+  const d = String(dolor || '').toLowerCase();
+  const L = String(lado || '').trim();
+  const ladoTxt = L ? ` (${L.toUpperCase()})` : '';
+  const edadNum = Number(edad);
+  const mayor60 = Number.isFinite(edadNum) ? edadNum > 60 : false;
+
+  // Columna: resonancia (sin lado) a cualquier edad (según acuerdo)
+  if (d.includes('columna')) {
+    return 'RESONANCIA DE COLUMNA LUMBAR.';
+  }
+
+  // Rodilla
+  if (d.includes('rodilla')) {
+    if (mayor60) {
+      return `RX DE RODILLA${ladoTxt} — AP, LATERAL, AXIAL PATELA; TELERADIOGRAFIA DE EEII.`;
+    } else {
+      return `RESONANCIA MAGNETICA DE RODILLA${ladoTxt} Y TELERADIOGRAFIA DE EEII.`;
+    }
+  }
+
+  // Cadera
+  if (d.includes('cadera')) {
+    if (mayor60) {
+      return 'RX DE PELVIS AP, Y LOWESTAIN.';
+    } else {
+      return `RESONANCIA MAGNETICA DE CADERA${ladoTxt}.`;
+    }
+  }
+
+  // Fallback explícito
+  return 'Evaluación imagenológica según clínica.';
+}
+
+function notaAsistencia(dolor = '') {
+  const d = String(dolor || '').toLowerCase();
+  const base = 'Presentarse con esta orden. Ayuno NO requerido salvo indicación.';
+  if (d.includes('rodilla')) {
+    return `${base}\nConsultar con nuestro especialista en rodilla Dr Jaime Espinoza.`;
+  }
+  if (d.includes('cadera')) {
+    return `${base}\nConsultar con nuestro especialista en cadera Dr Cristóbal Huerta.`;
+  }
+  return base;
 }
 
 // ===== Cargas dinámicas (ESM) de generadores PDF
@@ -52,7 +90,7 @@ async function loadPreop() {
   return { _genPreopLab, _genPreopOdonto };
 }
 
-// 👇 NUEVO: Generales
+// 👇 Generales
 let _genGenerales = null;
 async function loadGenerales() {
   if (_genGenerales) return _genGenerales;
@@ -88,7 +126,7 @@ app.post('/crear-pago-khipu', (req, res) => {
   const { idPago, modoGuest, datosPaciente, modulo } = req.body || {};
   if (!idPago) return res.status(400).json({ ok: false, error: 'Falta idPago' });
 
-  // 👇 NUEVO: decide espacio según módulo/ID
+  // decide espacio según módulo/ID
   const space =
     (modulo === 'preop' || String(idPago).startsWith('preop_')) ? 'preop' :
     (modulo === 'generales' || String(idPago).startsWith('generales_')) ? 'generales' :
@@ -113,11 +151,15 @@ app.get('/pdf/:idPago', async (req, res) => {
     // if (!d.pagoConfirmado) return res.sendStatus(402);
 
     const generar = await loadOrdenImagenologia();
-    const examen = d.examen || sugerirExamenImagenologia(d.dolor, d.lado);
+
+    // ⬇️ Usa tu lógica exacta (edad, dolor, lado) y arma la nota con especialista
+    const examen = d.examen || sugerirExamenImagenologia(d.dolor, d.lado, d.edad);
+    const nota = notaAsistencia(d.dolor);
+
     const datos = {
       ...d,
       examen,
-      nota: d.nota || 'Presentarse con esta orden. Ayuno NO requerido salvo indicación.'
+      nota,
     };
 
     const filename = `orden_${sanitize(d.nombre || 'paciente')}.pdf`;
@@ -187,7 +229,7 @@ app.get('/pdf-preop/:idPago', async (req, res) => {
 // ============   GENERALES (1 PDF)  ===================
 // =====================================================
 
-// 👇 NUEVO: Guarda datos GENERALES
+// Guarda datos GENERALES
 app.post('/guardar-datos-generales', (req, res) => {
   const { idPago, datosPaciente } = req.body || {};
   if (!idPago || !datosPaciente) return res.status(400).json({ ok: false, error: 'Faltan idPago o datosPaciente' });
@@ -195,14 +237,14 @@ app.post('/guardar-datos-generales', (req, res) => {
   res.json({ ok: true });
 });
 
-// 👇 NUEVO: Obtener datos GENERALES (para warm-up)
+// Obtener datos GENERALES (para warm-up)
 app.get('/obtener-datos-generales/:idPago', (req, res) => {
   const d = memoria.get(ns('generales', req.params.idPago));
   if (!d) return res.status(404).json({ ok: false });
   res.json({ ok: true, datos: d });
 });
 
-// 👇 NUEVO: Descargar PDF GENERALES (lista depende de género)
+// Descargar PDF GENERALES (lista depende de género)
 app.get('/pdf-generales/:idPago', async (req, res) => {
   try {
     const d = memoria.get(ns('generales', req.params.idPago));
