@@ -8,9 +8,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 /**
- * datos esperados (los mismos básicos):
  * { nombre, rut, edad, dolor, lado, observaciones?, conclusion? }
- * - conclusion: 'APTO' | 'APTO CON RESERVAS' | 'NO APTO' (opcional)
+ * - conclusion: 'APTO' | 'APTO CON RESERVAS' | 'NO APTO'
  */
 export function generarPreopOdonto(doc, datos = {}) {
   const { nombre, rut, edad, dolor, lado, observaciones, conclusion } = datos;
@@ -57,43 +56,25 @@ export function generarPreopOdonto(doc, datos = {}) {
   doc.moveDown(1.5);
   doc.font('Helvetica-Bold').text('Conclusión:');
   const concl = (conclusion || '').toUpperCase();
-  const opciones = ['APTO', 'APTO CON RESERVAS', 'NO APTO'];
-  opciones.forEach(opt => {
+  ['APTO', 'APTO CON RESERVAS', 'NO APTO'].forEach(opt => {
     const mark = (concl === opt) ? '☑' : '☐';
     doc.font('Helvetica').fontSize(12).text(`${mark} ${opt}`);
   });
 
-  doc.moveDown(3);
-  // ----- PIE: FIRMA + TIMBRE -----
-  const pageW = doc.page.width;
-  const pageH = doc.page.height;
+  // ================== PIE: IZQUIERDA (tu firma+timbre+texto) / DERECHA (firma odonto) ==================
+  const pageW   = doc.page.width;
+  const pageH   = doc.page.height;
   const marginL = doc.page.margins.left || 50;
   const marginR = doc.page.margins.right || 50;
-  const baseY = pageH - 170;
 
-  doc.font('Helvetica').fontSize(12);
-  doc.text('_________________________', marginL, baseY, { align: 'center', width: pageW - marginL - marginR });
-  doc.text('Firma y Timbre Odontólogo(a)', marginL, baseY + 18, { align: 'center', width: pageW - marginL - marginR });
+  // Nivel de las líneas de firma
+  const lineY = pageH - 150;
 
-  const firmaW = 250;
-  const firmaX = (pageW - firmaW) / 2;
-  const firmaY = baseY - 45;
+  // Dos columnas
+  const gap    = 40; // espacio entre columnas
+  const availW = pageW - marginL - marginR;
+  const colW   = (availW - gap) / 2;
+  const leftX  = marginL;
+  const rightX = marginL + colW + gap;
 
-  try {
-    const firmaPath = path.join(__dirname, 'assets', 'FIRMA.png');
-    if (fs.existsSync(firmaPath)) doc.image(firmaPath, firmaX, firmaY, { width: firmaW });
-  } catch {}
-  try {
-    const timbrePath = path.join(__dirname, 'assets', 'timbre.jpg');
-    if (fs.existsSync(timbrePath)) {
-      const timbreW = 110, timbreX = firmaX + firmaW, timbreY = firmaY - 20;
-      doc.save();
-      doc.rotate(20, { origin: [timbreX + timbreW / 2, timbreY + timbreW / 2] });
-      doc.image(timbrePath, timbreX, timbreY, { width: timbreW });
-      doc.restore();
-    }
-  } catch {}
-
-  doc.font('Helvetica').fontSize(12);
-  doc.text('Odontología – Evaluación Preoperatoria', marginL, baseY + 52, { align: 'center', width: pageW - marginL - marginR });
-}
+  // -------- Colu
