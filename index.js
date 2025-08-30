@@ -6,7 +6,7 @@ import PDFDocument from "pdfkit";
 import path from "path";
 import { fileURLToPath } from "url";
 
-// ===== Paths útiles (por si los necesitas para assets locales)
+// ===== Paths útiles
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -33,8 +33,7 @@ const BACKEND_BASE = process.env.BACKEND_BASE || ""; // si está vacío, lo dedu
 const RETURN_BASE =
   process.env.RETURN_BASE || FRONTEND_BASE || "https://asistencia-ica.vercel.app";
 
-// ===== Khipu config
-// Valores admitidos en KHIPU_ENV: "guest" | "integration" | "prod" | "production"
+// ===== Khipu config (v3)
 const _ENV = (process.env.KHIPU_ENV || "integration").toLowerCase();
 const KHIPU_MODE =
   _ENV === "guest"
@@ -43,13 +42,14 @@ const KHIPU_MODE =
     ? "production"
     : "integration";
 
+// 📌 v3 base + x-api-key
 const KHIPU_API_KEY = process.env.KHIPU_API_KEY || "";
-const KHIPU_API_BASE = "https://khipu.com/api/2.0"; // ⬅️ v2.0 estable
+const KHIPU_API_BASE = "https://payment-api.khipu.com"; // v3 base
 const KHIPU_AMOUNT = Number(process.env.KHIPU_AMOUNT || 10000); // CLP
 const KHIPU_SUBJECT = process.env.KHIPU_SUBJECT || "Orden médica ICA";
 const CURRENCY = "CLP";
 
-// ===== Memoria simple en proceso (cambia a DB cuando quieras)
+// ===== Memoria simple
 const memoria = new Map();
 const ns = (s, id) => `${s}:${id}`;
 const sanitize = (t) => String(t || "").replace(/[^a-zA-Z0-9_-]+/g, "_");
@@ -106,8 +106,7 @@ async function loadOrdenImagenologia() {
   return _genTrauma;
 }
 
-let _genPreopLab = null,
-  _genPreopOdonto = null;
+let _genPreopLab = null, _genPreopOdonto = null;
 async function loadPreop() {
   if (!_genPreopLab) {
     const mLab = await import("./preopOrdenLab.js");
@@ -188,7 +187,7 @@ async function crearPagoHandler(req, res) {
 
     if (datosPaciente) memoria.set(ns(space, idPago), { ...datosPaciente });
 
-    // Flow invitado o forzado por env
+    // Invitado o forzado por env
     if (modoGuest === true || KHIPU_MODE === "guest") {
       const url = new URL(RETURN_BASE);
       url.searchParams.set("pago", "ok");
@@ -211,18 +210,16 @@ async function crearPagoHandler(req, res) {
       subject: KHIPU_SUBJECT,
       transaction_id: idPago,
       return_url: `${RETURN_BASE}?pago=ok&idPago=${encodeURIComponent(idPago)}`,
-      cancel_url: `${RETURN_BASE}?pago=cancelado&idPago=${encodeURIComponent(
-        idPago
-      )}`,
+      cancel_url: `${RETURN_BASE}?pago=cancelado&idPago=${encodeURIComponent(idPago)}`,
       notify_url: `${backendBase}/webhook`,
     };
 
-    // Llamado a Khipu (v2.0 con Bearer)
-    const r = await fetch(`${KHIPU_API_BASE}/payments`, {
+    // 🌐 Llamado a Khipu v3 (x-api-key)  —> https://payment-api.khipu.com/v3/payments
+    const r = await fetch(`${KHIPU_API_BASE}/v3/payments`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        Authorization: `Bearer ${KHIPU_API_KEY}`,
+        "x-api-key": KHIPU_API_KEY,
       },
       body: JSON.stringify(payload),
     });
@@ -233,7 +230,7 @@ async function crearPagoHandler(req, res) {
       return res.status(502).json({ ok: false, error: msg, detail: j || null });
     }
 
-    // ⬇️ ÚNICO CAMBIO: agregar fallback a simplified_transfer_url
+    // URL de pago (v3 expone payment_url y simplified_transfer_url)
     const urlPago = j?.payment_url || j?.simplified_transfer_url || j?.url;
     if (!urlPago) {
       return res
@@ -248,15 +245,13 @@ async function crearPagoHandler(req, res) {
   }
 }
 
-// Ruta canónica y ALIAS para evitar 404 desde frontends antiguos
+// Rutas: canónica + alias
 app.post("/crear-pago-khipu", crearPagoHandler);
 app.post("/crear-pago", crearPagoHandler);
 
-// ---- Webhook (opcional: marcar pago confirmado) ----
+// ---- Webhook (opcional)
 app.post("/webhook", express.json(), (req, res) => {
   try {
-    // Aquí puedes validar firma si Khipu la envía y luego setear pagoConfirmado=true
-    // Ejemplo mínimo (log):
     console.log("Webhook Khipu:", req.body);
     res.status(200).send("OK");
   } catch (e) {
@@ -395,7 +390,7 @@ app.get("/pdf-generales/:idPago", async (req, res) => {
   }
 });
 
-// ===== 404 handler explícito (para depurar rutas mal llamadas)
+// ===== 404 handler explícito
 app.use((req, res) => {
   console.warn("404 no encontrada:", req.method, req.originalUrl);
   res
