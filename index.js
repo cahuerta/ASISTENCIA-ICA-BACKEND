@@ -42,7 +42,7 @@ const KHIPU_MODE =
     ? "production"
     : "integration";
 
-// 📌 v3 base + x-api-key
+// v3 base + x-api-key
 const KHIPU_API_KEY = process.env.KHIPU_API_KEY || "";
 const KHIPU_API_BASE = "https://payment-api.khipu.com"; // v3 base
 const KHIPU_AMOUNT = Number(process.env.KHIPU_AMOUNT || 10000); // CLP
@@ -185,7 +185,11 @@ async function crearPagoHandler(req, res) {
         ? "generales"
         : "trauma";
 
+    // Guarda datos del paciente (si llegan) en su namespace
     if (datosPaciente) memoria.set(ns(space, idPago), { ...datosPaciente });
+
+    // ⛓️ Registrar módulo autorizado para ese idPago
+    memoria.set(ns("meta", idPago), { moduloAutorizado: space });
 
     // Invitado o forzado por env
     if (modoGuest === true || KHIPU_MODE === "guest") {
@@ -227,6 +231,7 @@ async function crearPagoHandler(req, res) {
     const j = await r.json().catch(() => ({}));
     if (!r.ok) {
       const msg = j?.message || `Error Khipu (${r.status})`;
+      console.error("Respuesta de Khipu:", j); // log de ayuda
       return res.status(502).json({ ok: false, error: msg, detail: j || null });
     }
 
@@ -267,9 +272,12 @@ app.get("/obtener-datos/:idPago", (req, res) => {
   res.json({ ok: true, datos: d });
 });
 
-// Descargar PDF TRAUMA
+// Descargar PDF TRAUMA — exige módulo autorizado = 'trauma'
 app.get("/pdf/:idPago", async (req, res) => {
   try {
+    const meta = memoria.get(ns("meta", req.params.idPago));
+    if (!meta || meta.moduloAutorizado !== "trauma") return res.sendStatus(402);
+
     const d = memoria.get(ns("trauma", req.params.idPago));
     if (!d) return res.sendStatus(404);
     // if (!d.pagoConfirmado) return res.sendStatus(402);
@@ -319,8 +327,12 @@ app.get("/obtener-datos-preop/:idPago", (req, res) => {
   res.json({ ok: true, datos: d });
 });
 
+// Descargar PDF PREOP — exige módulo autorizado = 'preop'
 app.get("/pdf-preop/:idPago", async (req, res) => {
   try {
+    const meta = memoria.get(ns("meta", req.params.idPago));
+    if (!meta || meta.moduloAutorizado !== "preop") return res.sendStatus(402);
+
     const d = memoria.get(ns("preop", req.params.idPago));
     if (!d) return res.sendStatus(404);
     // if (!d.pagoConfirmado) return res.sendStatus(402);
@@ -368,8 +380,12 @@ app.get("/obtener-datos-generales/:idPago", (req, res) => {
   res.json({ ok: true, datos: d });
 });
 
+// Descargar PDF GENERALES — exige módulo autorizado = 'generales'
 app.get("/pdf-generales/:idPago", async (req, res) => {
   try {
+    const meta = memoria.get(ns("meta", req.params.idPago));
+    if (!meta || meta.moduloAutorizado !== "generales") return res.sendStatus(402);
+
     const d = memoria.get(ns("generales", req.params.idPago));
     if (!d) return res.sendStatus(404);
     // if (!d.pagoConfirmado) return res.sendStatus(402);
