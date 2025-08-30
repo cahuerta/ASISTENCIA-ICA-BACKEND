@@ -233,7 +233,8 @@ async function crearPagoHandler(req, res) {
       return res.status(502).json({ ok: false, error: msg, detail: j || null });
     }
 
-    const urlPago = j?.payment_url || j?.url;
+    // ⬇️ ÚNICO CAMBIO: agregar fallback a simplified_transfer_url
+    const urlPago = j?.payment_url || j?.simplified_transfer_url || j?.url;
     if (!urlPago) {
       return res
         .status(502)
