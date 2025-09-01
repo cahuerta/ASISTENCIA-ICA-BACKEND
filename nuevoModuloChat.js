@@ -3,6 +3,8 @@ import express from "express";
 import OpenAI from "openai";
 import PDFDocument from "pdfkit";
 import { generarInformeIA } from "./informeIA.js";
+// ⬇️ NUEVO: reusar tu generador de órdenes de imagenología
+import { generarOrdenImagenologia } from "./ordenImagenologia.js";
 
 const router = express.Router();
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -62,7 +64,6 @@ function parseExamenesSugeridos(text = "") {
   if (!sec) return { all: [], rm: [], rx: [], otros: [] };
 
   const bloque = sec[1] || "";
-  // Separar por líneas con viñetas típicas
   const rawLines = bloque
     .split(/\r?\n/)
     .map((l) => l.trim())
@@ -70,12 +71,9 @@ function parseExamenesSugeridos(text = "") {
 
   const bullets = [];
   for (const line of rawLines) {
-    // Acepta viñetas "•", "-", "*" o líneas no vacías
     const m = /^[•\-\*]\s*(.+)$/.exec(line);
     const clean = (m ? m[1] : line).trim();
     if (!clean) continue;
-
-    // Normaliza espacios y punto final opcional
     const norm = clean.replace(/\s+/g, " ").replace(/\s*\.\s*$/, ".");
     bullets.push(norm);
   }
@@ -83,15 +81,12 @@ function parseExamenesSugeridos(text = "") {
   const rm = [];
   const rx = [];
   const otros = [];
-
   for (const b of bullets) {
     const l = b.toLowerCase();
     const isRM =
       l.includes("resonancia") ||
-      l.includes("resonáncia") || // por si hay tildes raras
       /\brm\b/.test(l) ||
       l.includes("resonancia magn");
-
     const isRX =
       /\brx\b/.test(l) ||
       l.includes("radiografía") ||
@@ -99,19 +94,57 @@ function parseExamenesSugeridos(text = "") {
       l.includes("rayos x") ||
       l.includes("teleradiografía") ||
       l.includes("teleradiograf");
-
     if (isRM) rm.push(b);
     else if (isRX) rx.push(b);
     else otros.push(b);
   }
-
   return { all: bullets, rm, rx, otros };
+}
+
+// --- NUEVO: helpers mínimos para la orden IA ---
+function notaAsistenciaIA(dolor = "") {
+  const d = String(dolor || "").toLowerCase();
+  const base = "Presentarse con esta orden. Ayuno NO requerido salvo indicación.";
+  if (d.includes("rodilla")) return `${base}\nConsultar con nuestro especialista en rodilla Dr Jaime Espinoza.`;
+  if (d.includes("cadera"))  return `${base}\nConsultar con nuestro especialista en cadera Dr Cristóbal Huerta.`;
+  return base;
+}
+
+// Fallback simple si no hay exámenes parseados (evita PDF vacío)
+function sugerirFallbackSegunClinica(dolor = "", lado = "", edad = null) {
+  const d = String(dolor || "").toLowerCase();
+  const L = String(lado || "").trim();
+  const ladoTxt = L ? ` ${L.toUpperCase()}` : "";
+  const edadNum = Number(edad);
+  const mayor60 = Number.isFinite(edadNum) ? edadNum > 60 : false;
+
+  if (d.includes("columna")) return ["RESONANCIA DE COLUMNA LUMBAR."];
+
+  if (d.includes("rodilla")) {
+    if (mayor60) {
+      return [
+        `RX DE RODILLA${ladoTxt} — AP, LATERAL, AXIAL PATELA.`,
+        "TELERADIOGRAFIA DE EEII.",
+      ];
+    } else {
+      return [
+        `RESONANCIA MAGNETICA DE RODILLA${ladoTxt}.`,
+        "TELERADIOGRAFIA DE EEII.",
+      ];
+    }
+  }
+
+  if (d.includes("cadera")) {
+    if (mayor60) return ["RX DE PELVIS AP, Y LOWESTAIN."];
+    return [`RESONANCIA MAGNETICA DE CADERA${ladoTxt}.`];
+  }
+
+  return ["Evaluación imagenológica según clínica."];
 }
 
 // ===== Preview IA (antes de pagar) =====
 router.post("/preview-informe", async (req, res) => {
   try {
-    // Del body pueden venir algunos campos; si faltan, los completamos desde memoria
     const { idPago, consulta } = req.body || {};
     if (!consulta || !idPago) {
       return res.status(400).json({ ok: false, error: "Faltan datos obligatorios" });
@@ -120,21 +153,20 @@ router.post("/preview-informe", async (req, res) => {
     const memoria = req.app.get("memoria");
     const prev = leerPacienteDeMemoria(memoria, idPago) || {};
 
-    // Body tiene prioridad sobre lo guardado previamente
     const merged = {
-      nombre: req.body?.nombre ?? prev?.nombre,
-      edad: req.body?.edad ?? prev?.edad,
-      rut: req.body?.rut ?? prev?.rut,
-      genero: req.body?.genero ?? prev?.genero,
-      dolor: req.body?.dolor ?? prev?.dolor,
-      lado: req.body?.lado ?? prev?.lado,
-      consulta, // viene del body
+      nombre:  req.body?.nombre  ?? prev?.nombre,
+      edad:    req.body?.edad    ?? prev?.edad,
+      rut:     req.body?.rut     ?? prev?.rut,
+      genero:  req.body?.genero  ?? prev?.genero,
+      dolor:   req.body?.dolor   ?? prev?.dolor,
+      lado:    req.body?.lado    ?? prev?.lado,
+      consulta,
     };
 
     const completion = await client.chat.completions.create({
-      model: "gpt-4o-mini",     // si luego habilitas gpt-5-mini, cámbialo aquí
+      model: "gpt-4o-mini",
       temperature: 0.3,
-      max_tokens: 320,          // tamaño suficiente para 120–140 palabras con estructura
+      max_tokens: 320,
       messages: [
         { role: "system", content: SYSTEM_PROMPT_IA },
         {
@@ -151,15 +183,13 @@ router.post("/preview-informe", async (req, res) => {
 
     const respuesta = recortar(completion.choices?.[0]?.message?.content || "", 900);
 
-    // --- NUEVO: extraer y guardar exámenes sugeridos para uso posterior (PDF de orden IA) ---
+    // Extrae y guarda exámenes sugeridos
     const parsed = parseExamenesSugeridos(respuesta);
 
-    // Guardar en memoria provisional (sin pago confirmado) con los datos consolidados
     memoria.set(`ia:${idPago}`, {
       ...prev,
       ...merged,
       respuesta,
-      // NUEVO: guardar listas normalizadas para reusar en el generador existente
       examenesIA: parsed.all,
       examenesIA_rm: parsed.rm,
       examenesIA_rx: parsed.rx,
@@ -197,7 +227,7 @@ router.get("/obtener-datos-ia/:idPago", (req, res) => {
   res.json({ ok: true, datos: d });
 });
 
-// ===== PDF IA (descarga final tras pago) =====
+// ===== PDF IA (informe de texto) =====
 router.get("/pdf-ia/:idPago", (req, res) => {
   try {
     const memoria = req.app.get("memoria");
@@ -218,6 +248,47 @@ router.get("/pdf-ia/:idPago", (req, res) => {
     doc.end();
   } catch (err) {
     console.error("pdf-ia error:", err);
+    res.sendStatus(500);
+  }
+});
+
+// ===== NUEVO: PDF IA (Orden de Exámenes) =====
+router.get("/pdf-ia-orden/:idPago", async (req, res) => {
+  try {
+    const memoria = req.app.get("memoria");
+    const meta = memoria.get(`meta:${req.params.idPago}`);
+    if (!meta || meta.moduloAutorizado !== "ia") return res.sendStatus(402);
+
+    const d = memoria.get(`ia:${req.params.idPago}`);
+    if (!d) return res.sendStatus(404);
+    if (!d.pagoConfirmado) return res.sendStatus(402);
+
+    // Construye las líneas de examen desde IA; si no hay, usa fallback clínico.
+    const lineas =
+      Array.isArray(d.examenesIA) && d.examenesIA.length > 0
+        ? d.examenesIA
+        : sugerirFallbackSegunClinica(d.dolor, d.lado, d.edad);
+
+    const examenStr = lineas.join("\n");
+    const nota = notaAsistenciaIA(d.dolor);
+
+    const filename = `ordenIA_${req.params.idPago}.pdf`;
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+
+    const doc = new PDFDocument({ size: "A4", margin: 50 });
+    doc.pipe(res);
+
+    // Reusar tu generador de órdenes de imagenología
+    generarOrdenImagenologia(doc, {
+      ...d,
+      examen: examenStr,
+      nota,
+    });
+
+    doc.end();
+  } catch (err) {
+    console.error("pdf-ia-orden error:", err);
     res.sendStatus(500);
   }
 });
