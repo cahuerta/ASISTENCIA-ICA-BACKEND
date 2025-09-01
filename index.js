@@ -414,6 +414,60 @@ app.get("/pdf-generales/:idPago", async (req, res) => {
 });
 
 // =====================================================
+// ============   ORDEN DESDE IA (NUEVO)  ==============
+// =====================================================
+
+// NUEVO: genera una ORDEN de imagenología/lab usando la salida del módulo IA
+app.get("/api/pdf-ia-orden/:idPago", async (req, res) => {
+  try {
+    const id = req.params.idPago;
+    const meta = memoria.get(ns("meta", id));
+    if (!meta || meta.moduloAutorizado !== "ia") return res.sendStatus(402);
+
+    const d = memoria.get(ns("ia", id));
+    if (!d) return res.sendStatus(404);
+    if (!d.pagoConfirmado) return res.sendStatus(402);
+
+    // Usa el generador existente de orden imagenológica
+    const generar = await loadOrdenImagenologia();
+
+    // 1) Prioriza exámenes ya parseados desde IA; si no hay, usa la sugerencia automática
+    const linesIA = Array.isArray(d.examenesIA) ? d.examenesIA : [];
+    const lines =
+      linesIA.length > 0
+        ? linesIA
+        : sugerirExamenImagenologia(d.dolor, d.lado, d.edad);
+
+    const examen =
+      Array.isArray(lines) ? lines.join("\n") : String(lines || "");
+
+    // 2) Nota: si en la respuesta IA viene una sección “Indicaciones”, úsala; si no, nota por defecto
+    let nota = d.nota;
+    if (!nota) {
+      const m = /Indicaciones:\s*([\s\S]+)/i.exec(d.respuesta || "");
+      nota = (m && m[1] && m[1].trim()) || notaAsistencia(d.dolor);
+    }
+
+    const datosParaOrden = { ...d, examen, nota };
+
+    const filename = `ordenIA_${sanitize(d.nombre || "paciente")}.pdf`;
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${filename}"`
+    );
+
+    const doc = new PDFDocument({ size: "A4", margin: 50 });
+    doc.pipe(res);
+    generar(doc, datosParaOrden);
+    doc.end();
+  } catch (e) {
+    console.error("api/pdf-ia-orden error:", e);
+    res.sendStatus(500);
+  }
+});
+
+// =====================================================
 // ============   CHAT GPT (nuevo módulo)  =============
 // =====================================================
 
