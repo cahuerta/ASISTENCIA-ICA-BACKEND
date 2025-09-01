@@ -11,22 +11,31 @@ const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const SYSTEM_PROMPT_IA = `
 Eres un asistente clínico de TRAUMATOLOGÍA para pre-orientación.
 Objetivo: redactar una NOTA MUY BREVE centrada en EXÁMENES a solicitar.
+
 Reglas:
-- Español claro. Máximo 120 palabras.
-- No es diagnóstico ni tratamiento. No prescribas fármacos.
-- No generes alarmismo ni diagnósticos.
-- Prioriza IMAGENOLOGÍA y, si corresponde, LABORATORIO.
-- Si hay lateralidad (Derecha/Izquierda), indícala en el examen.
-- Evita repetir identificadores del paciente.
-Formato EXACTO:
-Resumen: (1 frase breve)
+- Español claro. Extensión total: máx. 120–140 palabras.
+- NO es diagnóstico definitivo ni tratamiento. No prescribas fármacos.
+- Evita alarmismo. Usa condicionales (“podría sugerir”, “compatible con”).
+- Prioriza IMAGENOLOGÍA y, si corresponde, LABORATORIO complementario.
+- Si hay lateralidad (Derecha/Izquierda), inclúyela explícitamente en los exámenes.
+- No repitas identificadores del paciente.
+
+Formato EXACTO (mantén títulos y viñetas tal cual):
+Diagnóstico presuntivo:
+• (1–2 entidades clínicas probables)
+
+Explicación breve:
+• (1–2 frases muy concisas que justifiquen lo anterior)
+
 Exámenes sugeridos:
 • ...
 • ...
+
 Indicaciones:
 • Presentarse con la orden; ayuno solo si el examen lo solicita.
 • Acudir a evaluación presencial con el/la especialista sugerido/a.
-Devuelve solo el texto en este formato.
+
+Devuelve SOLO el texto en este formato (sin comentarios adicionales).
 `.trim();
 
 function recortar(str, max = 900) {
@@ -70,7 +79,7 @@ router.post("/preview-informe", async (req, res) => {
     const completion = await client.chat.completions.create({
       model: "gpt-4o-mini",     // si luego habilitas gpt-5-mini, cámbialo aquí
       temperature: 0.3,
-      max_tokens: 350,          // ~120–150 palabras
+      max_tokens: 320,          // tamaño suficiente para 120–140 palabras con estructura
       messages: [
         { role: "system", content: SYSTEM_PROMPT_IA },
         {
@@ -80,7 +89,7 @@ router.post("/preview-informe", async (req, res) => {
             (merged.genero ? `Género: ${merged.genero}\n` : "") +
             (merged.dolor ? `Región de dolor: ${merged.dolor}${merged.lado ? ` (${merged.lado})` : ""}\n` : "") +
             `Consulta/Indicación (texto libre):\n${merged.consulta}\n\n` +
-            `Redacta la nota siguiendo el formato EXACTO y el límite de palabras.`,
+            `Redacta EXACTAMENTE con el formato solicitado y dentro del límite de palabras.`,
         },
       ],
     });
