@@ -6,6 +6,9 @@ import PDFDocument from "pdfkit";
 import path from "path";
 import { fileURLToPath } from "url";
 
+// ===== Nuevo módulo Chat GPT
+import chatRouter from "./nuevoModuloChat.js";
+
 // ===== Paths útiles
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -214,7 +217,9 @@ async function crearPagoHandler(req, res) {
       subject: KHIPU_SUBJECT,
       transaction_id: idPago,
       return_url: `${RETURN_BASE}?pago=ok&idPago=${encodeURIComponent(idPago)}`,
-      cancel_url: `${RETURN_BASE}?pago=cancelado&idPago=${encodeURIComponent(idPago)}`,
+      cancel_url: `${RETURN_BASE}?pago=cancelado&idPago=${encodeURIComponent(
+        idPago
+      )}`,
       notify_url: `${backendBase}/webhook`,
     };
 
@@ -405,6 +410,12 @@ app.get("/pdf-generales/:idPago", async (req, res) => {
     res.sendStatus(500);
   }
 });
+
+// =====================================================
+// ============   CHAT GPT (nuevo módulo)  =============
+// =====================================================
+
+app.use("/api", chatRouter);
 
 // ===== 404 handler explícito
 app.use((req, res) => {
