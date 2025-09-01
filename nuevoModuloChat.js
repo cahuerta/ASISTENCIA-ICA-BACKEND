@@ -34,27 +34,52 @@ function recortar(str, max = 900) {
   return str.length > max ? (str.slice(0, max).trim() + "…") : str;
 }
 
+// Lee datos previos del paciente desde la "memoria" del backend
+function leerPacienteDeMemoria(memoria, idPago) {
+  const spaces = ["ia", "trauma", "preop", "generales"];
+  for (const s of spaces) {
+    const v = memoria.get(`${s}:${idPago}`);
+    if (v) return v;
+  }
+  return null;
+}
+
 // ===== Preview IA (antes de pagar) =====
 router.post("/preview-informe", async (req, res) => {
   try {
-    // Se aceptan campos adicionales (p. ej. dolor/lado) si el front los envía
-    const { idPago, consulta, nombre, edad, rut, dolor, lado } = req.body || {};
+    // Del body pueden venir algunos campos; si faltan, los completamos desde memoria
+    const { idPago, consulta } = req.body || {};
     if (!consulta || !idPago) {
       return res.status(400).json({ ok: false, error: "Faltan datos obligatorios" });
     }
 
+    const memoria = req.app.get("memoria");
+    const prev = leerPacienteDeMemoria(memoria, idPago) || {};
+
+    // Body tiene prioridad sobre lo guardado previamente
+    const merged = {
+      nombre: req.body?.nombre ?? prev?.nombre,
+      edad: req.body?.edad ?? prev?.edad,
+      rut: req.body?.rut ?? prev?.rut,
+      genero: req.body?.genero ?? prev?.genero,
+      dolor: req.body?.dolor ?? prev?.dolor,
+      lado: req.body?.lado ?? prev?.lado,
+      consulta, // viene del body
+    };
+
     const completion = await client.chat.completions.create({
-      model: "gpt-4o-mini",       // si habilitas gpt-5-mini, puedes cambiarlo aquí
+      model: "gpt-4o-mini",     // si luego habilitas gpt-5-mini, cámbialo aquí
       temperature: 0.3,
-      max_tokens: 350,            // ~120–150 palabras aprox
+      max_tokens: 350,          // ~120–150 palabras
       messages: [
         { role: "system", content: SYSTEM_PROMPT_IA },
         {
           role: "user",
           content:
-            `Edad: ${edad ?? "—"}\n` +
-            (dolor ? `Región de dolor: ${dolor}${lado ? ` (${lado})` : ""}\n` : "") +
-            `Consulta/Indicación (texto libre):\n${consulta}\n\n` +
+            `Edad: ${merged.edad ?? "—"}\n` +
+            (merged.genero ? `Género: ${merged.genero}\n` : "") +
+            (merged.dolor ? `Región de dolor: ${merged.dolor}${merged.lado ? ` (${merged.lado})` : ""}\n` : "") +
+            `Consulta/Indicación (texto libre):\n${merged.consulta}\n\n` +
             `Redacta la nota siguiendo el formato EXACTO y el límite de palabras.`,
         },
       ],
@@ -62,15 +87,10 @@ router.post("/preview-informe", async (req, res) => {
 
     const respuesta = recortar(completion.choices?.[0]?.message?.content || "", 900);
 
-    // Guardar en memoria provisional (sin pago confirmado)
-    const memoria = req.app.get("memoria");
+    // Guardar en memoria provisional (sin pago confirmado) con los datos consolidados
     memoria.set(`ia:${idPago}`, {
-      nombre,
-      edad,
-      rut,
-      dolor,
-      lado,
-      consulta,
+      ...prev,
+      ...merged,
       respuesta,
       pagoConfirmado: false,
     });
