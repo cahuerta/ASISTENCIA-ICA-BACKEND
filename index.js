@@ -54,6 +54,8 @@ const CURRENCY = "CLP";
 
 // ===== Memoria simple
 const memoria = new Map();
+app.set("memoria", memoria); // <-- compartir memoria con todos los módulos
+
 const ns = (s, id) => `${s}:${id}`;
 const sanitize = (t) => String(t || "").replace(/[^a-zA-Z0-9_-]+/g, "_");
 
