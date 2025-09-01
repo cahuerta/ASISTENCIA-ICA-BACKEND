@@ -1,36 +1,52 @@
 // nuevoModuloChat.js
 import express from "express";
 import OpenAI from "openai";
+import PDFDocument from "pdfkit";
+import { generarInformeIA } from "./informeIA.js";
 
 const router = express.Router();
+const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-// Inicializa OpenAI
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY, // agrega esta variable en tu .env
-});
-
-// Ruta para recibir texto y devolver respuesta GPT
-router.post("/chat-informe", async (req, res) => {
+// ===== Preview: genera respuesta IA pero sin PDF =====
+router.post("/preview-informe", async (req, res) => {
   try {
-    const { texto } = req.body;
-
-    if (!texto) {
-      return res.status(400).json({ error: "Falta el texto de entrada" });
-    }
+    const { consulta } = req.body;
+    if (!consulta) return res.status(400).json({ ok: false, error: "Falta consulta" });
 
     const completion = await client.chat.completions.create({
-      model: "gpt-5.0", // usa el modelo que tengas habilitado en tu cuenta
+      model: "gpt-5.0",
       messages: [
         { role: "system", content: "Eres un asistente médico especializado en traumatología." },
-        { role: "user", content: texto },
+        { role: "user", content: consulta },
       ],
     });
 
     const respuesta = completion.choices[0].message.content;
-    res.json({ informe: respuesta });
-  } catch (error) {
-    console.error("Error en GPT:", error);
-    res.status(500).json({ error: "Error procesando el informe" });
+    res.json({ ok: true, respuesta });
+  } catch (err) {
+    console.error("Error GPT:", err);
+    res.status(500).json({ ok: false, error: "Error al generar preview" });
+  }
+});
+
+// ===== PDF final: requiere pago confirmado =====
+router.get("/pdf-informe/:idPago", async (req, res) => {
+  try {
+    const idPago = req.params.idPago;
+    const datos = req.app.get("memoria").get(`ia:${idPago}`);
+    if (!datos) return res.sendStatus(404);
+
+    const filename = `informeIA_${idPago}.pdf`;
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+
+    const doc = new PDFDocument({ size: "A4", margin: 50 });
+    doc.pipe(res);
+    generarInformeIA(doc, datos);
+    doc.end();
+  } catch (err) {
+    console.error("pdf-informe error:", err);
+    res.sendStatus(500);
   }
 });
 
