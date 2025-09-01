@@ -16,7 +16,7 @@ router.post("/preview-informe", async (req, res) => {
     }
 
     const completion = await client.chat.completions.create({
-      model: "gpt-5",
+      model: "gpt-4o-mini",
       messages: [
         { role: "system", content: "Eres un asistente médico especializado en traumatología." },
         { role: "user", content: consulta },
