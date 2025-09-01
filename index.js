@@ -48,7 +48,7 @@ const KHIPU_MODE =
 // v3 base + x-api-key
 const KHIPU_API_KEY = process.env.KHIPU_API_KEY || "";
 const KHIPU_API_BASE = "https://payment-api.khipu.com"; // v3 base
-const KHIPU_AMOUNT = Number(process.env.KHIPU_AMOUNT || 10000); // CLP
+const KHIPU_AMOUNT = Number(process.env.KHIPU_AMOUNT || 1000); // CLP
 const KHIPU_SUBJECT = process.env.KHIPU_SUBJECT || "Orden médica ICA";
 const CURRENCY = "CLP";
 
