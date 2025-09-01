@@ -53,6 +53,61 @@ function leerPacienteDeMemoria(memoria, idPago) {
   return null;
 }
 
+// --- NUEVO: parser de la sección “Exámenes sugeridos” ---
+function parseExamenesSugeridos(text = "") {
+  if (!text) return { all: [], rm: [], rx: [], otros: [] };
+
+  // Captura la sección entre "Exámenes sugeridos:" y "Indicaciones:" (o fin)
+  const sec = /Ex[aá]menes sugeridos:\s*([\s\S]*?)(?:\n\s*Indicaciones:|$)/i.exec(text);
+  if (!sec) return { all: [], rm: [], rx: [], otros: [] };
+
+  const bloque = sec[1] || "";
+  // Separar por líneas con viñetas típicas
+  const rawLines = bloque
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  const bullets = [];
+  for (const line of rawLines) {
+    // Acepta viñetas "•", "-", "*" o líneas no vacías
+    const m = /^[•\-\*]\s*(.+)$/.exec(line);
+    const clean = (m ? m[1] : line).trim();
+    if (!clean) continue;
+
+    // Normaliza espacios y punto final opcional
+    const norm = clean.replace(/\s+/g, " ").replace(/\s*\.\s*$/, ".");
+    bullets.push(norm);
+  }
+
+  const rm = [];
+  const rx = [];
+  const otros = [];
+
+  for (const b of bullets) {
+    const l = b.toLowerCase();
+    const isRM =
+      l.includes("resonancia") ||
+      l.includes("resonáncia") || // por si hay tildes raras
+      /\brm\b/.test(l) ||
+      l.includes("resonancia magn");
+
+    const isRX =
+      /\brx\b/.test(l) ||
+      l.includes("radiografía") ||
+      l.includes("radiografías") ||
+      l.includes("rayos x") ||
+      l.includes("teleradiografía") ||
+      l.includes("teleradiograf");
+
+    if (isRM) rm.push(b);
+    else if (isRX) rx.push(b);
+    else otros.push(b);
+  }
+
+  return { all: bullets, rm, rx, otros };
+}
+
 // ===== Preview IA (antes de pagar) =====
 router.post("/preview-informe", async (req, res) => {
   try {
@@ -96,11 +151,19 @@ router.post("/preview-informe", async (req, res) => {
 
     const respuesta = recortar(completion.choices?.[0]?.message?.content || "", 900);
 
+    // --- NUEVO: extraer y guardar exámenes sugeridos para uso posterior (PDF de orden IA) ---
+    const parsed = parseExamenesSugeridos(respuesta);
+
     // Guardar en memoria provisional (sin pago confirmado) con los datos consolidados
     memoria.set(`ia:${idPago}`, {
       ...prev,
       ...merged,
       respuesta,
+      // NUEVO: guardar listas normalizadas para reusar en el generador existente
+      examenesIA: parsed.all,
+      examenesIA_rm: parsed.rm,
+      examenesIA_rx: parsed.rx,
+      examenesIA_otros: parsed.otros,
       pagoConfirmado: false,
     });
 
