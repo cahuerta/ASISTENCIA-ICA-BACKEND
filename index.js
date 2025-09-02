@@ -161,6 +161,39 @@ app.get("/sugerir-imagenologia", (req, res) => {
   }
 });
 
+// ---- Detectar si la orden incluye Resonancia (para gatillar checklist en el front)
+app.post("/detectar-resonancia", async (req, res) => {
+  try {
+    const { datosPaciente = {} } = req.body || {};
+    const { dolor = "", lado = "", edad = "", examen = "" } = datosPaciente;
+
+    // Helper local: detección robusta de RM
+    const contieneRM = (t = "") => {
+      const s = String(t || "").toLowerCase();
+      return (
+        s.includes("resonancia") ||
+        s.includes("resonancia magn") || // "magnética", "magnetica", etc.
+        /\brm\b/i.test(String(t || ""))  // "RM" como palabra
+      );
+    };
+
+    // Si el front ya pasó un "examen" explícito, úsalo; si no, sugiere con tu propia lógica
+    let texto = "";
+    if (typeof examen === "string" && examen.trim()) {
+      texto = examen;
+    } else {
+      const lines = sugerirExamenImagenologia(dolor, lado, edad);
+      texto = Array.isArray(lines) ? lines.join("\n") : String(lines || "");
+    }
+
+    const resonancia = contieneRM(texto);
+    return res.json({ ok: true, resonancia, texto });
+  } catch (e) {
+    console.error("detectar-resonancia error:", e);
+    return res.status(500).json({ ok: false, error: "No se pudo detectar resonancia" });
+  }
+});
+
 // =====================================================
 // ===============   TRAUMA (IMAGENOLOGÍA)  ============
 // =====================================================
