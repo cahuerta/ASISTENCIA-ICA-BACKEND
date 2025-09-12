@@ -8,6 +8,7 @@ import { fileURLToPath } from "url";
 
 // ===== Nuevo módulo Chat GPT
 import chatRouter from "./nuevoModuloChat.js";
+import iaPreopHandler from "./preopIA.js"; // ← NUEVO
 
 // ===== Paths útiles
 const __filename = fileURLToPath(import.meta.url);
@@ -422,6 +423,9 @@ app.get("/pdf-preop/:idPago", async (req, res) => {
     res.sendStatus(500);
   }
 });
+
+// ← NUEVO endpoint IA Pre Op
+app.post("/ia-preop", iaPreopHandler(memoria));
 
 // =====================================================
 // ============   GENERALES (1 PDF)  ===================
