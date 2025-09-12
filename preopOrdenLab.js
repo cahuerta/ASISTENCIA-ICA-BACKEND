@@ -8,10 +8,12 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Lista EXACTA entregada por ti
-const EXAMENES_FIJOS = [
-  'HEMOGRAMA',
-  'VHS',
+/**
+ * Catálogo EXACTO (coincide con el frontend).
+ * Importante: “HEMOGRAMA MAS VHS” en una sola línea.
+ */
+const CATALOGO_EXAMENES = [
+  'HEMOGRAMA MAS VHS',
   'PCR',
   'ELECTROLITOS PLASMATICOS',
   'PERFIL BIOQUIMICO',
@@ -28,10 +30,42 @@ const EXAMENES_FIJOS = [
   'ECG DE REPOSO',
 ];
 
-export function generarOrdenPreopLab(doc, datos = {}) {
-  const { nombre, rut, edad, dolor, lado, nota } = datos;
+/** Fallback si la IA no entregó nada o viene vacío */
+const EXAMENES_FIJOS = [...CATALOGO_EXAMENES];
 
-  // ----- ENCABEZADO -----
+/**
+ * Normaliza y valida la lista que viene del backend (IA) contra el catálogo.
+ * Acepta array de strings o de objetos { nombre } y devuelve solo los válidos
+ * con la capitalización EXACTA del catálogo.
+ */
+function normalizarExamenesIA(lista) {
+  if (!Array.isArray(lista)) return null;
+  const catUpper = new Map(
+    CATALOGO_EXAMENES.map((n) => [n.trim().toUpperCase(), n])
+  );
+
+  const out = [];
+  for (const it of lista) {
+    const raw = typeof it === 'string' ? it : (it && it.nombre) || '';
+    const key = String(raw).trim().toUpperCase();
+    if (catUpper.has(key)) out.push(catUpper.get(key));
+  }
+  return out.length ? out : null;
+}
+
+export function generarOrdenPreopLab(doc, datos = {}) {
+  const {
+    nombre,
+    rut,
+    edad,
+    dolor,
+    lado,
+    nota,
+    tipoCirugia,       // <-- puede venir del flujo nuevo
+    examenesIA,        // <-- lista devuelta por IA (opcional)
+  } = datos || {};
+
+  // —— ENCABEZADO ——
   try {
     const logoPath = path.join(__dirname, 'assets', 'ica.jpg');
     if (fs.existsSync(logoPath)) doc.image(logoPath, 50, 40, { width: 120 });
@@ -43,20 +77,27 @@ export function generarOrdenPreopLab(doc, datos = {}) {
   doc.moveDown(4);
   doc.x = doc.page.margins.left;
 
-  // ----- PACIENTE -----
-  const sintomas = `${datos?.dolor ?? ''} ${datos?.lado ?? ''}`.trim();
+  // —— PACIENTE ——
+  const sintomas = `${dolor ?? ''} ${lado ?? ''}`.trim();
   doc.font('Helvetica').fontSize(14);
   doc.text(`Nombre: ${nombre ?? ''}`);      doc.moveDown(1);
   doc.text(`Edad: ${edad ?? ''}`);          doc.moveDown(0.5);
   doc.text(`RUT: ${rut ?? ''}`);            doc.moveDown(0.5);
-  doc.text(`Descripción de síntomas: Artroplastia total en ${sintomas || '—'}`);
+  // Se explicita el contexto de cirugía si está disponible
+  if (tipoCirugia) {
+    doc.text(`Tipo de cirugía: ${tipoCirugia}`);
+    doc.moveDown(0.5);
+  }
+  doc.text(`Descripción de síntomas: ${sintomas || '—'}`);
   doc.moveDown(2);
 
-  // ----- EXÁMENES (fijos)
+  // —— EXÁMENES (IA o fallback) ——
+  const listaExamenes = normalizarExamenesIA(examenesIA) || EXAMENES_FIJOS;
+
   doc.font('Helvetica-Bold').text('Solicito los siguientes exámenes:');
   doc.moveDown(0.5);
   doc.font('Helvetica').fontSize(12);
-  EXAMENES_FIJOS.forEach(e => doc.text(`• ${e}`));
+  listaExamenes.forEach((e) => doc.text(`• ${e}`));
 
   doc.moveDown(3);
 
@@ -66,7 +107,7 @@ export function generarOrdenPreopLab(doc, datos = {}) {
     doc.moveDown(2);
   }
 
-  // ----- PIE: FIRMA + TIMBRE -----
+  // —— PIE: FIRMA + TIMBRE ——
   const pageW = doc.page.width;
   const pageH = doc.page.height;
   const marginL = doc.page.margins.left || 50;
