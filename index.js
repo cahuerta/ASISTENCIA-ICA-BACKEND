@@ -351,14 +351,40 @@ app.get("/pdf/:idPago", async (req, res) => {
 // ===============   PREOP (PDF 2 PÁGINAS)  ============
 // =====================================================
 
+// Guarda/actualiza PREOP (mergeando campos, no sobreescribe todo)
 app.post("/guardar-datos-preop", (req, res) => {
-  const { idPago, datosPaciente } = req.body || {};
-  if (!idPago || !datosPaciente)
+  const {
+    idPago,
+    datosPaciente,        // { nombre, rut, edad, dolor, lado, ... }
+    comorbilidades,       // objeto del formulario
+    tipoCirugia,          // string
+    examenesIA,           // array (strings o {nombre})
+    informeIA,            // string
+    nota,                 // opcional
+  } = req.body || {};
+
+  if (!idPago || !datosPaciente) {
     return res
       .status(400)
       .json({ ok: false, error: "Faltan idPago o datosPaciente" });
-  memoria.set(ns("preop", idPago), { ...datosPaciente, pagoConfirmado: true });
-  res.json({ ok: true });
+  }
+
+  // Recupera lo que ya había y mergea
+  const prev = memoria.get(ns("preop", idPago)) || {};
+  const next = {
+    ...prev,
+    ...datosPaciente,          // flatea datosPaciente
+    comorbilidades: comorbilidades ?? prev.comorbilidades,
+    tipoCirugia:   tipoCirugia   ?? prev.tipoCirugia,
+    examenesIA:    examenesIA    ?? prev.examenesIA,
+    informeIA:     (typeof informeIA === "string" ? informeIA : prev.informeIA),
+    nota:          (typeof nota === "string" ? nota : prev.nota),
+    // compat: mantener flag
+    pagoConfirmado: true,
+  };
+
+  memoria.set(ns("preop", idPago), next);
+  return res.json({ ok: true });
 });
 
 app.get("/obtener-datos-preop/:idPago", (req, res) => {
