@@ -1,9 +1,13 @@
 // preopIA.js — ESM
-// Ruta IA Pre Op: genera { examenes, informeIA } y persiste en memoria (namespace 'preop')
+// Ruta IA Pre Op: genera { examenes, informeIA } con OpenAI y persiste en memoria (namespace 'preop')
+
+import OpenAI from "openai";
 
 export default function iaPreopHandler(memoria) {
+  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   const ns = (s, id) => `${s}:${id}`;
 
+  // ===== Catálogo EXACTO (debe coincidir con el front) =====
   const CATALOGO_EXAMENES = [
     "HEMOGRAMA MAS VHS",
     "PCR",
@@ -21,11 +25,7 @@ export default function iaPreopHandler(memoria) {
     "UROCULTIVO",
     "ECG DE REPOSO",
   ];
-
-  const catUpper = new Map(
-    CATALOGO_EXAMENES.map((n) => [n.trim().toUpperCase(), n])
-  );
-
+  const catUpper = new Map(CATALOGO_EXAMENES.map((n) => [n.trim().toUpperCase(), n]));
   const validarContraCatalogo = (lista) => {
     if (!Array.isArray(lista)) return null;
     const out = [];
@@ -37,12 +37,13 @@ export default function iaPreopHandler(memoria) {
     return out.length ? out : null;
   };
 
+  // ===== Utilidades para informe fallback =====
   const etiqueta = {
     hta: "Hipertensión arterial",
     dm2: "Diabetes mellitus tipo 2",
     dislipidemia: "Dislipidemia",
     obesidad: "Obesidad",
-    tabaquismo: "Tabaquismo activo",
+    tabaquismo: "Tabaquismo",
     epoc_asma: "EPOC / Asma",
     cardiopatia: "Cardiopatía",
     erc: "Enfermedad renal crónica",
@@ -50,62 +51,128 @@ export default function iaPreopHandler(memoria) {
     anticoagulantes: "Uso de anticoagulantes/antiagregantes",
     artritis_reumatoide: "Artritis reumatoide / autoinmune",
   };
-
-  function resumirComorbilidades(c = {}) {
-    const positivos = Object.keys(etiqueta)
+  const resumenComorbilidades = (c = {}) => {
+    const pos = Object.keys(etiqueta)
       .filter((k) => c[k] === true)
       .map((k) => `• ${etiqueta[k]}`);
-    return positivos.length ? positivos.join("\n") : "Sin comorbilidades relevantes reportadas.";
-  }
+    return pos.length ? pos.join("\n") : "Sin comorbilidades relevantes reportadas.";
+  };
 
-  function construirInforme({ paciente = {}, comorbilidades = {}, tipoCirugia = "" }) {
+  function construirInformeFallback({ paciente = {}, comorbilidades = {}, tipoCirugia = "" }) {
     const nombre = paciente?.nombre || "";
     const edad = Number(paciente?.edad) || null;
     const dolor = paciente?.dolor || "";
     const lado = paciente?.lado || "";
     const cirugiaTxt = tipoCirugia || "No especificada";
 
-    const alergias = (comorbilidades?.alergias || "").trim();
-    const meds = (comorbilidades?.medicamentos || "").trim();
-    const cirPrev = (comorbilidades?.cirugiasPrevias || "").trim();
-    const acDet = (comorbilidades?.anticoagulantes_detalle || "").trim();
-    const tabaco = (comorbilidades?.tabaco || "").trim();
-    const alcohol = (comorbilidades?.alcohol || "").trim();
-    const otras = (comorbilidades?.otras || "").trim();
-    const obs = (comorbilidades?.observaciones || "").trim();
+    // Alergias puede venir como { tiene, detalle } o string
+    const alergias =
+      typeof comorbilidades?.alergias === "object"
+        ? comorbilidades.alergias.tiene
+          ? (comorbilidades.alergias.detalle || "Refiere alergias.")
+          : "No refiere."
+        : (comorbilidades?.alergias || "").toString().trim();
 
-    const listaComorb = resumirComorbilidades(comorbilidades);
+    // Anticoagulantes puede venir como boolean o { usa, detalle }
+    const anticoags =
+      typeof comorbilidades?.anticoagulantes === "object"
+        ? comorbilidades.anticoagulantes.usa
+          ? `Sí${comorbilidades.anticoagulantes.detalle ? ` — ${comorbilidades.anticoagulantes.detalle}` : ""}`
+          : "No"
+        : (comorbilidades?.anticoagulantes ? "Sí" : "No");
+
+    const otras = (comorbilidades?.otras || "").toString().trim();
+    const lista = resumenComorbilidades(comorbilidades);
 
     const consideraciones = [];
-    if (comorbilidades.dm2) consideraciones.push("Control glicémico preoperatorio (HbA1c y ajustes si corresponde).");
-    if (comorbilidades.erc) consideraciones.push("Evaluar función renal y fármacos nefrotóxicos.");
-    if (comorbilidades.cardiopatia || (edad && edad >= 60)) consideraciones.push("ECG de reposo y estratificación de riesgo cardiovascular.");
-    if (comorbilidades.epoc_asma || comorbilidades.tabaquismo) consideraciones.push("Optimización respiratoria y manejo broncodilatador si aplica.");
-    if (comorbilidades.anticoagulantes) consideraciones.push("Plan de suspensión/puente de anticoagulación según protocolo.");
+    if (comorbilidades.dm2) consideraciones.push("Control glicémico (HbA1c).");
+    if (comorbilidades.erc) consideraciones.push("Evaluar función renal / evitar nefrotóxicos.");
+    if (comorbilidades.cardiopatia || (edad && edad >= 60)) consideraciones.push("ECG de reposo / estratificación cardiovascular.");
+    if (comorbilidades.epoc_asma || comorbilidades.tabaquismo) consideraciones.push("Optimización respiratoria.");
+    if (comorbilidades.anticoagulantes === true || comorbilidades?.anticoagulantes?.usa)
+      consideraciones.push("Plan suspensión/puente de anticoagulación.");
 
-    const bloques = [
+    return [
       `Evaluación Preoperatoria (resumen)\n`,
       `Paciente: ${nombre || "—"}   Edad: ${edad ?? "—"} años`,
       `Motivo/Área: ${dolor || "—"} ${lado || ""}`.trim(),
       `Cirugía planificada: ${cirugiaTxt}`,
       ``,
-      `Comorbilidades:\n${listaComorb}`,
-      `Alergias: ${alergias || "No refiere."}`,
-      `Medicamentos actuales:\n${meds || "—"}`,
-      `Anticoagulantes/antiagregantes: ${comorbilidades.anticoagulantes ? `Sí${acDet ? ` — ${acDet}` : ""}` : "No"}`,
-      `Tabaquismo: ${tabaco || "—"}`,
-      `Alcohol: ${alcohol || "—"}`,
-      `Cirugías previas:\n${cirPrev || "—"}`,
+      `Comorbilidades:\n${lista}`,
+      `Alergias: ${alergias || "—"}`,
+      `Anticoagulantes/antiagregantes: ${anticoags}`,
       otras ? `Otras comorbilidades:\n${otras}` : "",
-      obs ? `Observaciones:\n${obs}` : "",
       ``,
       `Consideraciones preoperatorias:`,
       `${consideraciones.length ? "• " + consideraciones.join("\n• ") : "• Sin consideraciones adicionales más allá del protocolo estándar."}`,
       ``,
       `Se solicitan exámenes preoperatorios estándar según protocolo ICA y riesgos individuales.`,
-    ];
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
 
-    return bloques.filter(Boolean).join("\n");
+  // ===== Prompt para ChatGPT (devuelve SOLO JSON) =====
+  function buildPromptJSON({ paciente, comorbilidades, tipoCirugia, catalogo }) {
+    const resumen = resumenComorbilidades(comorbilidades);
+    const alergiasTxt =
+      typeof comorbilidades?.alergias === "object"
+        ? (comorbilidades.alergias.tiene ? (comorbilidades.alergias.detalle || "Refiere alergias.") : "No refiere.")
+        : (comorbilidades?.alergias || "").toString();
+
+    const anticoTxt =
+      typeof comorbilidades?.anticoagulantes === "object"
+        ? (comorbilidades.anticoagulantes.usa
+            ? `Sí${comorbilidades.anticoagulantes.detalle ? ` — ${comorbilidades.anticoagulantes.detalle}` : ""}`
+            : "No")
+        : (comorbilidades?.anticoagulantes ? "Sí" : "No");
+
+    const otras = (comorbilidades?.otras || "").toString();
+
+    return `
+Eres un asistente clínico para evaluación PREOPERATORIA.
+Responde **exclusivamente** con un JSON válido, sin texto extra, con la forma:
+{
+  "examenes": [ /* lista de nombres exactamente del catálogo dado */ ],
+  "informeIA": "texto breve en español (máx 140 palabras) que resuma comorbilidades y consideraciones preoperatorias"
+}
+
+Reglas:
+- "examenes" DEBEN ser un subconjunto EXACTO del catálogo (coincidencia literal).
+- Evita fármacos. Fokus preoperatorio.
+- Mantén el "informeIA" conciso, amable, sin alarmismo.
+
+Catálogo permitido (usa solo estos nombres):
+${catalogo.map((s) => `- ${s}`).join("\n")}
+
+Datos:
+- Paciente: ${paciente?.nombre || "—"} (${Number(paciente?.edad) || "—"} años)
+- Cirugía planificada: ${tipoCirugia || "No especificada"}
+- Motivo/Área: ${paciente?.dolor || "—"} ${paciente?.lado || ""}
+- Comorbilidades marcadas:
+${resumen}
+- Alergias: ${alergiasTxt || "—"}
+- Anticoagulantes/antiagregantes: ${anticoTxt}
+- Otras (texto): ${otras || "—"}
+`.trim();
+  }
+
+  // Robustez: extraer JSON aunque venga dentro de ```json ... ```
+  function extraerJSON(str = "") {
+    try {
+      const direct = JSON.parse(str);
+      return direct;
+    } catch {}
+    const m = str.match(/```json\s*([\s\S]*?)```/i) || str.match(/```[\s\S]*?```/);
+    if (m && m[1]) {
+      try { return JSON.parse(m[1]); } catch {}
+    }
+    // última chance: buscar primer bloque {...}
+    const m2 = str.match(/\{[\s\S]*\}/);
+    if (m2) {
+      try { return JSON.parse(m2[0]); } catch {}
+    }
+    return null;
   }
 
   return async (req, res) => {
@@ -122,26 +189,52 @@ export default function iaPreopHandler(memoria) {
         return res.status(400).json({ ok: false, error: "Faltan idPago o datos del paciente." });
       }
 
-      // 1) Catálogo (si llegó desde el front, úsalo; si no, el local)
-      const catalogo = Array.isArray(catalogoExamenes) && catalogoExamenes.length
-        ? catalogoExamenes.map((s) => String(s).trim()).filter(Boolean)
-        : CATALOGO_EXAMENES;
+      // 1) Catálogo desde el front (si viene) o el local
+      const catalogo =
+        Array.isArray(catalogoExamenes) && catalogoExamenes.length
+          ? catalogoExamenes.map((s) => String(s).trim()).filter(Boolean)
+          : CATALOGO_EXAMENES;
 
-      // 2) Generación de exámenes (placeholder determinístico alineado al catálogo)
-      //    Si quisieras filtrar, podrías hacerlo aquí; por ahora se devuelve el set completo.
-      let examenesPropuestos = [...catalogo];
+      // 2) Llamada a OpenAI (si hay API key); si falla, fallback
+      let examenes = null;
+      let informeIA = "";
 
-      // 3) Informe IA (generado en base a datos)
-      const informeIA = construirInforme({ paciente, comorbilidades, tipoCirugia });
+      if (process.env.OPENAI_API_KEY) {
+        const prompt = buildPromptJSON({ paciente, comorbilidades, tipoCirugia, catalogo });
+        try {
+          const completion = await openai.chat.completions.create({
+            model: "gpt-4o-mini",
+            temperature: 0.2,
+            max_tokens: 400,
+            messages: [
+              { role: "system", content: "Devuelve únicamente JSON válido según las reglas dadas." },
+              { role: "user", content: prompt },
+            ],
+          });
 
-      // 4) Valida nombres exactos
-      const examenes = validarContraCatalogo(examenesPropuestos) || CATALOGO_EXAMENES;
+          const content = completion?.choices?.[0]?.message?.content || "";
+          const parsed = extraerJSON(content);
 
-      // 5) Persistencia (merge sin destruir lo previo)
+          if (parsed && Array.isArray(parsed.examenes)) {
+            examenes = validarContraCatalogo(parsed.examenes);
+          }
+          if (parsed && typeof parsed.informeIA === "string") {
+            informeIA = parsed.informeIA.trim();
+          }
+        } catch (err) {
+          console.warn("OpenAI fallo ia-preop:", err?.message || err);
+        }
+      }
+
+      // 3) Fallbacks si no vino nada usable de la IA
+      if (!examenes || !examenes.length) examenes = [...catalogo]; // protocolo estándar
+      if (!informeIA) informeIA = construirInformeFallback({ paciente, comorbilidades, tipoCirugia });
+
+      // 4) Persistencia (merge, sin destruir lo previo)
       const prev = memoria.get(ns("preop", idPago)) || {};
       const next = {
         ...prev,
-        ...paciente, // aplanado como en el resto de módulos
+        ...paciente,            // aplanado (coherente con el resto del backend)
         comorbilidades,
         tipoCirugia,
         examenesIA: examenes,
