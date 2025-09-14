@@ -7,7 +7,7 @@ export default function iaPreopHandler(memoria) {
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   const ns = (s, id) => `${s}:${id}`;
 
-  // ===== Catálogo EXACTO (debe coincidir con el front) =====
+  // ===== Catálogo EXACTO (nombre literal para compatibilidad con PDF) =====
   const CATALOGO_EXAMENES = [
     "HEMOGRAMA MAS VHS",
     "PCR",
@@ -65,7 +65,7 @@ export default function iaPreopHandler(memoria) {
     const lado = paciente?.lado || "";
     const cirugiaTxt = tipoCirugia || "No especificada";
 
-    // Alergias puede venir como { tiene, detalle } o string
+    // Alergias: acepta string o objeto {tiene, detalle}
     const alergias =
       typeof comorbilidades?.alergias === "object"
         ? comorbilidades.alergias.tiene
@@ -73,7 +73,7 @@ export default function iaPreopHandler(memoria) {
           : "No refiere."
         : (comorbilidades?.alergias || "").toString().trim();
 
-    // Anticoagulantes puede venir como boolean o { usa, detalle }
+    // Anticoagulantes: acepta boolean o {usa, detalle}
     const anticoags =
       typeof comorbilidades?.anticoagulantes === "object"
         ? comorbilidades.anticoagulantes.usa
@@ -105,8 +105,6 @@ export default function iaPreopHandler(memoria) {
       ``,
       `Consideraciones preoperatorias:`,
       `${consideraciones.length ? "• " + consideraciones.join("\n• ") : "• Sin consideraciones adicionales más allá del protocolo estándar."}`,
-      ``,
-      `Se solicitan exámenes preoperatorios estándar según protocolo ICA y riesgos individuales.`,
     ]
       .filter(Boolean)
       .join("\n");
@@ -131,7 +129,7 @@ export default function iaPreopHandler(memoria) {
 
     return `
 Eres un asistente clínico para evaluación PREOPERATORIA.
-Responde **exclusivamente** con un JSON válido, sin texto extra, con la forma:
+Responde EXCLUSIVAMENTE con un JSON válido, sin texto extra, con la forma:
 {
   "examenes": [ /* lista de nombres exactamente del catálogo dado */ ],
   "informeIA": "texto breve en español (máx 140 palabras) que resuma comorbilidades y consideraciones preoperatorias"
@@ -139,10 +137,10 @@ Responde **exclusivamente** con un JSON válido, sin texto extra, con la forma:
 
 Reglas:
 - "examenes" DEBEN ser un subconjunto EXACTO del catálogo (coincidencia literal).
-- Evita fármacos. Fokus preoperatorio.
-- Mantén el "informeIA" conciso, amable, sin alarmismo.
+- No prescribas fármacos. Enfócate en laboratorio y ECG preoperatorios.
+- Mantén el "informeIA" conciso, sin alarmismo.
 
-Catálogo permitido (usa solo estos nombres):
+Catálogo permitido:
 ${catalogo.map((s) => `- ${s}`).join("\n")}
 
 Datos:
@@ -159,19 +157,11 @@ ${resumen}
 
   // Robustez: extraer JSON aunque venga dentro de ```json ... ```
   function extraerJSON(str = "") {
-    try {
-      const direct = JSON.parse(str);
-      return direct;
-    } catch {}
-    const m = str.match(/```json\s*([\s\S]*?)```/i) || str.match(/```[\s\S]*?```/);
-    if (m && m[1]) {
-      try { return JSON.parse(m[1]); } catch {}
-    }
-    // última chance: buscar primer bloque {...}
+    try { return JSON.parse(str); } catch {}
+    const m = str.match(/```json\s*([\s\S]*?)```/i) || str.match(/```([\s\S]*?)```/);
+    if (m && m[1]) { try { return JSON.parse(m[1]); } catch {} }
     const m2 = str.match(/\{[\s\S]*\}/);
-    if (m2) {
-      try { return JSON.parse(m2[0]); } catch {}
-    }
+    if (m2) { try { return JSON.parse(m2[0]); } catch {} }
     return null;
   }
 
@@ -195,7 +185,7 @@ ${resumen}
           ? catalogoExamenes.map((s) => String(s).trim()).filter(Boolean)
           : CATALOGO_EXAMENES;
 
-      // 2) Llamada a OpenAI (si hay API key); si falla, fallback
+      // 2) Llamada a OpenAI (si hay API key)
       let examenes = null;
       let informeIA = "";
 
@@ -216,7 +206,8 @@ ${resumen}
           const parsed = extraerJSON(content);
 
           if (parsed && Array.isArray(parsed.examenes)) {
-            examenes = validarContraCatalogo(parsed.examenes);
+            // ⬇️ Validamos contra el catálogo, pero si no hay match, NO rellenamos con fijos
+            examenes = validarContraCatalogo(parsed.examenes) || [];
           }
           if (parsed && typeof parsed.informeIA === "string") {
             informeIA = parsed.informeIA.trim();
@@ -226,15 +217,19 @@ ${resumen}
         }
       }
 
-      // 3) Fallbacks si no vino nada usable de la IA
-      if (!examenes || !examenes.length) examenes = [...catalogo]; // protocolo estándar
-      if (!informeIA) informeIA = construirInformeFallback({ paciente, comorbilidades, tipoCirugia });
+      // 3) Sin exámenes fijos de relleno: dejamos [] si no hay IA
+      if (!Array.isArray(examenes)) examenes = [];
 
-      // 4) Persistencia (merge, sin destruir lo previo)
+      // Informe fallback (solo texto) si la IA no lo entregó
+      if (!informeIA) {
+        informeIA = construirInformeFallback({ paciente, comorbilidades, tipoCirugia });
+      }
+
+      // 4) Persistencia (merge sin destruir lo previo)
       const prev = memoria.get(ns("preop", idPago)) || {};
       const next = {
         ...prev,
-        ...paciente,            // aplanado (coherente con el resto del backend)
+        ...paciente,            // aplanado
         comorbilidades,
         tipoCirugia,
         examenesIA: examenes,
