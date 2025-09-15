@@ -17,15 +17,21 @@ const __dirname = path.dirname(__filename);
 // ===== App base
 const app = express();
 
-// CORS: permite tu frontend en Vercel (y fallback a * en dev)
+// CORS: permite tus frontends en Vercel
 const FRONTEND_BASE =
   process.env.FRONTEND_BASE ||
   process.env.RETURN_BASE ||
   "https://asistencia-ica.vercel.app";
 
+// ⬇️ AÑADIDO: permitir también tu dominio alterno/preview
+const FRONTENDS = [
+  FRONTEND_BASE,
+  "https://asistencia-ica-fggf.vercel.app",
+];
+
 app.use(
   cors({
-    origin: FRONTEND_BASE === "*" ? "*" : FRONTEND_BASE,
+    origin: FRONTENDS,
     credentials: false,
   })
 );
@@ -168,17 +174,15 @@ app.post("/detectar-resonancia", async (req, res) => {
     const { datosPaciente = {} } = req.body || {};
     const { dolor = "", lado = "", edad = "", examen = "" } = datosPaciente;
 
-    // Helper local: detección robusta de RM
     const contieneRM = (t = "") => {
       const s = String(t || "").toLowerCase();
       return (
         s.includes("resonancia") ||
-        s.includes("resonancia magn") || // "magnética", "magnetica", etc.
-        /\brm\b/i.test(String(t || ""))  // "RM" como palabra
+        s.includes("resonancia magn") ||
+        /\brm\b/i.test(String(t || ""))
       );
     };
 
-    // Si el front ya pasó un "examen" explícito, úsalo; si no, sugiere con tu propia lógica
     let texto = "";
     if (typeof examen === "string" && examen.trim()) {
       texto = examen;
@@ -216,7 +220,6 @@ async function crearPagoHandler(req, res) {
     if (!idPago)
       return res.status(400).json({ ok: false, error: "Falta idPago" });
 
-    // Espacio lógico
     const space =
       modulo === "preop" || String(idPago).startsWith("preop_")
         ? "preop"
@@ -224,13 +227,10 @@ async function crearPagoHandler(req, res) {
         ? "generales"
         : "trauma";
 
-    // Guarda datos del paciente (si llegan) en su namespace
     if (datosPaciente) memoria.set(ns(space, idPago), { ...datosPaciente });
 
-    // ⛓️ Registrar módulo autorizado para ese idPago
     memoria.set(ns("meta", idPago), { moduloAutorizado: space });
 
-    // Invitado o forzado por env
     if (modoGuest === true || KHIPU_MODE === "guest") {
       const url = new URL(RETURN_BASE);
       url.searchParams.set("pago", "ok");
@@ -238,14 +238,12 @@ async function crearPagoHandler(req, res) {
       return res.json({ ok: true, url: url.toString(), guest: true });
     }
 
-    // Validación credenciales para Khipu real
     if (!KHIPU_API_KEY) {
       return res
         .status(500)
         .json({ ok: false, error: "Falta KHIPU_API_KEY en el backend" });
     }
 
-    // Armado de URLs de retorno y notificación
     const backendBase = getBackendBase(req);
     const payload = {
       amount: KHIPU_AMOUNT,
@@ -253,13 +251,10 @@ async function crearPagoHandler(req, res) {
       subject: KHIPU_SUBJECT,
       transaction_id: idPago,
       return_url: `${RETURN_BASE}?pago=ok&idPago=${encodeURIComponent(idPago)}`,
-      cancel_url: `${RETURN_BASE}?pago=cancelado&idPago=${encodeURIComponent(
-        idPago
-      )}`,
+      cancel_url: `${RETURN_BASE}?pago=cancelado&idPago=${encodeURIComponent(idPago)}`,
       notify_url: `${backendBase}/webhook`,
     };
 
-    // 🌐 Llamado a Khipu v3 (x-api-key)  —> https://payment-api.khipu.com/v3/payments
     const r = await fetch(`${KHIPU_API_BASE}/v3/payments`, {
       method: "POST",
       headers: {
@@ -272,11 +267,10 @@ async function crearPagoHandler(req, res) {
     const j = await r.json().catch(() => ({}));
     if (!r.ok) {
       const msg = j?.message || `Error Khipu (${r.status})`;
-      console.error("Respuesta de Khipu:", j); // log de ayuda
+      console.error("Respuesta de Khipu:", j);
       return res.status(502).json({ ok: false, error: msg, detail: j || null });
     }
 
-    // URL de pago (v3 expone payment_url y simplified_transfer_url)
     const urlPago = j?.payment_url || j?.simplified_transfer_url || j?.url;
     if (!urlPago) {
       return res
@@ -291,7 +285,6 @@ async function crearPagoHandler(req, res) {
   }
 }
 
-// Rutas: canónica + alias
 app.post("/crear-pago-khipu", crearPagoHandler);
 app.post("/crear-pago", crearPagoHandler);
 
@@ -306,14 +299,12 @@ app.post("/webhook", express.json(), (req, res) => {
   }
 });
 
-// Obtener datos TRAUMA
 app.get("/obtener-datos/:idPago", (req, res) => {
   const d = memoria.get(ns("trauma", req.params.idPago));
   if (!d) return res.status(404).json({ ok: false });
   res.json({ ok: true, datos: d });
 });
 
-// Descargar PDF TRAUMA — exige módulo autorizado = 'trauma'
 app.get("/pdf/:idPago", async (req, res) => {
   try {
     const meta = memoria.get(ns("meta", req.params.idPago));
@@ -321,7 +312,6 @@ app.get("/pdf/:idPago", async (req, res) => {
 
     const d = memoria.get(ns("trauma", req.params.idPago));
     if (!d) return res.sendStatus(404);
-    // if (!d.pagoConfirmado) return res.sendStatus(402);
 
     const generar = await loadOrdenImagenologia();
     const lines = sugerirExamenImagenologia(d.dolor, d.lado, d.edad);
@@ -352,16 +342,15 @@ app.get("/pdf/:idPago", async (req, res) => {
 // ===============   PREOP (PDF 2 PÁGINAS)  ============
 // =====================================================
 
-// Guarda/actualiza PREOP (mergeando campos, no sobreescribe todo)
 app.post("/guardar-datos-preop", (req, res) => {
   const {
     idPago,
-    datosPaciente,        // { nombre, rut, edad, dolor, lado, ... }
-    comorbilidades,       // objeto del formulario
-    tipoCirugia,          // string
-    examenesIA,           // array (strings o {nombre})
-    informeIA,            // string
-    nota,                 // opcional
+    datosPaciente,
+    comorbilidades,
+    tipoCirugia,
+    examenesIA,
+    informeIA,
+    nota,
   } = req.body || {};
 
   if (!idPago || !datosPaciente) {
@@ -370,17 +359,15 @@ app.post("/guardar-datos-preop", (req, res) => {
       .json({ ok: false, error: "Faltan idPago o datosPaciente" });
   }
 
-  // Recupera lo que ya había y mergea
   const prev = memoria.get(ns("preop", idPago)) || {};
   const next = {
     ...prev,
-    ...datosPaciente,          // flatea datosPaciente
+    ...datosPaciente,
     comorbilidades: comorbilidades ?? prev.comorbilidades,
     tipoCirugia:   tipoCirugia   ?? prev.tipoCirugia,
     examenesIA:    examenesIA    ?? prev.examenesIA,
     informeIA:     (typeof informeIA === "string" ? informeIA : prev.informeIA),
     nota:          (typeof nota === "string" ? nota : prev.nota),
-    // compat: mantener flag
     pagoConfirmado: true,
   };
 
@@ -394,7 +381,6 @@ app.get("/obtener-datos-preop/:idPago", (req, res) => {
   res.json({ ok: true, datos: d });
 });
 
-// Descargar PDF PREOP — exige módulo autorizado = 'preop'
 app.get("/pdf-preop/:idPago", async (req, res) => {
   try {
     const meta = memoria.get(ns("meta", req.params.idPago));
@@ -402,7 +388,6 @@ app.get("/pdf-preop/:idPago", async (req, res) => {
 
     const d = memoria.get(ns("preop", req.params.idPago));
     if (!d) return res.sendStatus(404);
-    // if (!d.pagoConfirmado) return res.sendStatus(402);
 
     const { _genPreopLab, _genPreopOdonto } = await loadPreop();
 
@@ -426,6 +411,8 @@ app.get("/pdf-preop/:idPago", async (req, res) => {
 
 // ← NUEVO endpoint IA Pre Op
 app.post("/ia-preop", iaPreopHandler(memoria));
+// ⬇️ AÑADIDO: alias para compatibilidad con el front
+app.post("/preop-ia", iaPreopHandler(memoria));
 
 // =====================================================
 // ============   GENERALES (1 PDF)  ===================
@@ -450,7 +437,6 @@ app.get("/obtener-datos-generales/:idPago", (req, res) => {
   res.json({ ok: true, datos: d });
 });
 
-// Descargar PDF GENERALES — exige módulo autorizado = 'generales'
 app.get("/pdf-generales/:idPago", async (req, res) => {
   try {
     const meta = memoria.get(ns("meta", req.params.idPago));
@@ -458,7 +444,6 @@ app.get("/pdf-generales/:idPago", async (req, res) => {
 
     const d = memoria.get(ns("generales", req.params.idPago));
     if (!d) return res.sendStatus(404);
-    // if (!d.pagoConfirmado) return res.sendStatus(402);
 
     const generar = await loadGenerales();
 
@@ -480,7 +465,6 @@ app.get("/pdf-generales/:idPago", async (req, res) => {
 // ============   ORDEN DESDE IA (NUEVO)  ==============
 // =====================================================
 
-// NUEVO: genera una ORDEN de imagenología/lab usando la salida del módulo IA
 app.get("/api/pdf-ia-orden/:idPago", async (req, res) => {
   try {
     const id = req.params.idPago;
@@ -491,10 +475,8 @@ app.get("/api/pdf-ia-orden/:idPago", async (req, res) => {
     if (!d) return res.sendStatus(404);
     if (!d.pagoConfirmado) return res.sendStatus(402);
 
-    // Usa el generador existente de orden imagenológica
     const generar = await loadOrdenImagenologia();
 
-    // 1) Prioriza exámenes ya parseados desde IA; si no hay, usa la sugerencia automática
     const linesIA = Array.isArray(d.examenesIA) ? d.examenesIA : [];
     const lines =
       linesIA.length > 0
@@ -504,7 +486,6 @@ app.get("/api/pdf-ia-orden/:idPago", async (req, res) => {
     const examen =
       Array.isArray(lines) ? lines.join("\n") : String(lines || "");
 
-    // 2) Nota: si en la respuesta IA viene una sección “Indicaciones”, úsala; si no, nota por defecto
     let nota = d.nota;
     if (!nota) {
       const m = /Indicaciones:\s*([\s\S]+)/i.exec(d.respuesta || "");
