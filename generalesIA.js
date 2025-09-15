@@ -8,8 +8,7 @@ export default function iaGeneralesHandler(memoria) {
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   const ns = (s, id) => `${s}:${id}`;
 
-  // ===== Catálogo EXACTO (para que coincida con el PDF) =====
-  // OJO: Respetamos mayúsculas/acentos tal como los usa tu PDF.
+  // ===== Catálogo EXACTO (coincidencia literal del PDF/Front) =====
   const CATALOGO = [
     "HEMOGRAMA",
     "VHS",
@@ -19,10 +18,11 @@ export default function iaGeneralesHandler(memoria) {
     "PERFIL LIPIDICO",
     "PERFIL HEPÁTICO",
     "CREATININA",
+    "UREA",
     "TTPK",
     "HEMOGLOBINA GLICOSILADA",
     "VITAMINA D",
-    "ORINA",
+    "ORINA COMPLETA",
     "UROCULTIVO",
     "ECG DE REPOSO",
     "MAMOGRAFÍA",
@@ -34,16 +34,37 @@ export default function iaGeneralesHandler(memoria) {
     "RX DE TÓRAX",
     "GRUPO Y RH",
   ];
-  const catUpper = new Map(CATALOGO.map(n => [n.trim().toUpperCase(), n]));
+
+  // Sinónimos → nombre canónico (robustez)
+  const CANON = new Map([
+    ["ORINA", "ORINA COMPLETA"],
+    ["PERFIL HEPATICO", "PERFIL HEPÁTICO"],
+    ["MAMOGRAFIA", "MAMOGRAFÍA"],
+    ["ANTIGENO PROSTATICO", "ANTÍGENO PROSTÁTICO"],
+    ["RX DE TORAX", "RX DE TÓRAX"],
+  ]);
+
+  const stripAccents = (s = "") =>
+    s.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+  const catUpper = new Map(
+    CATALOGO.map((n) => [stripAccents(n).toUpperCase().trim(), n])
+  );
+
   const validarContraCatalogo = (lista) => {
     if (!Array.isArray(lista)) return [];
     const out = [];
     for (const it of lista) {
-      const raw = typeof it === "string" ? it : (it && it.nombre) || "";
-      const key = String(raw).trim().toUpperCase();
-      if (catUpper.has(key)) out.push(catUpper.get(key));
+      const raw = (typeof it === "string" ? it : it?.nombre || "").trim();
+      if (!raw) continue;
+
+      const norm = stripAccents(raw).toUpperCase();
+      const canonRaw = CANON.get(norm) || raw;
+      const canonKey = stripAccents(canonRaw).toUpperCase();
+
+      if (catUpper.has(canonKey)) out.push(catUpper.get(canonKey));
+      else if (catUpper.has(norm)) out.push(catUpper.get(norm));
     }
-    // quitar duplicados conservando orden
     return [...new Set(out)];
   };
 
@@ -61,6 +82,7 @@ export default function iaGeneralesHandler(memoria) {
     anticoagulantes: "Uso de anticoagulantes/antiagregantes",
     artritis_reumatoide: "Artritis reumatoide / autoinmune",
   };
+
   const resumenComorbilidades = (c = {}) => {
     const pos = Object.keys(etiqueta)
       .filter((k) => c[k] === true)
@@ -72,7 +94,6 @@ export default function iaGeneralesHandler(memoria) {
     const nombre = paciente?.nombre || "";
     const edad = Number(paciente?.edad) || null;
 
-    // Alergias: acepta string o objeto {tiene, detalle}
     const alergias =
       typeof comorbilidades?.alergias === "object"
         ? comorbilidades.alergias.tiene
@@ -80,7 +101,6 @@ export default function iaGeneralesHandler(memoria) {
           : "No refiere."
         : (comorbilidades?.alergias || "").toString().trim();
 
-    // Anticoagulantes: acepta boolean o {usa, detalle}
     const anticoags =
       typeof comorbilidades?.anticoagulantes === "object"
         ? comorbilidades.anticoagulantes.usa
@@ -108,7 +128,9 @@ export default function iaGeneralesHandler(memoria) {
       ``,
       `Consideraciones:`,
       `${consideraciones.length ? "• " + consideraciones.join("\n• ") : "• Sin consideraciones adicionales más allá del protocolo estándar."}`,
-    ].filter(Boolean).join("\n");
+    ]
+      .filter(Boolean)
+      .join("\n");
   }
 
   // ===== Basal programática (siempre presente) =====
@@ -127,9 +149,9 @@ export default function iaGeneralesHandler(memoria) {
       "PERFIL LIPIDICO",
       "PERFIL HEPÁTICO",
       "CREATININA",
-      "ORINA",
+      "ORINA COMPLETA",
       "VITAMINA D",
-    ].forEach(n => out.add(n));
+    ].forEach((n) => out.add(n));
 
     // Condiciones
     if (c.dm2) out.add("HEMOGLOBINA GLICOSILADA");
@@ -156,7 +178,6 @@ export default function iaGeneralesHandler(memoria) {
     // Respiratorio
     if (c.epoc_asma || c.tabaquismo) out.add("RX DE TÓRAX");
 
-    // Validar contra catálogo y ordenar como catálogo
     return validarContraCatalogo([...out]);
   }
 
@@ -178,7 +199,6 @@ export default function iaGeneralesHandler(memoria) {
 
     const otras = (comorbilidades?.otras || "").toString();
 
-    // Sugerimos una BASE explícita (igual reforzaremos programáticamente)
     const baseMinima = [
       "HEMOGRAMA",
       "VHS",
@@ -188,12 +208,12 @@ export default function iaGeneralesHandler(memoria) {
       "PERFIL LIPIDICO",
       "PERFIL HEPÁTICO",
       "CREATININA",
-      "ORINA",
-      "VITAMINA D"
+      "ORINA COMPLETA",
+      "VITAMINA D",
     ];
 
     return `
-Eres un asistente clínico para CHEQUEO GENERAL.
+Eres un asistente clínico para CHEQUEO GENERAL (no preoperatorio).
 Devuelve EXCLUSIVAMENTE un JSON válido con:
 {
   "examenes": [ /* subconjunto EXACTO del catálogo */ ],
@@ -202,13 +222,13 @@ Devuelve EXCLUSIVAMENTE un JSON válido con:
 
 Instrucciones:
 - Incluye SIEMPRE esta base mínima si no está contraindicada:
-  ${baseMinima.map(s => `- ${s}`).join("\n  ")}
+  ${baseMinima.map((s) => `- ${s}`).join("\n  ")}
 - Agrega exámenes condicionales según edad, género y comorbilidades.
 - Usa SOLO nombres del catálogo; NADA fuera del catálogo.
-- No prescribas fármacos y no hagas diagnósticos definitivos.
+- No prescribas fármacos ni propongas cirugías.
 
 Catálogo permitido:
-${catalogo.map(s => `- ${s}`).join("\n")}
+${catalogo.map((s) => `- ${s}`).join("\n")}
 
 Datos:
 - Paciente: ${paciente?.nombre || "—"} (${Number(paciente?.edad) || "—"} años, ${paciente?.genero || "—"})
@@ -243,16 +263,14 @@ ${resumen}
         return res.status(400).json({ ok: false, error: "Faltan idPago o datos del paciente." });
       }
 
-      // Catálogo desde el request (si viene) o el local
       const catalogo =
         Array.isArray(catalogoExamenes) && catalogoExamenes.length
-          ? catalogoExamenes.map(s => String(s).trim()).filter(Boolean)
+          ? catalogoExamenes.map((s) => String(s).trim()).filter(Boolean)
           : CATALOGO;
 
       let examenesIA = [];
       let informeIA = "";
 
-      // 1) LLM (si hay API key)
       if (process.env.OPENAI_API_KEY) {
         const prompt = buildPromptJSON({ paciente, comorbilidades, catalogo });
         try {
@@ -280,20 +298,18 @@ ${resumen}
         }
       }
 
-      // 2) Basal programática SIEMPRE incluida (evita que LLM omita básicos)
+      // Basal programática SIEMPRE incluida
       const base = basalGenerales(paciente, comorbilidades);
       const examenesFinal = validarContraCatalogo([...(examenesIA || []), ...base]);
 
-      // 3) Informe fallback si LLM no lo dio
       if (!informeIA) {
         informeIA = construirInformeFallback({ paciente, comorbilidades });
       }
 
-      // 4) Persistencia (merge sin destruir lo previo)
       const prev = memoria.get(ns("generales", idPago)) || {};
       const next = {
         ...prev,
-        ...paciente,                 // aplanado
+        ...paciente,
         comorbilidades,
         examenesIA: examenesFinal,
         informeIA,
