@@ -24,7 +24,7 @@ const PREOP_BASE = [
   'ECG DE REPOSO',
 ];
 
-// Construye lista de “Exámenes generales” según género
+// Construye lista de “Exámenes generales” según género (fallback si no hay IA)
 function buildGeneralesList(generoRaw = '') {
   const genero = String(generoRaw || '').trim().toLowerCase();
 
@@ -100,11 +100,25 @@ export function generarOrdenGenerales(doc, datos = {}) {
   doc.moveDown(1.6);
 
   // --------- EXÁMENES ---------
-  const lista = buildGeneralesList(genero);
+  // Si vienen desde IA, se usan; si no, fallback por género:
+  const listaIA = Array.isArray(datos?.examenesIA) ? datos.examenesIA.filter(Boolean) : [];
+  const lista = (listaIA.length > 0) ? listaIA : buildGeneralesList(genero);
+
   doc.font('Helvetica-Bold').fontSize(14).text('Exámenes solicitados:');
   doc.moveDown(0.8);
   drawBulletList(doc, lista, { fontSize: 13, indent: 14, lineGap: 2 });
-  doc.moveDown(2);
+  doc.moveDown(1.6);
+
+  // --------- INFORME IA (opcional) ---------
+  if (typeof datos?.informeIA === 'string' && datos.informeIA.trim()) {
+    doc.font('Helvetica-Bold').fontSize(14).text('Informe IA (resumen):');
+    doc.moveDown(0.4);
+    doc.font('Helvetica').fontSize(12).text(datos.informeIA.trim(), {
+      align: 'left',
+      width: doc.page.width - doc.page.margins.left - doc.page.margins.right,
+    });
+    doc.moveDown(2);
+  }
 
   // --------- PIE DE PÁGINA: FIRMA + TIMBRE ---------
   const pageW = doc.page.width;
