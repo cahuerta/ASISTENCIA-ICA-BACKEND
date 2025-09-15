@@ -7,35 +7,87 @@ export default function iaPreopHandler(memoria) {
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   const ns = (s, id) => `${s}:${id}`;
 
-  // ===== Catálogo EXACTO (nombre literal para compatibilidad con PDF) =====
+  // ===== Catálogo (nombres canónicos EXACTOS para compatibilidad con PDF) =====
+  // Nota: incluimos entradas separadas y compuestas para mayor compatibilidad.
   const CATALOGO_EXAMENES = [
     "HEMOGRAMA MAS VHS",
+    "VHS",
     "PCR",
+    "GLICEMIA",
+    "HEMOGLOBINA GLICOSILADA",
     "ELECTROLITOS PLASMATICOS",
     "PERFIL BIOQUIMICO",
     "PERFIL LIPIDICO",
     "PERFIL HEPATICO",
     "CREATININA",
+    "UREA",
+    "TP/INR",
+    "TTPA",
     "TTPK",
-    "HEMOGLOBINA GLICOSILADA",
-    "VITAMINA D",
+    "PERFIL DE COAGULACION (TP/INR y TTPA)",
     "GRUPO Y RH",
+    "PRUEBAS CRUZADAS (2U)",
     "VIH",
+    "ORINA COMPLETA",
     "ORINA",
     "UROCULTIVO",
     "ECG DE REPOSO",
+    "RADIOGRAFIA DE TORAX",
+    "PASE ODONTOLOGICO",
   ];
-  const catUpper = new Map(CATALOGO_EXAMENES.map((n) => [n.trim().toUpperCase(), n]));
-  const validarContraCatalogo = (lista) => {
+
+  const CANON = new Set(CATALOGO_EXAMENES);
+
+  // Sinónimos -> nombre canónico del catálogo
+  const ALIAS = new Map([
+    // Hemograma/VHS
+    ["HEMOGRAMA", "HEMOGRAMA MAS VHS"],
+    ["VELOCIDAD DE SEDIMENTACION", "VHS"],
+    ["V.S.G.", "VHS"],
+    // Glucosa
+    ["GLUCOSA", "GLICEMIA"],
+    // Coagulación
+    ["APTT", "TTPA"],
+    ["A PTT", "TTPA"],
+    ["A-PTT", "TTPA"],
+    ["TTPK", "TTPA"], // normalizamos a TTPA pero mantenemos TTPK en catálogo por compatibilidad
+    ["TIEMPO DE PROTROMBINA", "TP/INR"],
+    ["INR", "TP/INR"],
+    ["COAGULOGRAMA", "PERFIL DE COAGULACION (TP/INR y TTPA)"],
+    // Orina
+    ["ORINA", "ORINA COMPLETA"],
+    ["EXAMEN DE ORINA", "ORINA COMPLETA"],
+    // ECG
+    ["ECG", "ECG DE REPOSO"],
+    ["ELECTROCARDIOGRAMA", "ECG DE REPOSO"],
+    // Rx tórax
+    ["RX DE TORAX", "RADIOGRAFIA DE TORAX"],
+    ["RX TORAX", "RADIOGRAFIA DE TORAX"],
+    ["RADIOGRAFIA TORAX", "RADIOGRAFIA DE TORAX"],
+    // Odontología
+    ["PASE ODONTOLOGICO", "PASE ODONTOLOGICO"],
+    ["PASE ODONTOLÓGICO", "PASE ODONTOLOGICO"],
+    ["PASE DE ODONTOLOGIA", "PASE ODONTOLOGICO"],
+    ["EVALUACION ODONTOLOGICA PREOPERATORIA", "PASE ODONTOLOGICO"],
+  ]);
+
+  function normalizarNombre(raw = "") {
+    const key = String(raw || "").trim().toUpperCase();
+    if (CANON.has(key)) return key;
+    if (ALIAS.has(key)) return ALIAS.get(key);
+    return null;
+  }
+
+  function validarContraCatalogo(lista) {
     if (!Array.isArray(lista)) return null;
-    const out = [];
+    const out = new Set();
     for (const it of lista) {
       const raw = typeof it === "string" ? it : (it && it.nombre) || "";
-      const key = String(raw).trim().toUpperCase();
-      if (catUpper.has(key)) out.push(catUpper.get(key));
+      const norm = normalizarNombre(raw);
+      if (norm) out.add(norm);
     }
-    return out.length ? out : null;
-  };
+    return out.size ? Array.from(out) : null;
+  }
 
   // ===== Utilidades para informe fallback =====
   const etiqueta = {
@@ -51,14 +103,21 @@ export default function iaPreopHandler(memoria) {
     anticoagulantes: "Uso de anticoagulantes/antiagregantes",
     artritis_reumatoide: "Artritis reumatoide / autoinmune",
   };
+
   const resumenComorbilidades = (c = {}) => {
     const pos = Object.keys(etiqueta)
       .filter((k) => c[k] === true)
       .map((k) => `• ${etiqueta[k]}`);
-    return pos.length ? pos.join("\n") : "Sin comorbilidades relevantes reportadas.";
+    return pos.length
+      ? pos.join("\n")
+      : "Sin comorbilidades relevantes reportadas.";
   };
 
-  function construirInformeFallback({ paciente = {}, comorbilidades = {}, tipoCirugia = "" }) {
+  function construirInformeFallback({
+    paciente = {},
+    comorbilidades = {},
+    tipoCirugia = "",
+  }) {
     const nombre = paciente?.nombre || "";
     const edad = Number(paciente?.edad) || null;
     const dolor = paciente?.dolor || "";
@@ -69,7 +128,7 @@ export default function iaPreopHandler(memoria) {
     const alergias =
       typeof comorbilidades?.alergias === "object"
         ? comorbilidades.alergias.tiene
-          ? (comorbilidades.alergias.detalle || "Refiere alergias.")
+          ? comorbilidades.alergias.detalle || "Refiere alergias."
           : "No refiere."
         : (comorbilidades?.alergias || "").toString().trim();
 
@@ -77,20 +136,34 @@ export default function iaPreopHandler(memoria) {
     const anticoags =
       typeof comorbilidades?.anticoagulantes === "object"
         ? comorbilidades.anticoagulantes.usa
-          ? `Sí${comorbilidades.anticoagulantes.detalle ? ` — ${comorbilidades.anticoagulantes.detalle}` : ""}`
+          ? `Sí${
+              comorbilidades.anticoagulantes.detalle
+                ? ` — ${comorbilidades.anticoagulantes.detalle}`
+                : ""
+            }`
           : "No"
-        : (comorbilidades?.anticoagulantes ? "Sí" : "No");
+        : comorbilidades?.anticoagulantes
+        ? "Sí"
+        : "No";
 
     const otras = (comorbilidades?.otras || "").toString().trim();
     const lista = resumenComorbilidades(comorbilidades);
 
     const consideraciones = [];
     if (comorbilidades.dm2) consideraciones.push("Control glicémico (HbA1c).");
-    if (comorbilidades.erc) consideraciones.push("Evaluar función renal / evitar nefrotóxicos.");
-    if (comorbilidades.cardiopatia || (edad && edad >= 60)) consideraciones.push("ECG de reposo / estratificación cardiovascular.");
-    if (comorbilidades.epoc_asma || comorbilidades.tabaquismo) consideraciones.push("Optimización respiratoria.");
-    if (comorbilidades.anticoagulantes === true || comorbilidades?.anticoagulantes?.usa)
-      consideraciones.push("Plan suspensión/puente de anticoagulación.");
+    if (comorbilidades.erc)
+      consideraciones.push("Evaluar función renal / evitar nefrotóxicos.");
+    if (comorbilidades.cardiopatia || (edad && edad >= 60))
+      consideraciones.push(
+        "ECG de reposo y evaluación cardiovascular según riesgo."
+      );
+    if (comorbilidades.epoc_asma || comorbilidades.tabaquismo)
+      consideraciones.push("Optimización respiratoria.");
+    if (
+      comorbilidades.anticoagulantes === true ||
+      comorbilidades?.anticoagulantes?.usa
+    )
+      consideraciones.push("Plan suspensión o puente de anticoagulación.");
 
     return [
       `Evaluación Preoperatoria (resumen)\n`,
@@ -104,64 +177,134 @@ export default function iaPreopHandler(memoria) {
       otras ? `Otras comorbilidades:\n${otras}` : "",
       ``,
       `Consideraciones preoperatorias:`,
-      `${consideraciones.length ? "• " + consideraciones.join("\n• ") : "• Sin consideraciones adicionales más allá del protocolo estándar."}`,
+      `${
+        consideraciones.length
+          ? "• " + consideraciones.join("\n• ")
+          : "• Sin consideraciones adicionales más allá del protocolo estándar."
+      }`,
     ]
       .filter(Boolean)
       .join("\n");
   }
 
+  // ===== Reglas BASALES + por comorbilidad (deterministas) =====
+  function examenesBasales(paciente = {}, comorbilidades = {}, tipoCirugia = "") {
+    const edad = Number(paciente?.edad);
+    const mayor60 = Number.isFinite(edad) && edad >= 60;
+    const esArtro = /ARTROPLASTIA/i.test(String(tipoCirugia || ""));
+
+    const add = new Set();
+
+    // Basal general para cirugía mayor ortopédica (artroplastia) y preop
+    add.add("HEMOGRAMA MAS VHS");
+    add.add("PCR");
+    add.add("GLICEMIA");
+    add.add("ELECTROLITOS PLASMATICOS");
+    add.add("PERFIL BIOQUIMICO");
+    add.add("PERFIL HEPATICO");
+    add.add("CREATININA");
+    add.add("UREA");
+    add.add("ORINA COMPLETA");
+    add.add("UROCULTIVO");
+    add.add("GRUPO Y RH");
+    // Cirugía mayor: reservar cruzadas
+    if (esArtro) add.add("PRUEBAS CRUZADAS (2U)");
+
+    // Coagulación:
+    add.add("PERFIL DE COAGULACION (TP/INR y TTPA)");
+
+    // Diabetes/obesidad: HbA1c
+    if (comorbilidades?.dm2 || comorbilidades?.obesidad) {
+      add.add("HEMOGLOBINA GLICOSILADA");
+    }
+
+    // Cardiovascular/edad: ECG; Rx tórax si mayor60 o EPOC/asma/tabaquismo/cardiopatía
+    if (mayor60 || comorbilidades?.cardiopatia || comorbilidades?.hta) {
+      add.add("ECG DE REPOSO");
+    }
+    if (
+      mayor60 ||
+      comorbilidades?.epoc_asma ||
+      comorbilidades?.tabaquismo ||
+      comorbilidades?.cardiopatia
+    ) {
+      add.add("RADIOGRAFIA DE TORAX");
+    }
+
+    // Pase odontológico para artroplastia (foco infeccioso)
+    if (esArtro) add.add("PASE ODONTOLOGICO");
+
+    // Otros opcionales (dejar en catálogo, IA decidirá agregarlos si corresponde)
+    // add.add("VIH"); add.add("PERFIL LIPIDICO"); …
+
+    // Validamos contra catálogo por seguridad
+    return validarContraCatalogo(Array.from(add)) || [];
+  }
+
   // ===== Prompt para ChatGPT (devuelve SOLO JSON) =====
-  function buildPromptJSON({ paciente, comorbilidades, tipoCirugia, catalogo }) {
+  function buildPromptJSON({
+    paciente,
+    comorbilidades,
+    tipoCirugia,
+    catalogo,
+    basales,
+  }) {
     const resumen = resumenComorbilidades(comorbilidades);
-    const alergiasTxt =
-      typeof comorbilidades?.alergias === "object"
-        ? (comorbilidades.alergias.tiene ? (comorbilidades.alergias.detalle || "Refiere alergias.") : "No refiere.")
-        : (comorbilidades?.alergias || "").toString();
 
-    const anticoTxt =
-      typeof comorbilidades?.anticoagulantes === "object"
-        ? (comorbilidades.anticoagulantes.usa
-            ? `Sí${comorbilidades.anticoagulantes.detalle ? ` — ${comorbilidades.anticoagulantes.detalle}` : ""}`
-            : "No")
-        : (comorbilidades?.anticoagulantes ? "Sí" : "No");
-
-    const otras = (comorbilidades?.otras || "").toString();
+    const esArtro = /ARTROPLASTIA/i.test(tipoCirugia || "");
+    const reglasArtro = esArtro
+      ? `
+- Contexto: ARTROPLASTIA (cadera/rodilla). Los exámenes basales ya incluyen hemograma+VHS, PCR, glicemia, HbA1c (si DM/obesidad), bioquímica/renal, perfil hepático, perfil de coagulación (TP/INR y TTPA), orina completa + urocultivo, grupo y RH, pruebas cruzadas (2U), ECG según riesgo/edad, Rx de tórax según riesgo/edad, y pase odontológico.
+- Tu tarea es AGREGAR del catálogo solo lo que creas faltante según comorbilidades/edad. Si nada falta, devuelve lista vacía para "examenes" (porque ya vienen los basales).`
+      : `
+- Hay exámenes basales predefinidos. Solo agrega del catálogo lo que falte por comorbilidades/edad. Si nada falta, devuelve lista vacía para "examenes".`;
 
     return `
 Eres un asistente clínico para evaluación PREOPERATORIA.
-Responde EXCLUSIVAMENTE con un JSON válido, sin texto extra, con la forma:
+Devuelve EXCLUSIVAMENTE un JSON válido con forma:
 {
-  "examenes": [ /* lista de nombres exactamente del catálogo dado */ ],
-  "informeIA": "texto breve en español (máx 140 palabras) que resuma comorbilidades y consideraciones preoperatorias"
+  "examenes": [ /* SOLO nombres exactamente del catálogo (nuevos a agregar, los basales ya se incluyen) */ ],
+  "informeIA": "texto breve en español (≤140 palabras) con consideraciones preoperatorias"
 }
 
 Reglas:
-- "examenes" DEBEN ser un subconjunto EXACTO del catálogo (coincidencia literal).
-- No prescribas fármacos. Enfócate en laboratorio y ECG preoperatorios.
-- Mantén el "informeIA" conciso, sin alarmismo.
+- Usa únicamente ítems del catálogo (coincidencia literal).
+- No prescribas fármacos. Enfócate en laboratorio, ECG y Rx tórax si corresponde.
+${reglasArtro}
 
 Catálogo permitido:
 ${catalogo.map((s) => `- ${s}`).join("\n")}
 
-Datos:
-- Paciente: ${paciente?.nombre || "—"} (${Number(paciente?.edad) || "—"} años)
+Exámenes basales ya incluidos:
+${basales.map((s) => `- ${s}`).join("\n")}
+
+Datos del paciente:
+- Nombre/Edad: ${paciente?.nombre || "—"} / ${Number(paciente?.edad) || "—"} años
 - Cirugía planificada: ${tipoCirugia || "No especificada"}
 - Motivo/Área: ${paciente?.dolor || "—"} ${paciente?.lado || ""}
 - Comorbilidades marcadas:
 ${resumen}
-- Alergias: ${alergiasTxt || "—"}
-- Anticoagulantes/antiagregantes: ${anticoTxt}
-- Otras (texto): ${otras || "—"}
 `.trim();
   }
 
   // Robustez: extraer JSON aunque venga dentro de ```json ... ```
   function extraerJSON(str = "") {
-    try { return JSON.parse(str); } catch {}
-    const m = str.match(/```json\s*([\s\S]*?)```/i) || str.match(/```([\s\S]*?)```/);
-    if (m && m[1]) { try { return JSON.parse(m[1]); } catch {} }
+    try {
+      return JSON.parse(str);
+    } catch {}
+    const m =
+      str.match(/```json\s*([\s\S]*?)```/i) || str.match(/```([\s\S]*?)```/);
+    if (m && m[1]) {
+      try {
+        return JSON.parse(m[1]);
+      } catch {}
+    }
     const m2 = str.match(/\{[\s\S]*\}/);
-    if (m2) { try { return JSON.parse(m2[0]); } catch {} }
+    if (m2) {
+      try {
+        return JSON.parse(m2[0]);
+      } catch {}
+    }
     return null;
   }
 
@@ -176,7 +319,9 @@ ${resumen}
       } = req.body || {};
 
       if (!idPago || !paciente || !paciente.nombre) {
-        return res.status(400).json({ ok: false, error: "Faltan idPago o datos del paciente." });
+        return res
+          .status(400)
+          .json({ ok: false, error: "Faltan idPago o datos del paciente." });
       }
 
       // 1) Catálogo desde el front (si viene) o el local
@@ -185,19 +330,32 @@ ${resumen}
           ? catalogoExamenes.map((s) => String(s).trim()).filter(Boolean)
           : CATALOGO_EXAMENES;
 
-      // 2) Llamada a OpenAI (si hay API key)
-      let examenes = null;
+      // 2) Construir basales deterministas
+      const base = examenesBasales(paciente, comorbilidades, tipoCirugia);
+
+      // 3) Llamada a OpenAI (si hay API key) para sugerir EXTRAS sobre los basales
+      let extras = [];
       let informeIA = "";
 
       if (process.env.OPENAI_API_KEY) {
-        const prompt = buildPromptJSON({ paciente, comorbilidades, tipoCirugia, catalogo });
+        const prompt = buildPromptJSON({
+          paciente,
+          comorbilidades,
+          tipoCirugia,
+          catalogo,
+          basales: base,
+        });
         try {
           const completion = await openai.chat.completions.create({
             model: "gpt-4o-mini",
             temperature: 0.2,
-            max_tokens: 400,
+            max_tokens: 450,
             messages: [
-              { role: "system", content: "Devuelve únicamente JSON válido según las reglas dadas." },
+              {
+                role: "system",
+                content:
+                  "Devuelve únicamente JSON válido según las reglas dadas.",
+              },
               { role: "user", content: prompt },
             ],
           });
@@ -206,8 +364,7 @@ ${resumen}
           const parsed = extraerJSON(content);
 
           if (parsed && Array.isArray(parsed.examenes)) {
-            // ⬇️ Validamos contra el catálogo, pero si no hay match, NO rellenamos con fijos
-            examenes = validarContraCatalogo(parsed.examenes) || [];
+            extras = validarContraCatalogo(parsed.examenes) || [];
           }
           if (parsed && typeof parsed.informeIA === "string") {
             informeIA = parsed.informeIA.trim();
@@ -217,19 +374,23 @@ ${resumen}
         }
       }
 
-      // 3) Sin exámenes fijos de relleno: dejamos [] si no hay IA
-      if (!Array.isArray(examenes)) examenes = [];
+      // 4) Mezcla final: BASALES ∪ EXTRAS (deduplicado)
+      const examenes = Array.from(new Set([...(base || []), ...(extras || [])]));
 
-      // Informe fallback (solo texto) si la IA no lo entregó
+      // 5) Informe fallback si la IA no lo entregó
       if (!informeIA) {
-        informeIA = construirInformeFallback({ paciente, comorbilidades, tipoCirugia });
+        informeIA = construirInformeFallback({
+          paciente,
+          comorbilidades,
+          tipoCirugia,
+        });
       }
 
-      // 4) Persistencia (merge sin destruir lo previo)
+      // 6) Persistencia (merge sin destruir lo previo)
       const prev = memoria.get(ns("preop", idPago)) || {};
       const next = {
         ...prev,
-        ...paciente,            // aplanado
+        ...paciente, // aplanado
         comorbilidades,
         tipoCirugia,
         examenesIA: examenes,
@@ -240,7 +401,10 @@ ${resumen}
       return res.json({ ok: true, examenes, informeIA });
     } catch (e) {
       console.error("ia-preop error:", e);
-      return res.status(500).json({ ok: false, error: "No se pudo generar indicación preoperatoria." });
+      return res.status(500).json({
+        ok: false,
+        error: "No se pudo generar indicación preoperatoria.",
+      });
     }
   };
 }
