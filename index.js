@@ -8,7 +8,8 @@ import { fileURLToPath } from "url";
 
 // ===== Nuevo módulo Chat GPT
 import chatRouter from "./nuevoModuloChat.js";
-import iaPreopHandler from "./preopIA.js"; // ← NUEVO
+import iaPreopHandler from "./preopIA.js"; // ← PREOP IA
+import generalesIAHandler from "./generalesIA.js"; // ← NUEVO: GENERALES IA
 
 // ===== Paths útiles
 const __filename = fileURLToPath(import.meta.url);
@@ -409,25 +410,44 @@ app.get("/pdf-preop/:idPago", async (req, res) => {
   }
 });
 
-// ← NUEVO endpoint IA Pre Op
+// ← PREOP IA (y alias de compatibilidad)
 app.post("/ia-preop", iaPreopHandler(memoria));
-// ⬇️ AÑADIDO: alias para compatibilidad con el front
 app.post("/preop-ia", iaPreopHandler(memoria));
 
 // =====================================================
 // ============   GENERALES (1 PDF)  ===================
 // =====================================================
 
+// ⬇️ NUEVO: IA de Generales
+app.post("/ia-generales", generalesIAHandler(memoria));
+
 app.post("/guardar-datos-generales", (req, res) => {
-  const { idPago, datosPaciente } = req.body || {};
+  const {
+    idPago,
+    datosPaciente,   // { nombre, rut, edad, genero, ... }
+    comorbilidades,  // opcional
+    examenesIA,      // opcional (array)
+    informeIA,       // opcional (string)
+    nota,            // opcional (string)
+  } = req.body || {};
+
   if (!idPago || !datosPaciente)
     return res
       .status(400)
       .json({ ok: false, error: "Faltan idPago o datosPaciente" });
-  memoria.set(ns("generales", idPago), {
+
+  const prev = memoria.get(ns("generales", idPago)) || {};
+  const next = {
+    ...prev,
     ...datosPaciente,
+    comorbilidades: (typeof comorbilidades === "object" ? comorbilidades : prev.comorbilidades),
+    examenesIA: Array.isArray(examenesIA) ? examenesIA : (prev.examenesIA || undefined),
+    informeIA: typeof informeIA === "string" ? informeIA : (prev.informeIA || undefined),
+    nota: typeof nota === "string" ? nota : (prev.nota || undefined),
     pagoConfirmado: true,
-  });
+  };
+
+  memoria.set(ns("generales", idPago), next);
   res.json({ ok: true });
 });
 
