@@ -8,8 +8,9 @@ import { fileURLToPath } from "url";
 
 // ===== Nuevo módulo Chat GPT
 import chatRouter from "./nuevoModuloChat.js";
-import iaPreopHandler from "./preopIA.js"; // ← PREOP IA
-import generalesIAHandler from "./generalesIA.js"; // ← NUEVO: GENERALES IA
+import iaPreopHandler from "./preopIA.js";        // ← PREOP IA
+import generalesIAHandler from "./generalesIA.js"; // ← GENERALES IA
+import traumaIAHandler from "./traumaIA.js";       // ← NUEVO: TRAUMA IA
 
 // ===== Paths útiles
 const __filename = fileURLToPath(import.meta.url);
@@ -418,9 +419,10 @@ app.post("/preop-ia", iaPreopHandler(memoria));
 // ============   GENERALES (1 PDF)  ===================
 // =====================================================
 
-// ⬇️ NUEVO: IA de Generales
+// ⬇️ IA de Generales
 app.post("/ia-generales", generalesIAHandler(memoria));
 
+// Guardar / obtener / PDF Generales
 app.post("/guardar-datos-generales", (req, res) => {
   const {
     idPago,
@@ -530,6 +532,12 @@ app.get("/api/pdf-ia-orden/:idPago", async (req, res) => {
     res.sendStatus(500);
   }
 });
+
+// =====================================================
+// ============   TRAUMA IA (nuevo endpoint) ===========
+// =====================================================
+
+app.post("/ia-trauma", traumaIAHandler(memoria));
 
 // =====================================================
 // ============   CHAT GPT (nuevo módulo)  =============
