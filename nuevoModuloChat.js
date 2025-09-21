@@ -3,13 +3,13 @@ import express from "express";
 import OpenAI from "openai";
 import PDFDocument from "pdfkit";
 import { generarInformeIA } from "./informeIA.js";
-// ⬇️ NUEVO: reusar tu generador de órdenes de imagenología
+// ⬇️ Reusar tu generador de órdenes de imagenología
 import { generarOrdenImagenologia } from "./ordenImagenologia.js";
 
 const router = express.Router();
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-// ---------- Prompt y utilidades ----------
+/* ---------- Prompt y utilidades ---------- */
 const SYSTEM_PROMPT_IA = `
 Eres un asistente clínico de TRAUMATOLOGÍA para pre-orientación.
 Objetivo: redactar una NOTA MUY BREVE centrada en EXÁMENES a solicitar.
@@ -18,20 +18,19 @@ Reglas:
 - Español claro. Extensión total: máx. 120–140 palabras.
 - NO es diagnóstico definitivo ni tratamiento. No prescribas fármacos.
 - Evita alarmismo. Usa condicionales (“podría sugerir”, “compatible con”).
-- Prioriza IMAGENOLOGÍA y, si corresponde, LABORATORIO complementario.
-- Si hay lateralidad (Derecha/Izquierda), inclúyela explícitamente en los exámenes.
+- Prioriza IMAGENOLOGÍA. Si corresponde, sugiere ECOGRAFÍA en lesiones de partes blandas (frecuente en hombro/codo/mano).
+- Si hay lateralidad (Derecha/Izquierda), inclúyela explícitamente en el examen.
 - No repitas identificadores del paciente.
 
 Formato EXACTO (mantén títulos y viñetas tal cual):
 Diagnóstico presuntivo:
-• (1–2 entidades clínicas probables)
+• (1 entidad clínica probable)
 
 Explicación breve:
-• (1–2 frases muy concisas que justifiquen lo anterior)
+• (≈50 palabras, 1–2 frases muy concisas que justifiquen lo anterior)
 
-Exámenes sugeridos:
-• ...
-• ...
+Examen sugerido:
+• (SOLO 1 examen de imagen, con lateralidad si aplica)
 
 Indicaciones:
 • Presentarse con la orden; ayuno solo si el examen lo solicita.
@@ -55,53 +54,45 @@ function leerPacienteDeMemoria(memoria, idPago) {
   return null;
 }
 
-// --- NUEVO: parser de la sección “Exámenes sugeridos” ---
+/* --- Parser de “Examen sugerido” (singular; también acepta plural legacy) --- */
 function parseExamenesSugeridos(text = "") {
-  if (!text) return { all: [], rm: [], rx: [], otros: [] };
+  if (!text) return { all: [], first: "", rm: [], rx: [], eco: [], otros: [] };
 
-  // Captura la sección entre "Exámenes sugeridos:" y "Indicaciones:" (o fin)
-  const sec = /Ex[aá]menes sugeridos:\s*([\s\S]*?)(?:\n\s*Indicaciones:|$)/i.exec(text);
-  if (!sec) return { all: [], rm: [], rx: [], otros: [] };
+  // Captura la sección entre "Examen sugerido:" (o "Exámenes sugeridos:") e "Indicaciones:" (o fin)
+  const sec =
+    /Examen(?:es)? sugeridos?:\s*([\s\S]*?)(?:\n\s*Indicaciones:|$)/i.exec(text);
+  if (!sec) return { all: [], first: "", rm: [], rx: [], eco: [], otros: [] };
 
   const bloque = sec[1] || "";
-  const rawLines = bloque
+  const bullets = bloque
     .split(/\r?\n/)
     .map((l) => l.trim())
+    .filter(Boolean)
+    .map((l) => (/^[•\-\*]\s*(.+)$/.exec(l)?.[1] || l).trim())
+    .map((l) => l.replace(/\s+/g, " ").replace(/\s*\.\s*$/, ".")) // normaliza y asegura punto final
     .filter(Boolean);
 
-  const bullets = [];
-  for (const line of rawLines) {
-    const m = /^[•\-\*]\s*(.+)$/.exec(line);
-    const clean = (m ? m[1] : line).trim();
-    if (!clean) continue;
-    const norm = clean.replace(/\s+/g, " ").replace(/\s*\.\s*$/, ".");
-    bullets.push(norm);
-  }
+  // Tomar SOLO el primero
+  const first = bullets[0] || "";
+  const one = first ? [first] : [];
 
-  const rm = [];
-  const rx = [];
-  const otros = [];
-  for (const b of bullets) {
+  // Clasificación simple
+  const rm = [], rx = [], eco = [], otros = [];
+  for (const b of one) {
     const l = b.toLowerCase();
-    const isRM =
-      l.includes("resonancia") ||
-      /\brm\b/.test(l) ||
-      l.includes("resonancia magn");
-    const isRX =
-      /\brx\b/.test(l) ||
-      l.includes("radiografía") ||
-      l.includes("radiografías") ||
-      l.includes("rayos x") ||
-      l.includes("teleradiografía") ||
-      l.includes("teleradiograf");
+    const isRM  = l.includes("resonancia") || /\brm\b/.test(l) || l.includes("resonancia magn");
+    const isRX  = /\brx\b/.test(l) || l.includes("radiografía") || l.includes("rayos x") || l.includes("teleradiograf");
+    const isECO = l.includes("ecografía") || l.includes("ecografia") || l.includes("ultrasonido") || /\beco\b/.test(l);
     if (isRM) rm.push(b);
     else if (isRX) rx.push(b);
+    else if (isECO) eco.push(b);
     else otros.push(b);
   }
-  return { all: bullets, rm, rx, otros };
+
+  return { all: one, first, rm, rx, eco, otros };
 }
 
-// --- NUEVO: helpers mínimos para la orden IA ---
+/* --- Helpers mínimos para la orden IA --- */
 function notaAsistenciaIA(dolor = "") {
   const d = String(dolor || "").toLowerCase();
   const base = "Presentarse con esta orden. Ayuno NO requerido salvo indicación.";
@@ -110,39 +101,57 @@ function notaAsistenciaIA(dolor = "") {
   return base;
 }
 
-// Fallback simple si no hay exámenes parseados (evita PDF vacío)
+/* --- Fallback de 1 examen según clínica (mantiene cadera/rodilla/columna lumbar) ---
+   Además: para hombro/codo/mano en menores de 40 años, usar Ecografía preferente. */
 function sugerirFallbackSegunClinica(dolor = "", lado = "", edad = null) {
   const d = String(dolor || "").toLowerCase();
   const L = String(lado || "").trim();
   const ladoTxt = L ? ` ${L.toUpperCase()}` : "";
   const edadNum = Number(edad);
+  const joven = Number.isFinite(edadNum) ? edadNum < 40 : false;
   const mayor60 = Number.isFinite(edadNum) ? edadNum > 60 : false;
 
+  // Mantener tu lógica existente (NO tocar estos)
   if (d.includes("columna")) return ["RESONANCIA DE COLUMNA LUMBAR."];
 
   if (d.includes("rodilla")) {
-    if (mayor60) {
-      return [
-        `RX DE RODILLA${ladoTxt} — AP, LATERAL, AXIAL PATELA.`,
-        "TELERADIOGRAFIA DE EEII.",
-      ];
-    } else {
-      return [
-        `RESONANCIA MAGNETICA DE RODILLA${ladoTxt}.`,
-        "TELERADIOGRAFIA DE EEII.",
-      ];
-    }
+    return mayor60
+      ? [`RX DE RODILLA${ladoTxt} AP/LATERAL/AXIAL.`]
+      : [`RESONANCIA MAGNÉTICA DE RODILLA${ladoTxt}.`];
   }
 
   if (d.includes("cadera")) {
-    if (mayor60) return ["RX DE PELVIS AP, Y LOWESTAIN."];
-    return [`RESONANCIA MAGNETICA DE CADERA${ladoTxt}.`];
+    return mayor60
+      ? ["RX DE PELVIS AP Y LÖWENSTEIN."]
+      : [`RESONANCIA MAGNÉTICA DE CADERA${ladoTxt}.`];
+  }
+
+  // Nuevas zonas con ECOGRAFÍA cuando sea razonable (partes blandas)
+  if (d.includes("hombro")) {
+    return joven
+      ? [`ECOGRAFÍA DE HOMBRO${ladoTxt}.`]
+      : [`RX DE HOMBRO${ladoTxt} AP/LATERAL.`];
+  }
+  if (d.includes("codo")) {
+    return joven
+      ? [`ECOGRAFÍA DE CODO${ladoTxt}.`]
+      : [`RX DE CODO${ladoTxt} AP/LATERAL.`];
+  }
+  if (d.includes("mano")) {
+    return joven
+      ? [`ECOGRAFÍA DE MANO${ladoTxt}.`]
+      : [`RX DE MANO${ladoTxt} AP/OBLICUA.`];
+  }
+  if (d.includes("tobillo")) {
+    // Tobillo suele iniciar con RX; ecografía puede ser útil en tendinopatías,
+    // pero por simplicidad mantenemos RX como fallback general.
+    return [`RX DE TOBILLO${ladoTxt} AP/LATERAL.`];
   }
 
   return ["Evaluación imagenológica según clínica."];
 }
 
-// ===== Preview IA (antes de pagar) =====
+/* ===== Preview IA (antes de pagar) ===== */
 router.post("/preview-informe", async (req, res) => {
   try {
     const { idPago, consulta } = req.body || {};
@@ -183,16 +192,17 @@ router.post("/preview-informe", async (req, res) => {
 
     const respuesta = recortar(completion.choices?.[0]?.message?.content || "", 900);
 
-    // Extrae y guarda exámenes sugeridos
+    // Extrae y guarda SOLO 1 examen sugerido
     const parsed = parseExamenesSugeridos(respuesta);
 
     memoria.set(`ia:${idPago}`, {
       ...prev,
       ...merged,
       respuesta,
-      examenesIA: parsed.all,
+      examenesIA: parsed.all,     // ← como arreglo de 1
       examenesIA_rm: parsed.rm,
       examenesIA_rx: parsed.rx,
+      examenesIA_eco: parsed.eco, // ← ecografía si la IA la propuso
       examenesIA_otros: parsed.otros,
       pagoConfirmado: false,
     });
@@ -204,7 +214,7 @@ router.post("/preview-informe", async (req, res) => {
   }
 });
 
-// ===== Guardar datos IA tras pago confirmado =====
+/* ===== Guardar datos IA tras pago confirmado ===== */
 router.post("/guardar-datos-ia", (req, res) => {
   const { idPago } = req.body || {};
   if (!idPago) return res.status(400).json({ ok: false, error: "Falta idPago" });
@@ -219,7 +229,7 @@ router.post("/guardar-datos-ia", (req, res) => {
   res.json({ ok: true });
 });
 
-// ===== Obtener datos IA (para frontend) =====
+/* ===== Obtener datos IA (para frontend) ===== */
 router.get("/obtener-datos-ia/:idPago", (req, res) => {
   const memoria = req.app.get("memoria");
   const d = memoria.get(`ia:${req.params.idPago}`);
@@ -227,7 +237,7 @@ router.get("/obtener-datos-ia/:idPago", (req, res) => {
   res.json({ ok: true, datos: d });
 });
 
-// ===== PDF IA (informe de texto) =====
+/* ===== PDF IA (informe de texto) ===== */
 router.get("/pdf-ia/:idPago", (req, res) => {
   try {
     const memoria = req.app.get("memoria");
@@ -252,7 +262,7 @@ router.get("/pdf-ia/:idPago", (req, res) => {
   }
 });
 
-// ===== NUEVO: PDF IA (Orden de Exámenes) =====
+/* ===== PDF IA (Orden de Exámenes) — SOLO 1 EXAMEN ===== */
 router.get("/pdf-ia-orden/:idPago", async (req, res) => {
   try {
     const memoria = req.app.get("memoria");
@@ -263,13 +273,13 @@ router.get("/pdf-ia-orden/:idPago", async (req, res) => {
     if (!d) return res.sendStatus(404);
     if (!d.pagoConfirmado) return res.sendStatus(402);
 
-    // Construye las líneas de examen desde IA; si no hay, usa fallback clínico.
+    // Toma el primer examen de la IA; si no hay, usa fallback (1 examen).
     const lineas =
       Array.isArray(d.examenesIA) && d.examenesIA.length > 0
-        ? d.examenesIA
-        : sugerirFallbackSegunClinica(d.dolor, d.lado, d.edad);
+        ? d.examenesIA.slice(0, 1) // ← SOLO 1
+        : sugerirFallbackSegunClinica(d.dolor, d.lado, d.edad).slice(0, 1);
 
-    const examenStr = lineas.join("\n");
+    const examenStr = lineas[0] || ""; // una sola línea
     const nota = notaAsistenciaIA(d.dolor);
 
     const filename = `ordenIA_${req.params.idPago}.pdf`;
@@ -279,7 +289,7 @@ router.get("/pdf-ia-orden/:idPago", async (req, res) => {
     const doc = new PDFDocument({ size: "A4", margin: 50 });
     doc.pipe(res);
 
-    // Reusar tu generador de órdenes de imagenología
+    // Reusar generador de orden (recibe string con saltos de línea; aquí es 1)
     generarOrdenImagenologia(doc, {
       ...d,
       examen: examenStr,
