@@ -1,6 +1,6 @@
 // traumaIA.js — IA para módulo TRAUMA (imagenología)
-// ESM (Node >= 18). Compatible con memoria Map compartida desde index.js.
-// Usa OpenAI si hay API key; si no, cae a heurística local.
+// ESM (Node >= 18).
+// Usa OpenAI si hay API key; si no, cae a heurística local solo en caso de error/JSON inválido.
 
 const OPENAI_API = "https://api.openai.com/v1/chat/completions";
 const MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
@@ -11,49 +11,35 @@ function normalizarExamenes(dolor = "", lado = "", lista = []) {
   const lat = L ? ` ${L}` : "";
   const arr = (Array.isArray(lista) ? lista : [])
     .map((x) => String(x || "").trim())
-    .filter(Boolean)
-    .map((x) => x.toUpperCase());
+    .filter(Boolean);
 
-  // Derivar zona a partir del "dolor"
-  const zona = (() => {
-    const d = String(dolor || "").toLowerCase();
-    if (d.includes("hombro")) return "HOMBRO";
-    if (d.includes("codo")) return "CODO";
-    if (d.includes("muñeca") || d.includes("muneca")) return "MUÑECA";
-    if (d.includes("mano")) return "MANO";
-    if (d.includes("tobillo")) return "TOBILLO";
-    if (d.includes("pie")) return "PIE";
-    if (d.includes("rodilla")) return "RODILLA";
-    if (d.includes("cadera")) return "CADERA";
-    if (d.includes("columna")) return "COLUMNA LUMBAR";
-    return "";
-  })();
+  if (!arr.length) return [];
 
-  const out = [];
+  let x = arr[0].toUpperCase();
 
-  for (let x of arr) {
-    if (/ECOGRAF[ÍI]A(\s+DE)?\s+PARTES\s+BLANDAS\b/.test(x)) {
-      if (zona && zona !== "COLUMNA LUMBAR") {
-        const ecoPB = `ECOGRAFÍA DE PARTES BLANDAS DE ${zona}${lat}.`;
-        out.push(ecoPB);
-      } else {
-        out.push(x.replace(/\.$/, "") + ".");
-      }
-    } else if (
-      /(CADERA|RODILLA|HOMBRO|TOBILLO|PIERNA|BRAZO|CODO|MUÑECA|MANO|PIE)\b/.test(x) &&
-      !/\b(IZQUIERDA|DERECHA)\b/.test(x) &&
-      lat
-    ) {
-      out.push(x.replace(/\.$/, "") + lat + ".");
-    } else {
-      out.push(x.endsWith(".") ? x : `${x}.`);
+  // Estándar: ECOGRAFÍA DE PARTES BLANDAS
+  if (/ECOGRAF[ÍI]A.*PARTES\s+BLANDAS/.test(x)) {
+    if (!/DE/.test(x)) {
+      const zona = (dolor || "").toUpperCase();
+      x = `ECOGRAFÍA DE PARTES BLANDAS DE ${zona}${lat}`.trim();
     }
-    if (out.length === 1) break; // limitar a 1
   }
 
-  return out.slice(0, 1);
+  // Asegurar lateralidad si aplica
+  if (
+    /(CADERA|RODILLA|HOMBRO|TOBILLO|PIERNA|BRAZO|CODO|MUÑECA|MANO|PIE|COLUMNA)/.test(x) &&
+    lat &&
+    !/\b(IZQUIERDA|DERECHA)\b/.test(x)
+  ) {
+    x = x.replace(/\.$/, "") + lat;
+  }
+
+  if (!x.endsWith(".")) x += ".";
+
+  return [x];
 }
 
+/* ---- Fallback heurístico (solo si IA falla) ---- */
 function fallbackHeuristico(p = {}) {
   const d = String(p.dolor || "").toLowerCase();
   const L = (p.lado || "").toUpperCase();
@@ -70,16 +56,24 @@ function fallbackHeuristico(p = {}) {
     examen = mayor60
       ? `RX DE PELVIS AP Y LÖWENSTEIN.`
       : `RESONANCIA MAGNÉTICA DE CADERA${lat}.`;
-  } else if (d.includes("columna")) {
+  } else if (d.includes("cervical")) {
+    examen = `RESONANCIA MAGNÉTICA DE COLUMNA CERVICAL.`;
+  } else if (d.includes("dorsal")) {
+    examen = `RESONANCIA MAGNÉTICA DE COLUMNA DORSAL.`;
+  } else if (d.includes("lumbar")) {
     examen = `RESONANCIA MAGNÉTICA DE COLUMNA LUMBAR.`;
-  } 
-  // === Ajustado: hombro / codo / mano → ECOGRAFÍA primero ===
-  else if (d.includes("hombro")) {
-    examen = `ECOGRAFÍA DE PARTES BLANDAS DE HOMBRO${lat}.`;
+  } else if (d.includes("hombro")) {
+    examen = mayor60
+      ? `RX DE HOMBRO${lat} AP/AXIAL.`
+      : `ECOGRAFÍA DE PARTES BLANDAS DE HOMBRO${lat}.`;
   } else if (d.includes("codo")) {
-    examen = `ECOGRAFÍA DE PARTES BLANDAS DE CODO${lat}.`;
+    examen = mayor60
+      ? `RX DE CODO${lat} AP/LATERAL.`
+      : `ECOGRAFÍA DE PARTES BLANDAS DE CODO${lat}.`;
   } else if (d.includes("mano") || d.includes("muñeca") || d.includes("muneca")) {
-    examen = `ECOGRAFÍA DE PARTES BLANDAS DE MUÑECA/MANO${lat}.`;
+    examen = mayor60
+      ? `RX DE MANO/MUÑECA${lat} AP/OBLICUA/LATERAL.`
+      : `ECOGRAFÍA DE PARTES BLANDAS DE MANO/MUÑECA${lat}.`;
   } else if (d.includes("tobillo") || d.includes("pie")) {
     examen = mayor60
       ? `RX DE TOBILLO/PIE${lat} AP/LATERAL/OBLICUA.`
@@ -90,12 +84,13 @@ function fallbackHeuristico(p = {}) {
 
   return {
     diagnostico: "Dolor musculoesquelético, estudio inicial.",
-    justificacion:
-      "Se indica estudio inicial según la localización y el contexto clínico para descartar patología ósea, articular y de partes blandas. La elección prioriza rendimiento diagnóstico y seguridad del paciente, considerando edad, mecanismo, examen físico y evolución de los síntomas.",
+    explicacion:
+      "Se indica estudio inicial según localización y edad del paciente. El objetivo es descartar lesiones óseas, articulares o de partes blandas. El resultado orientará el manejo y la necesidad de estudios complementarios.",
     examenes: [examen],
   };
 }
 
+/* ---- Construcción del prompt ---- */
 function construirMensajesIA(p) {
   const info = {
     nombre: p?.nombre || "",
@@ -109,25 +104,26 @@ function construirMensajesIA(p) {
 
   const system = [
     "Eres un asistente clínico de traumatología e imagenología.",
-    "Devuelve SIEMPRE JSON estricto (sin texto extra).",
+    "Responde SIEMPRE en JSON válido, sin texto adicional.",
+    "Debes sugerir EXACTAMENTE 1 examen de imagenología inicial estandarizado, en mayúsculas.",
+    "Si la zona es COLUMNA, especifica CERVICAL, DORSAL o LUMBAR según corresponda.",
+    "Incluye lateralidad IZQUIERDA/DERECHA si aplica (rodilla, cadera, hombro, codo, mano, tobillo, etc.).",
+    "En pacientes jóvenes con dolor de HOMBRO, CODO o MANO/MUÑECA, prioriza ECOGRAFÍA DE PARTES BLANDAS.",
+    "En otras zonas usa RX o RM según la edad y sospecha clínica.",
   ].join(" ");
 
   const instrucciones = `
-Dado el siguiente paciente, responde con:
-1) "diagnostico_presuntivo": una línea.
-2) "explicacion_50_palabras": 40–60 palabras en español, sin viñetas.
-3) "examen_imagenologico": ARREGLO con EXACTAMENTE 1 examen de imagen (MAYÚSCULAS). Incluye lateralidad si corresponde (IZQUIERDA/DERECHA).
-
-Entrada (paciente):
+Paciente:
 ${JSON.stringify(info, null, 2)}
 
-Salida (JSON estrictamente):
+Debes devolver en formato JSON:
+
 {
-  "diagnostico_presuntivo": "texto",
-  "explicacion_50_palabras": "texto",
-  "examen_imagenologico": ["EXAMEN ÚNICO"]
+  "diagnostico_presuntivo": "una línea breve en español",
+  "explicacion_50_palabras": "explicación en 40-60 palabras, en español, sin viñetas",
+  "examen_imagenologico": ["UN SOLO EXAMEN, EN MAYÚSCULAS"]
 }
-`.trim();
+  `.trim();
 
   return [
     { role: "system", content: system },
@@ -135,6 +131,7 @@ Salida (JSON estrictamente):
   ];
 }
 
+/* ---- Llamada a la IA ---- */
 async function llamarIA(mensajes) {
   const key = process.env.OPENAI_API_KEY || "";
   if (!key) throw new Error("OPENAI_API_KEY no configurada");
@@ -162,7 +159,7 @@ async function llamarIA(mensajes) {
   return JSON.parse(txt);
 }
 
-/* ---- Handler factory ---- */
+/* ---- Handler ---- */
 export default function traumaIAHandler(memoria) {
   const ns = (s, id) => `${s}:${id}`;
 
@@ -178,30 +175,18 @@ export default function traumaIAHandler(memoria) {
         const mensajes = construirMensajesIA(p);
         const ia = await llamarIA(mensajes);
 
-        // parsing más tolerante
-        const diagnostico = String(
-          ia?.diagnostico_presuntivo || ia?.diagnóstico_presuntivo || ia?.diagnostico || ia?.diagnóstico || ""
-        ).trim() || "Dolor musculoesquelético, estudio inicial.";
-
-        const expl = String(
-          ia?.explicacion_50_palabras || ia?.justificacion_100_palabras || ia?.justificacion || ""
-        ).trim();
-
+        const diagnostico = String(ia?.diagnostico_presuntivo || "").trim();
+        const explicacion = String(ia?.explicacion_50_palabras || "").trim();
         let examenes = Array.isArray(ia?.examen_imagenologico)
           ? ia.examen_imagenologico
-          : Array.isArray(ia?.examenes_imagenologicos)
-          ? ia.examenes_imagenologicos
-          : Array.isArray(ia?.examenes)
-          ? ia.examenes
           : [];
 
         examenes = normalizarExamenes(p?.dolor, p?.lado, examenes);
 
-        // validación más flexible
-        if (examenes.length < 1 || expl.length < 25) {
+        if (!diagnostico || !examenes.length) {
           out = fallbackHeuristico(p);
         } else {
-          out = { diagnostico, justificacion: expl, examenes };
+          out = { diagnostico, explicacion, examenes };
         }
       } catch {
         out = fallbackHeuristico(p);
@@ -210,7 +195,7 @@ export default function traumaIAHandler(memoria) {
       const registro = {
         ...p,
         examenesIA: out.examenes,
-        respuesta: `Diagnóstico presuntivo: ${out.diagnostico}\n\n${out.justificacion}`,
+        respuesta: `Diagnóstico presuntivo: ${out.diagnostico}\n\n${out.explicacion}`,
         pagoConfirmado: true,
       };
       memoria.set(ns("ia", idPago), registro);
@@ -219,7 +204,7 @@ export default function traumaIAHandler(memoria) {
       return res.json({
         ok: true,
         diagnostico: out.diagnostico,
-        informeIA: out.justificacion,
+        informeIA: out.explicacion,
         examenes: out.examenes,
       });
     } catch (e) {
