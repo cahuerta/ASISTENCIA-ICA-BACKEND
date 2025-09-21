@@ -1,6 +1,6 @@
 // traumaIA.js — IA para módulo TRAUMA (imagenología)
 // ESM (Node >= 18).
-// Usa OpenAI si hay API key; si no, cae a heurística local solo en caso de error/JSON inválido.
+// Usa OpenAI si hay API key; si no, cae a heurística local solo si el JSON falla.
 
 const OPENAI_API = "https://api.openai.com/v1/chat/completions";
 const MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
@@ -17,17 +17,19 @@ function normalizarExamenes(dolor = "", lado = "", lista = []) {
 
   let x = arr[0].toUpperCase();
 
-  // Estándar: ECOGRAFÍA DE PARTES BLANDAS
+  // Estandarizar ECO "partes blandas"
   if (/ECOGRAF[ÍI]A.*PARTES\s+BLANDAS/.test(x)) {
-    if (!/DE/.test(x)) {
+    if (!/\bDE\b/.test(x)) {
       const zona = (dolor || "").toUpperCase();
-      x = `ECOGRAFÍA DE PARTES BLANDAS DE ${zona}${lat}`.trim();
+      if (zona && !/COLUMNA/i.test(zona)) {
+        x = `ECOGRAFÍA DE PARTES BLANDAS DE ${zona}${lat}`.trim();
+      }
     }
   }
 
-  // Asegurar lateralidad si aplica
+  // Añadir lateralidad cuando aplica
   if (
-    /(CADERA|RODILLA|HOMBRO|TOBILLO|PIERNA|BRAZO|CODO|MUÑECA|MANO|PIE|COLUMNA)/.test(x) &&
+    /(CADERA|RODILLA|HOMBRO|TOBILLO|PIERNA|BRAZO|CODO|MUÑECA|MANO|PIE|COLUMNA)\b/.test(x) &&
     lat &&
     !/\b(IZQUIERDA|DERECHA)\b/.test(x)
   ) {
@@ -35,11 +37,10 @@ function normalizarExamenes(dolor = "", lado = "", lista = []) {
   }
 
   if (!x.endsWith(".")) x += ".";
-
   return [x];
 }
 
-/* ---- Fallback heurístico (solo si IA falla) ---- */
+/* ---- Fallback específico por zona (solo si IA falla) ---- */
 function fallbackHeuristico(p = {}) {
   const d = String(p.dolor || "").toLowerCase();
   const L = (p.lado || "").toUpperCase();
@@ -47,50 +48,61 @@ function fallbackHeuristico(p = {}) {
   const mayor60 = Number(p.edad) > 60;
 
   let examen = "";
+  let dx = ""; // diagnóstico presuntivo zona-específico
 
   if (d.includes("rodilla")) {
+    dx = `Gonalgia${lat ? ` ${L.toLowerCase()}` : ""}`;
     examen = mayor60
       ? `RX DE RODILLA${lat} AP/LATERAL/AXIAL.`
       : `RESONANCIA MAGNÉTICA DE RODILLA${lat}.`;
   } else if (d.includes("cadera")) {
+    dx = "Coxalgia";
     examen = mayor60
       ? `RX DE PELVIS AP Y LÖWENSTEIN.`
       : `RESONANCIA MAGNÉTICA DE CADERA${lat}.`;
   } else if (d.includes("cervical")) {
+    dx = "Cervicalgia";
     examen = `RESONANCIA MAGNÉTICA DE COLUMNA CERVICAL.`;
   } else if (d.includes("dorsal")) {
+    dx = "Dorsalgia";
     examen = `RESONANCIA MAGNÉTICA DE COLUMNA DORSAL.`;
-  } else if (d.includes("lumbar")) {
+  } else if (d.includes("lumbar") || d.includes("columna")) {
+    dx = "Lumbalgia mecánica";
     examen = `RESONANCIA MAGNÉTICA DE COLUMNA LUMBAR.`;
   } else if (d.includes("hombro")) {
+    dx = `Omalgia — tendinopatía del manguito rotador${lat ? ` ${L.toLowerCase()}` : ""}`;
     examen = mayor60
       ? `RX DE HOMBRO${lat} AP/AXIAL.`
       : `ECOGRAFÍA DE PARTES BLANDAS DE HOMBRO${lat}.`;
   } else if (d.includes("codo")) {
+    dx = `Epicondilalgia probable${lat ? ` ${L.toLowerCase()}` : ""}`;
     examen = mayor60
       ? `RX DE CODO${lat} AP/LATERAL.`
       : `ECOGRAFÍA DE PARTES BLANDAS DE CODO${lat}.`;
-  } else if (d.includes("mano") || d.includes("muñeca") || d.includes("muneca")) {
+  } else if (d.includes("muñeca") || d.includes("muneca") || d.includes("mano")) {
+    dx = `Tenosinovitis/tendinopatía de muñeca/mano${lat ? ` ${L.toLowerCase()}` : ""}`;
     examen = mayor60
       ? `RX DE MANO/MUÑECA${lat} AP/OBLICUA/LATERAL.`
       : `ECOGRAFÍA DE PARTES BLANDAS DE MANO/MUÑECA${lat}.`;
   } else if (d.includes("tobillo") || d.includes("pie")) {
+    dx = `Esguince de tobillo/pie${lat ? ` ${L.toLowerCase()}` : ""}`;
     examen = mayor60
       ? `RX DE TOBILLO/PIE${lat} AP/LATERAL/OBLICUA.`
       : `RESONANCIA MAGNÉTICA DE TOBILLO${lat}.`;
   } else {
+    dx = "Dolor osteoarticular localizado";
     examen = `EVALUACIÓN IMAGENOLÓGICA SEGÚN CLÍNICA.`;
   }
 
   return {
-    diagnostico: "Dolor musculoesquelético, estudio inicial.",
+    diagnostico: dx,
     explicacion:
-      "Se indica estudio inicial según localización y edad del paciente. El objetivo es descartar lesiones óseas, articulares o de partes blandas. El resultado orientará el manejo y la necesidad de estudios complementarios.",
+      "Se sugiere estudio inicial dirigido a la región comprometida para descartar compromiso óseo, articular o de partes blandas. La elección prioriza rendimiento diagnóstico y seguridad según edad y sospecha clínica. El resultado orientará conducta y necesidad de exámenes complementarios.",
     examenes: [examen],
   };
 }
 
-/* ---- Construcción del prompt ---- */
+/* ---- Prompt a la IA (más libre, pero con reglas de especificidad) ---- */
 function construirMensajesIA(p) {
   const info = {
     nombre: p?.nombre || "",
@@ -105,22 +117,26 @@ function construirMensajesIA(p) {
   const system = [
     "Eres un asistente clínico de traumatología e imagenología.",
     "Responde SIEMPRE en JSON válido, sin texto adicional.",
-    "Debes sugerir EXACTAMENTE 1 examen de imagenología inicial estandarizado, en mayúsculas.",
-    "Si la zona es COLUMNA, especifica CERVICAL, DORSAL o LUMBAR según corresponda.",
-    "Incluye lateralidad IZQUIERDA/DERECHA si aplica (rodilla, cadera, hombro, codo, mano, tobillo, etc.).",
-    "En pacientes jóvenes con dolor de HOMBRO, CODO o MANO/MUÑECA, prioriza ECOGRAFÍA DE PARTES BLANDAS.",
-    "En otras zonas usa RX o RM según la edad y sospecha clínica.",
+    // Diagnóstico presuntivo específico por zona
+    "Evita diagnósticos genéricos como 'dolor musculoesquelético'.",
+    "Usa etiquetas por región cuando corresponda: cervicalgia, dorsalgia, lumbalgia, gonalgia, coxalgia, omalgia, epicondilalgia, tenosinovitis, esguince de tobillo, etc.",
+    "El diagnóstico presuntivo debe ser breve (3–8 palabras) y, si aplica, incluir lateralidad textual (derecha/izquierda).",
+    // Examen único y estandarizado
+    "Sugiere EXACTAMENTE 1 examen imagenológico inicial, en MAYÚSCULAS y estandarizado.",
+    "Incluye lateralidad IZQUIERDA/DERECHA si aplica (cadera, rodilla, hombro, codo, mano/muñeca, tobillo/pie).",
+    "En HOMBRO, CODO y MANO/MUÑECA de pacientes jóvenes, prioriza ECOGRAFÍA DE PARTES BLANDAS.",
+    "En COLUMNA especifica CERVICAL, DORSAL o LUMBAR según la región de dolor declarada.",
   ].join(" ");
 
   const instrucciones = `
 Paciente:
 ${JSON.stringify(info, null, 2)}
 
-Debes devolver en formato JSON:
+Devuelve SOLO el siguiente JSON:
 
 {
-  "diagnostico_presuntivo": "una línea breve en español",
-  "explicacion_50_palabras": "explicación en 40-60 palabras, en español, sin viñetas",
+  "diagnostico_presuntivo": "una línea breve y específica (3–8 palabras)",
+  "explicacion_50_palabras": "40–60 palabras en español, sin viñetas",
   "examen_imagenologico": ["UN SOLO EXAMEN, EN MAYÚSCULAS"]
 }
   `.trim();
@@ -183,6 +199,7 @@ export default function traumaIAHandler(memoria) {
 
         examenes = normalizarExamenes(p?.dolor, p?.lado, examenes);
 
+        // Solo usamos fallback si la IA no trajo diagnóstico o examen
         if (!diagnostico || !examenes.length) {
           out = fallbackHeuristico(p);
         } else {
@@ -192,6 +209,7 @@ export default function traumaIAHandler(memoria) {
         out = fallbackHeuristico(p);
       }
 
+      // Persistimos para el PDF de orden
       const registro = {
         ...p,
         examenesIA: out.examenes,
