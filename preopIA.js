@@ -207,6 +207,9 @@ export default function iaPreopHandler(memoria) {
     add.add("ORINA COMPLETA");
     add.add("UROCULTIVO");
     add.add("GRUPO Y RH");
+    add.add("PERFIL DE COAGULACION (TP/INR y TTPA)");
+     add.add("VIH)");
+    add.add("ECG DE REPOSO");
     // Cirugía mayor: reservar cruzadas
     if (esArtro) add.add("PRUEBAS CRUZADAS (2U)");
 
