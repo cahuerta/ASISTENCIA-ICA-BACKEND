@@ -10,20 +10,29 @@ function normalizarExamenes(dolor = "", lado = "", lista = []) {
   const L = (lado || "").toUpperCase();
   const lat = L ? ` ${L}` : "";
   const arr = (Array.isArray(lista) ? lista : [])
-    .map(x => String(x || "").trim())
+    .map((x) => String(x || "").trim())
     .filter(Boolean)
-    .map(x => x.toUpperCase());
+    .map((x) => x.toUpperCase());
 
-  return arr.map(x => {
-    // añade lateralidad si aplica y no viene
+  // Añade lateralidad donde aplica y garantiza 1 único examen.
+  const conLat = arr.map((x) => {
     if (
       /(CADERA|RODILLA|HOMBRO|TOBILLO|PIERNA|BRAZO|CODO|MUÑECA|MANO|PIE)/i.test(x) &&
-      !/\b(IZQUIERDA|DERECHA)\b/i.test(x)
+      !/\b(IZQUIERDA|DERECHA)\b/i.test(x) &&
+      lat
     ) {
       return x.replace(/\.$/, "") + lat + ".";
     }
-    return x;
-  }).slice(0, 2);
+    return x.endsWith(".") ? x : `${x}.`;
+  });
+
+  // Único y máximo 1
+  const unicos = [];
+  for (const e of conLat) {
+    if (!unicos.includes(e)) unicos.push(e);
+    if (unicos.length === 1) break;
+  }
+  return unicos;
 }
 
 function fallbackHeuristico(p = {}) {
@@ -32,26 +41,60 @@ function fallbackHeuristico(p = {}) {
   const lat = L ? ` ${L}` : "";
   const mayor60 = Number(p.edad) > 60;
 
-  let examenes = [];
+  // IMPORTANTE: mantenemos la lógica que ya te funcionaba para
+  // CADERA/RODILLA/COLUMNA LUMBAR, solo que ahora devolvemos 1 examen.
+  let examen = "";
+
+  // Rodilla
   if (d.includes("rodilla")) {
-    examenes = mayor60
-      ? [`RX DE RODILLA${lat} AP/LATERAL/AXIAL.`, "TELERADIOGRAFÍA DE EEII."]
-      : [`RESONANCIA MAGNÉTICA DE RODILLA${lat}.`, "TELERADIOGRAFÍA DE EEII."];
-  } else if (d.includes("cadera")) {
-    examenes = mayor60
-      ? ["RX DE PELVIS AP Y LÖWENSTEIN."]
-      : [`RESONANCIA MAGNÉTICA DE CADERA${lat}.`];
-  } else if (d.includes("columna")) {
-    examenes = ["RESONANCIA MAGNÉTICA DE COLUMNA LUMBAR.", "RX COLUMNA LUMBOSACRA AP/LAT."];
-  } else {
-    examenes = ["EVALUACIÓN IMAGENOLÓGICA SEGÚN CLÍNICA.", "RX SEGÚN PROTOCOLO."];
+    examen = mayor60
+      ? `RX DE RODILLA${lat} AP/LATERAL/AXIAL.`
+      : `RESONANCIA MAGNÉTICA DE RODILLA${lat}.`;
+  }
+  // Cadera
+  else if (d.includes("cadera")) {
+    examen = mayor60
+      ? `RX DE PELVIS AP Y LÖWENSTEIN.`
+      : `RESONANCIA MAGNÉTICA DE CADERA${lat}.`;
+  }
+  // Columna (lumbar; si luego separas cervical/dorsal en UI, puedes ramificar)
+  else if (d.includes("columna")) {
+    examen = `RESONANCIA MAGNÉTICA DE COLUMNA LUMBAR.`;
+  }
+  // Hombro
+  else if (d.includes("hombro")) {
+    examen = mayor60
+      ? `RX DE HOMBRO${lat} AP/AXIAL.`
+      : `RESONANCIA MAGNÉTICA DE HOMBRO${lat}.`;
+  }
+  // Codo
+  else if (d.includes("codo")) {
+    examen = mayor60
+      ? `RX DE CODO${lat} AP/LATERAL.`
+      : `RESONANCIA MAGNÉTICA DE CODO${lat}.`;
+  }
+  // Mano / Muñeca
+  else if (d.includes("mano") || d.includes("muñeca") || d.includes("muneca")) {
+    examen = mayor60
+      ? `RX DE MANO/MUÑECA${lat} AP/OBLICUA/LATERAL.`
+      : `RESONANCIA MAGNÉTICA DE MUÑECA${lat}.`;
+  }
+  // Tobillo / Pie
+  else if (d.includes("tobillo") || d.includes("pie")) {
+    examen = mayor60
+      ? `RX DE TOBILLO/PIE${lat} AP/LATERAL/OBLICUA.`
+      : `RESONANCIA MAGNÉTICA DE TOBILLO${lat}.`;
+  }
+  // Genérico (fallback final)
+  else {
+    examen = `EVALUACIÓN IMAGENOLÓGICA SEGÚN CLÍNICA.`;
   }
 
   return {
     diagnostico: "Dolor musculoesquelético, estudio inicial.",
     justificacion:
-      "Se propone estudio inicial acorde a la localización y edad para descartar patología ósea, articular y de partes blandas. La radiografía orienta en degeneración y lesiones óseas; la resonancia aporta evaluación intraarticular y de tejidos blandos cuando se sospechan lesiones internas. La selección definitiva considera anamnesis, examen físico y evolución de síntomas para optimizar rendimiento diagnóstico y seguridad del paciente.",
-    examenes,
+      "Se indica estudio inicial según la localización y el contexto clínico para descartar patología ósea, articular y de partes blandas. La elección prioriza rendimiento diagnóstico y seguridad del paciente, considerando edad, mecanismo, examen físico y evolución de los síntomas. El resultado orientará el manejo y la necesidad de estudios complementarios.",
+    examenes: [examen],
   };
 }
 
@@ -74,8 +117,8 @@ function construirMensajesIA(p) {
   const instrucciones = `
 Dado el siguiente paciente, responde con:
 1) "diagnostico_presuntivo": una línea.
-2) "justificacion_100_palabras": ~100 palabras (90–120), español, sin viñetas.
-3) "examenes_imagenologicos": ARREGLO con EXACTAMENTE 2 exámenes de imagen. Usa mayúsculas, incluye lateralidad si corresponde (IZQUIERDA/DERECHA).
+2) "explicacion_50_palabras": 40–60 palabras en español, sin viñetas.
+3) "examen_imagenologico": ARREGLO con EXACTAMENTE 1 examen de imagen (MAYÚSCULAS). Incluye lateralidad si corresponde (IZQUIERDA/DERECHA). Considera zonas: rodilla, cadera, columna (cervical/dorsal/lumbar), hombro, codo, mano/muñeca, tobillo/pie.
 
 Entrada (paciente):
 ${JSON.stringify(info, null, 2)}
@@ -83,8 +126,8 @@ ${JSON.stringify(info, null, 2)}
 Salida (JSON estrictamente):
 {
   "diagnostico_presuntivo": "texto",
-  "justificacion_100_palabras": "texto",
-  "examenes_imagenologicos": ["EXAMEN 1", "EXAMEN 2"]
+  "explicacion_50_palabras": "texto",
+  "examen_imagenologico": ["EXAMEN ÚNICO"]
 }
 `.trim();
 
@@ -138,18 +181,28 @@ export default function traumaIAHandler(memoria) {
         const mensajes = construirMensajesIA(p);
         const ia = await llamarIA(mensajes);
 
-        const diagnostico = String(ia?.diagnostico_presuntivo || "").trim();
-        const justificacion = String(ia?.justificacion_100_palabras || "").trim();
-        let examenes = Array.isArray(ia?.examenes_imagenologicos)
+        const diagnostico = String(
+          ia?.diagnostico_presuntivo || ia?.diagnostico || ""
+        ).trim();
+
+        // aceptar clave nueva
+        const expl =
+          String(ia?.explicacion_50_palabras || ia?.justificacion_100_palabras || "")
+            .trim();
+
+        // soporte compat: algunos modelos pueden seguir devolviendo "examenes_imagenologicos"
+        let examenes = Array.isArray(ia?.examen_imagenologico)
+          ? ia.examen_imagenologico
+          : Array.isArray(ia?.examenes_imagenologicos)
           ? ia.examenes_imagenologicos
           : [];
 
         examenes = normalizarExamenes(p?.dolor, p?.lado, examenes);
 
-        if (examenes.length !== 2 || !diagnostico || justificacion.length < 60) {
+        if (examenes.length !== 1 || !diagnostico || expl.length < 40) {
           out = fallbackHeuristico(p);
         } else {
-          out = { diagnostico, justificacion, examenes };
+          out = { diagnostico, justificacion: expl, examenes };
         }
       } catch {
         out = fallbackHeuristico(p);
@@ -158,7 +211,7 @@ export default function traumaIAHandler(memoria) {
       // Persistir en memoria para reutilizar /api/pdf-ia-orden/:idPago
       const registro = {
         ...p,
-        examenesIA: out.examenes,
+        examenesIA: out.examenes, // ahora 1 examen
         // 'respuesta' es usada por tu generador de PDF IA para extraer nota si aplica
         respuesta: `Diagnóstico presuntivo: ${out.diagnostico}\n\n${out.justificacion}`,
         pagoConfirmado: true,
@@ -170,7 +223,7 @@ export default function traumaIAHandler(memoria) {
         ok: true,
         diagnostico: out.diagnostico,
         informeIA: out.justificacion,
-        examenes: out.examenes,
+        examenes: out.examenes, // arreglo con 1 elemento
       });
     } catch (e) {
       console.error("ia-trauma error:", e);
