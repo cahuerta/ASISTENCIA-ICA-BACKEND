@@ -14,25 +14,52 @@ function normalizarExamenes(dolor = "", lado = "", lista = []) {
     .filter(Boolean)
     .map((x) => x.toUpperCase());
 
-  // Añade lateralidad donde aplica y garantiza 1 único examen.
-  const conLat = arr.map((x) => {
-    if (
-      /(CADERA|RODILLA|HOMBRO|TOBILLO|PIERNA|BRAZO|CODO|MUÑECA|MANO|PIE)/i.test(x) &&
-      !/\b(IZQUIERDA|DERECHA)\b/i.test(x) &&
+  // Derivar zona a partir del "dolor" (para reescribir "partes blandas")
+  const zona = (() => {
+    const d = String(dolor || "").toLowerCase();
+    if (d.includes("hombro")) return "HOMBRO";
+    if (d.includes("codo")) return "CODO";
+    if (d.includes("muñeca") || d.includes("muneca")) return "MUÑECA";
+    if (d.includes("mano")) return "MANO";
+    if (d.includes("tobillo")) return "TOBILLO";
+    if (d.includes("pie")) return "PIE";
+    if (d.includes("rodilla")) return "RODILLA";
+    if (d.includes("cadera")) return "CADERA";
+    if (d.includes("columna")) return "COLUMNA LUMBAR"; // mantenemos tu comportamiento
+    return "";
+  })();
+
+  const out = [];
+
+  for (let x of arr) {
+    // 1) Caso genérico: “ECOGRAFÍA DE PARTES BLANDAS …”
+    if (/ECOGRAF[ÍI]A(\s+DE)?\s+PARTES\s+BLANDAS\b/.test(x)) {
+      if (zona && zona !== "COLUMNA LUMBAR") {
+        // Reescribe a: "ECOGRAFÍA DE PARTES BLANDAS DE <ZONA> <LADO>."
+        const ecoPB = `ECOGRAFÍA DE PARTES BLANDAS DE ${zona}${lat}.`;
+        out.push(ecoPB);
+      } else {
+        // Sin zona concreta (p.ej. columna): deja el texto y agrega punto
+        out.push(x.replace(/\.$/, "") + ".");
+      }
+    }
+    // 2) Resto: aplica lateralidad solo si hay zona anatómica clara
+    else if (
+      /(CADERA|RODILLA|HOMBRO|TOBILLO|PIERNA|BRAZO|CODO|MUÑECA|MANO|PIE)\b/.test(x) &&
+      !/\b(IZQUIERDA|DERECHA)\b/.test(x) &&
       lat
     ) {
-      return x.replace(/\.$/, "") + lat + ".";
+      out.push(x.replace(/\.$/, "") + lat + ".");
+    } else {
+      out.push(x.endsWith(".") ? x : `${x}.`);
     }
-    return x.endsWith(".") ? x : `${x}.`;
-  });
 
-  // Único y máximo 1
-  const unicos = [];
-  for (const e of conLat) {
-    if (!unicos.includes(e)) unicos.push(e);
-    if (unicos.length === 1) break;
+    // Máximo 1 examen
+    if (out.length === 1) break;
   }
-  return unicos;
+
+  // Garantiza 1 único (si vino vacío, no rellenamos aquí: el fallback lo hará)
+  return out.slice(0, 1);
 }
 
 function fallbackHeuristico(p = {}) {
@@ -63,6 +90,8 @@ function fallbackHeuristico(p = {}) {
   }
   // Hombro
   else if (d.includes("hombro")) {
+    // Si quieres priorizar ECO en hombro joven, se podría cambiar aquí;
+    // dejamos tu comportamiento base (RM o RX según edad).
     examen = mayor60
       ? `RX DE HOMBRO${lat} AP/AXIAL.`
       : `RESONANCIA MAGNÉTICA DE HOMBRO${lat}.`;
