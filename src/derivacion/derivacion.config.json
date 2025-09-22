@@ -1,0 +1,34 @@
+{
+  "version": "1.0.0",
+  "updated_at": "2025-09-22",
+  "segmentos": {
+    "rodilla": {
+      "doctor": {
+        "id": "jaime_espinoza",
+        "nombre": "Dr. Jaime Espinoza",
+        "especialidad": "Traumatología de Rodilla",
+        "agenda": "Clínica San Martín, Curicó",
+        "contactoWeb": "https://www.icarticular.cl"
+      },
+      "nota": "Derivar a Traumatología de Rodilla (Dr. Jaime Espinoza) para evaluación presencial con el estudio realizado."
+    },
+    "cadera": {
+      "doctor": {
+        "id": "cristobal_huerta",
+        "nombre": "Dr. Cristóbal Huerta Cortés",
+        "especialidad": "Traumatología de Cadera",
+        "agenda": "ICA, Curicó",
+        "contactoWeb": "https://www.icarticular.cl"
+      },
+      "nota": "Derivar a Traumatología de Cadera (Dr. Cristóbal Huerta Cortés) para evaluación presencial con el estudio realizado."
+    }
+  },
+  "notaDefault": "Se recomienda coordinar evaluación con la especialidad correspondiente, presentándose con el estudio realizado.",
+  "doctorDefault": {
+    "id": "ica_general",
+    "nombre": "ICA — Traumatología",
+    "especialidad": "Traumatología General",
+    "agenda": "ICA Curicó",
+    "contactoWeb": "https://www.icarticular.cl"
+  }
+}
