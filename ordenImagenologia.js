@@ -3,6 +3,7 @@ import PDFDocument from 'pdfkit';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { resolverDerivacion } from './derivacion/derivacion.resolver.mjs'; // ← añadido
 
 // __dirname para ES Modules
 const __filename = fileURLToPath(import.meta.url);
@@ -52,11 +53,37 @@ export function generarOrdenImagenologia(doc, datos) {
   doc.font('Helvetica-Bold').fontSize(18).text(examen || 'Evaluación imagenológica según clínica.');
   doc.moveDown(5);
 
-  // --------- NOTA (solo diseño, viene desde index) ---------
-  doc.font('Helvetica').fontSize(12).text(
-    datos.nota || 'Nota:\n\nSe recomienda coordinar evaluación con la especialidad correspondiente, presentándose con el estudio realizado.',
-    { align: 'left' }
-  );
+  // --------- NOTA (condicionada por especialidad a través del resolver) ---------
+  // (No cambia ubicación ni estilos; solo el contenido)
+  let bloqueNota = '';
+  try {
+    const deriv = resolverDerivacion({ ...datos, examen, dolor }) || {};
+    const doctor = deriv.doctor || {};
+    const lineaDerivacion =
+      (doctor.nombre || doctor.especialidad)
+        ? `Derivación: ${doctor.nombre || '—'} — ${doctor.especialidad || '—'}${doctor.agenda ? ` (${doctor.agenda})` : ''}`
+        : '';
+
+    const notaBase =
+      deriv.nota ||
+      'Se recomienda coordinar evaluación con la especialidad correspondiente, presentándose con el estudio realizado.';
+
+    // Si el front ya mandó una nota en datos.nota, la respetamos;
+    // si no, usamos la nota condicionada del resolver.
+    const notaRender = datos.nota || `Nota:\n\n${notaBase}`;
+
+    bloqueNota = lineaDerivacion
+      ? `${lineaDerivacion}\n\n${notaRender}`
+      : notaRender;
+  } catch (e) {
+    console.error('Resolver derivación error:', e.message);
+    // Fallback exacto al comportamiento previo
+    bloqueNota =
+      datos.nota ||
+      'Nota:\n\nSe recomienda coordinar evaluación con la especialidad correspondiente, presentándose con el estudio realizado.';
+  }
+
+  doc.font('Helvetica').fontSize(12).text(bloqueNota, { align: 'left' });
 
   // --------- PIE DE PÁGINA: FIRMA + TIMBRE ---------
   const pageW = doc.page.width;
