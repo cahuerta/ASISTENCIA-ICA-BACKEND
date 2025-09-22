@@ -237,7 +237,32 @@ async function crearPagoHandler(req, res) {
         ? "generales"
         : "trauma";
 
-    if (datosPaciente) memoria.set(ns(space, idPago), { ...datosPaciente });
+    // ======= MERGE NO DESTRUCTIVO (evita perder preview IA / checklist RM) =======
+    if (datosPaciente) {
+      const prev = memoria.get(ns(space, idPago)) || {};
+      const incoming = datosPaciente || {};
+      const next = { ...prev };
+
+      for (const [k, v] of Object.entries(incoming)) {
+        if (v === undefined) continue;                         // no pisar con undefined
+        if (Array.isArray(v) && v.length === 0) continue;      // no pisar arrays no vacíos con vacíos
+        if (typeof v === "string" && v.trim() === "") continue; // no pisar string con vacío
+        next[k] = v;
+      }
+
+      // preservar campos críticos si incoming no aporta
+      if (Array.isArray(prev.examenesIA) && (!Array.isArray(next.examenesIA) || next.examenesIA.length === 0)) {
+        next.examenesIA = prev.examenesIA;
+      }
+      if (prev.diagnosticoIA && !next.diagnosticoIA) next.diagnosticoIA = prev.diagnosticoIA;
+      if (prev.justificacionIA && !next.justificacionIA) next.justificacionIA = prev.justificacionIA;
+
+      if (prev.rmForm && !next.rmForm) next.rmForm = prev.rmForm;
+      if (prev.rmObservaciones && !next.rmObservaciones) next.rmObservaciones = prev.rmObservaciones;
+
+      memoria.set(ns(space, idPago), next);
+    }
+    // ============================================================================
 
     memoria.set(ns("meta", idPago), { moduloAutorizado: space });
 
