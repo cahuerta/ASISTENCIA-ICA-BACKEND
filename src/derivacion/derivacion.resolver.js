@@ -1,4 +1,4 @@
-// src/derivacion/derivacion.resolver.mjs
+// src/derivacion/resolver.mjs
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
