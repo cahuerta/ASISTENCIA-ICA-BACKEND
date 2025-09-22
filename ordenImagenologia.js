@@ -1,9 +1,9 @@
 // ordenImagenologia.js
-import PDFDocument from 'pdfkit';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import { resolverDerivacion } from './resolver.js'; // ← añadido
+import PDFDocument from "pdfkit";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+import { resolverDerivacion } from "./resolver.js"; // ← única fuente de Nota/Derivación
 
 // __dirname para ES Modules
 const __filename = fileURLToPath(import.meta.url);
@@ -14,76 +14,68 @@ export function generarOrdenImagenologia(doc, datos) {
 
   // --------- ENCABEZADO ---------
   try {
-    const logoPath = path.join(__dirname, 'assets', 'ica.jpg');
+    const logoPath = path.join(__dirname, "assets", "ica.jpg");
     if (fs.existsSync(logoPath)) {
       doc.image(logoPath, 50, 40, { width: 120 });
     }
   } catch (err) {
-    console.error('Logo error:', err.message);
+    console.error("Logo error:", err.message);
   }
 
-  // ✅ Texto a la derecha del logo, sin cambiar espacios originales
+  // Texto a la derecha del logo
   doc.moveDown(1.5);
-  doc.font('Helvetica-Bold')
-     .fontSize(18)
-     .text('INSTITUTO DE CIRUGÍA ARTICULAR', 180, 50);
+  doc.font("Helvetica-Bold").fontSize(18).text("INSTITUTO DE CIRUGÍA ARTICULAR", 180, 50);
   doc.moveDown(1.5);
-  doc.fontSize(16)
-     .text('Orden Médica de Imagenología', 180, undefined, { underline: true });
+  doc.fontSize(16).text("Orden Médica de Imagenología", 180, undefined, { underline: true });
   doc.moveDown(4);
-  
-  // 🔧 Resetear X para que el resto parta en el margen izquierdo
+
+  // Resetear X para continuar desde el margen izquierdo
   doc.x = doc.page.margins.left;
 
   // --------- DATOS PACIENTE ---------
-  const sintomas = `${dolor ?? ''} ${lado ?? ''}`.trim();
-  doc.font('Helvetica').fontSize(14);
-  doc.text(`Nombre: ${nombre ?? ''}`);
+  const sintomas = `${dolor ?? ""} ${lado ?? ""}`.trim();
+  doc.font("Helvetica").fontSize(14);
+  doc.text(`Nombre: ${nombre ?? ""}`);
   doc.moveDown(1);
-  doc.text(`Edad: ${edad ?? ''}`);
+  doc.text(`Edad: ${edad ?? ""}`);
   doc.moveDown(0.5);
-  doc.text(`RUT: ${rut ?? ''}`);
+  doc.text(`RUT: ${rut ?? ""}`);
   doc.moveDown(0.5);
   doc.text(`Descripción de síntomas: Dolor en ${sintomas}`);
   doc.moveDown(2);
 
   // --------- EXAMEN (viene desde index.js) ---------
-  doc.font('Helvetica-Bold').text('Examen sugerido:');
+  doc.font("Helvetica-Bold").text("Examen sugerido:");
   doc.moveDown(4);
-  doc.font('Helvetica-Bold').fontSize(18).text(examen || 'Evaluación imagenológica según clínica.');
+  doc.font("Helvetica-Bold")
+     .fontSize(18)
+     .text(examen || "Evaluación imagenológica según clínica.");
   doc.moveDown(5);
 
-  // --------- NOTA (condicionada por especialidad a través del resolver) ---------
-  // (No cambia ubicación ni estilos; solo el contenido)
-  let bloqueNota = '';
+  // --------- NOTA (SOLO desde resolver) ---------
+  // El resolver debe decidir el mensaje:
+  // - Cadera  → “Derivar con equipo de cadera… recomendamos Dr. Cristóbal Huerta…”
+  // - Rodilla → “Derivar con equipo de rodilla… recomendamos Dr. Jaime Espinoza…”
+  // - Si no aplica → devolver nota vacía (no se recomienda a nadie)
+  let bloqueNota = "";
   try {
-    const deriv = resolverDerivacion({ ...datos, examen, dolor }) || {};
-    const doctor = deriv.doctor || {};
-    const lineaDerivacion =
-      (doctor.nombre || doctor.especialidad)
-        ? `Derivación: ${doctor.nombre || '—'} — ${doctor.especialidad || '—'}${doctor.agenda ? ` (${doctor.agenda})` : ''}`
-        : '';
+    const deriv = (resolverDerivacion && typeof resolverDerivacion === "function")
+      ? (resolverDerivacion({ ...datos, examen, dolor }) || {})
+      : {};
 
-    const notaBase =
-      deriv.nota ||
-      'Se recomienda coordinar evaluación con la especialidad correspondiente, presentándose con el estudio realizado.';
+    const notaDelResolver = (typeof deriv.nota === "string" ? deriv.nota.trim() : "");
 
-    // Si el front ya mandó una nota en datos.nota, la respetamos;
-    // si no, usamos la nota condicionada del resolver.
-    const notaRender = datos.nota || `Nota:\n\n${notaBase}`;
-
-    bloqueNota = lineaDerivacion
-      ? `${lineaDerivacion}\n\n${notaRender}`
-      : notaRender;
+    bloqueNota = notaDelResolver
+      ? `Nota:\n\n${notaDelResolver}`
+      : ""; // vacío si el resolver no recomienda a nadie
   } catch (e) {
-    console.error('Resolver derivación error:', e.message);
-    // Fallback exacto al comportamiento previo
-    bloqueNota =
-      datos.nota ||
-      'Nota:\n\nSe recomienda coordinar evaluación con la especialidad correspondiente, presentándose con el estudio realizado.';
+    console.error("Resolver derivación error:", e.message);
+    bloqueNota = ""; // sin fallback: si falla, no recomendamos a nadie
   }
 
-  doc.font('Helvetica').fontSize(12).text(bloqueNota, { align: 'left' });
+  if (bloqueNota) {
+    doc.font("Helvetica").fontSize(12).text(bloqueNota, { align: "left" });
+  }
 
   // --------- PIE DE PÁGINA: FIRMA + TIMBRE ---------
   const pageW = doc.page.width;
@@ -92,25 +84,31 @@ export function generarOrdenImagenologia(doc, datos) {
   const marginR = doc.page.margins.right || 50;
   const baseY = pageH - 170;
 
-  doc.font('Helvetica').fontSize(12);
-  doc.text('_________________________', marginL, baseY, { align: 'center', width: pageW - marginL - marginR });
-  doc.text('Firma y Timbre Médico', marginL, baseY + 18, { align: 'center', width: pageW - marginL - marginR });
+  doc.font("Helvetica").fontSize(12);
+  doc.text("_________________________", marginL, baseY, {
+    align: "center",
+    width: pageW - marginL - marginR,
+  });
+  doc.text("Firma y Timbre Médico", marginL, baseY + 18, {
+    align: "center",
+    width: pageW - marginL - marginR,
+  });
 
   const firmaW = 250;
   const firmaX = (pageW - firmaW) / 2;
   const firmaY = baseY - 45;
 
   try {
-    const firmaPath = path.join(__dirname, 'assets', 'FIRMA.png');
+    const firmaPath = path.join(__dirname, "assets", "FIRMA.png");
     if (fs.existsSync(firmaPath)) {
       doc.image(firmaPath, firmaX, firmaY, { width: firmaW });
     }
   } catch (err) {
-    console.error('Firma error:', err.message);
+    console.error("Firma error:", err.message);
   }
 
   try {
-    const timbrePath = path.join(__dirname, 'assets', 'timbre.jpg');
+    const timbrePath = path.join(__dirname, "assets", "timbre.jpg");
     if (fs.existsSync(timbrePath)) {
       const timbreW = 110;
       const timbreX = firmaX + firmaW;
@@ -122,12 +120,21 @@ export function generarOrdenImagenologia(doc, datos) {
       doc.restore();
     }
   } catch (err) {
-    console.error('Timbre error:', err.message);
+    console.error("Timbre error:", err.message);
   }
 
-  doc.font('Helvetica').fontSize(12);
-  doc.text('Dr. Cristóbal Huerta Cortés', marginL, baseY + 52, { align: 'center', width: pageW - marginL - marginR });
-  doc.text('RUT: 14.015.125-4', { align: 'center', width: pageW - marginL - marginR });
-  doc.text('Cirujano de Reconstrucción Articular', { align: 'center', width: pageW - marginL - marginR });
-  doc.text('INSTITUTO DE CIRUGIA ARTICULAR', { align: 'center', width: pageW - marginL - marginR });
+  doc.font("Helvetica").fontSize(12);
+  doc.text("Dr. Cristóbal Huerta Cortés", marginL, baseY + 52, {
+    align: "center",
+    width: pageW - marginL - marginR,
+  });
+  doc.text("RUT: 14.015.125-4", { align: "center", width: pageW - marginL - marginR });
+  doc.text("Cirujano de Reconstrucción Articular", {
+    align: "center",
+    width: pageW - marginL - marginR,
+  });
+  doc.text("INSTITUTO DE CIRUGIA ARTICULAR", {
+    align: "center",
+    width: pageW - marginL - marginR,
+  });
 }
