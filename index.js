@@ -10,7 +10,7 @@ import { fileURLToPath } from "url";
 import chatRouter from "./nuevoModuloChat.js";
 import iaPreopHandler from "./preopIA.js";        // ← PREOP IA
 import generalesIAHandler from "./generalesIA.js"; // ← GENERALES IA
-import traumaIAHandler from "./traumaIA.js";       // ← NUEVO: TRAUMA IA
+import traumaIAHandler from "./traumaIA.js";       // ← TRAUMA IA
 
 // ===== Paths útiles
 const __filename = fileURLToPath(import.meta.url);
@@ -25,11 +25,8 @@ const FRONTEND_BASE =
   process.env.RETURN_BASE ||
   "https://asistencia-ica.vercel.app";
 
-// ⬇️ AÑADIDO: permitir también tu dominio alterno/preview
-const FRONTENDS = [
-  FRONTEND_BASE,
-  "https://asistencia-ica-fggf.vercel.app",
-];
+// ⬇️ AÑADIDO: permitir también dominio alterno/preview
+const FRONTENDS = [FRONTEND_BASE, "https://asistencia-ica-fggf.vercel.app"];
 
 app.use(
   cors({
@@ -68,49 +65,6 @@ app.set("memoria", memoria); // <-- compartir memoria con todos los módulos
 const ns = (s, id) => `${s}:${id}`;
 const sanitize = (t) => String(t || "").replace(/[^a-zA-Z0-9_-]+/g, "_");
 
-// ===== Helpers clínicos
-function sugerirExamenImagenologia(dolor = "", lado = "", edad = null) {
-  const d = String(dolor || "").toLowerCase();
-  const L = String(lado || "").trim();
-  const ladoTxt = L ? ` ${L.toUpperCase()}` : "";
-  const edadNum = Number(edad);
-  const mayor60 = Number.isFinite(edadNum) ? edadNum > 60 : false;
-
-  if (d.includes("columna")) return ["RESONANCIA DE COLUMNA LUMBAR."];
-
-  if (d.includes("rodilla")) {
-    if (mayor60) {
-      return [
-        `RX DE RODILLA${ladoTxt} — AP, LATERAL, AXIAL PATELA.`,
-        "TELERADIOGRAFIA DE EEII.",
-      ];
-    } else {
-      return [
-        `RESONANCIA MAGNETICA DE RODILLA${ladoTxt}.`,
-        "TELERADIOGRAFIA DE EEII.",
-      ];
-    }
-  }
-
-  if (d.includes("cadera")) {
-    if (mayor60) return ["RX DE PELVIS AP, Y LOWESTAIN."];
-    return [`RESONANCIA MAGNETICA DE CADERA${ladoTxt}.`];
-  }
-
-  return ["Evaluación imagenológica según clínica."];
-}
-
-function notaAsistencia(dolor = "") {
-  const d = String(dolor || "").toLowerCase();
-  const base =
-    "Presentarse con esta orden. Ayuno NO requerido salvo indicación.";
-  if (d.includes("rodilla"))
-    return `${base}\nConsultar con nuestro especialista en rodilla Dr Jaime Espinoza.`;
-  if (d.includes("cadera"))
-    return `${base}\nConsultar con nuestro especialista en cadera Dr Cristóbal Huerta.`;
-  return base;
-}
-
 // ===== Carga perezosa de generadores PDF
 let _genTrauma = null;
 async function loadOrdenImagenologia() {
@@ -147,6 +101,40 @@ const getBackendBase = (req) =>
     ? BACKEND_BASE
     : `${req.protocol}://${req.get("host")}`;
 
+// ======== Helpers de orquestación/lectura (NO persisten, NO infieren, solo leen)
+function pickFromSpaces(memoria, idPago) {
+  const spaces = ["ia", "trauma", "preop", "generales"];
+  for (const s of spaces) {
+    const v = memoria.get(`${s}:${idPago}`);
+    if (v) return { space: s, data: { ...v } };
+  }
+  return { space: null, data: null };
+}
+
+function buildExamenTextoStrict(rec = {}) {
+  // Prioriza examenesIA[] si existe; si no, usa examen string; si no hay, vacío
+  if (Array.isArray(rec.examenesIA) && rec.examenesIA.length > 0) {
+    return rec.examenesIA.map(x => String(x || "").trim()).filter(Boolean).join("\n");
+  }
+  if (typeof rec.examen === "string" && rec.examen.trim()) {
+    return rec.examen.trim();
+  }
+  return ""; // sin fallback
+}
+
+function buildNotaStrict(rec = {}) {
+  // Prioriza nota; luego observaciones; luego informeIA; si nada, vacío
+  if (typeof rec.nota === "string" && rec.nota.trim()) return rec.nota.trim();
+  if (typeof rec.observaciones === "string" && rec.observaciones.trim()) return rec.observaciones.trim();
+  if (typeof rec.informeIA === "string" && rec.informeIA.trim()) return rec.informeIA.trim();
+  return "";
+}
+
+function contieneRM(texto = "") {
+  const s = String(texto || "").toLowerCase();
+  return s.includes("resonancia") || s.includes("resonancia magn") || /\brm\b/i.test(texto);
+}
+
 // ===== Salud / debug
 app.get("/", (_req, res) => res.send("OK"));
 app.get("/health", (_req, res) =>
@@ -157,47 +145,57 @@ app.get("/health", (_req, res) =>
   })
 );
 
-// ===== Preview consistente con PDF
+// =====================================================
+// ===============   PREVIEW (solo lectura)  ===========
+// =====================================================
+
+// Preview consistente con LO GUARDADO (requiere idPago). Sin fallback.
 app.get("/sugerir-imagenologia", (req, res) => {
-  const { dolor = "", lado = "", edad = "" } = req.query || {};
   try {
-    const lines = sugerirExamenImagenologia(dolor, lado, edad);
-    const nota = notaAsistencia(dolor);
-    res.json({ ok: true, examLines: lines, examen: lines.join("\n"), nota });
+    const { idPago } = req.query || {};
+    if (!idPago) return res.status(400).json({ ok: false, error: "Falta idPago" });
+
+    const { data } = pickFromSpaces(memoria, idPago);
+    if (!data) return res.status(404).json({ ok: false, error: "No hay datos" });
+
+    const texto = buildExamenTextoStrict(data);
+    const nota  = buildNotaStrict(data);
+
+    return res.json({
+      ok: true,
+      examLines: texto ? texto.split("\n") : [],
+      examen: texto,
+      nota: nota || "",
+      resonancia: contieneRM(texto),
+    });
   } catch (e) {
     console.error("sugerir-imagenologia error:", e);
-    res.status(500).json({ ok: false, error: "No se pudo sugerir el examen" });
+    res.status(500).json({ ok: false, error: "No se pudo leer los datos" });
   }
 });
 
-// ---- Detectar si la orden incluye Resonancia (para gatillar checklist en el front)
+// Detectar RM usando exactamente el mismo texto que irá al PDF (sin fallback)
 app.post("/detectar-resonancia", async (req, res) => {
   try {
-    const { datosPaciente = {} } = req.body || {};
-    const { dolor = "", lado = "", edad = "", examen = "" } = datosPaciente;
+    const { idPago, datosPaciente = {} } = req.body || {};
 
-    const contieneRM = (t = "") => {
-      const s = String(t || "").toLowerCase();
-      return (
-        s.includes("resonancia") ||
-        s.includes("resonancia magn") ||
-        /\brm\b/i.test(String(t || ""))
-      );
-    };
-
-    let texto = "";
-    if (typeof examen === "string" && examen.trim()) {
-      texto = examen;
+    let base = null;
+    if (idPago) {
+      const { data } = pickFromSpaces(memoria, idPago);
+      base = data || null;
     } else {
-      const lines = sugerirExamenImagenologia(dolor, lado, edad);
-      texto = Array.isArray(lines) ? lines.join("\n") : String(lines || "");
+      // Lectura directa si el front quiere testear sin memoria (sin inferir)
+      base = datosPaciente || {};
     }
 
+    if (!base) return res.status(404).json({ ok: false, error: "No hay datos" });
+
+    const texto = buildExamenTextoStrict(base);
     const resonancia = contieneRM(texto);
     return res.json({ ok: true, resonancia, texto });
   } catch (e) {
     console.error("detectar-resonancia error:", e);
-    return res.status(500).json({ ok: false, error: "No se pudo detectar resonancia" });
+    return res.status(500).json({ ok: false, error: "No se pudo leer los datos" });
   }
 });
 
@@ -205,17 +203,18 @@ app.post("/detectar-resonancia", async (req, res) => {
 // ===============   TRAUMA (IMAGENOLOGÍA)  ============
 // =====================================================
 
+// Guardar (como ya lo tenías). Los módulos son los que definen los campos.
 app.post("/guardar-datos", (req, res) => {
   const { idPago, datosPaciente } = req.body || {};
   if (!idPago || !datosPaciente)
     return res
       .status(400)
       .json({ ok: false, error: "Faltan idPago o datosPaciente" });
+
   memoria.set(ns("trauma", idPago), { ...datosPaciente, pagoConfirmado: true });
   res.json({ ok: true });
 });
 
-// ---- Crear pago Khipu (real o guest) ----
 async function crearPagoHandler(req, res) {
   try {
     const { idPago, modoGuest, datosPaciente, modulo } = req.body || {};
@@ -307,6 +306,7 @@ app.get("/obtener-datos/:idPago", (req, res) => {
   res.json({ ok: true, datos: d });
 });
 
+// ===== PDF ORDEN (TRAUMA) — solo lee, sin fallback
 app.get("/pdf/:idPago", async (req, res) => {
   try {
     const meta = memoria.get(ns("meta", req.params.idPago));
@@ -316,14 +316,10 @@ app.get("/pdf/:idPago", async (req, res) => {
     if (!d) return res.sendStatus(404);
 
     const generar = await loadOrdenImagenologia();
-    const lines = sugerirExamenImagenologia(d.dolor, d.lado, d.edad);
-    const examen =
-      d.examen && typeof d.examen === "string"
-        ? d.examen
-        : Array.isArray(lines)
-        ? lines.join("\n")
-        : String(lines || "");
-    const nota = d.nota || notaAsistencia(d.dolor);
+
+    const examen = buildExamenTextoStrict(d); // solo lo guardado
+    const nota   = buildNotaStrict(d);        // solo lo guardado
+
     const datos = { ...d, examen, nota };
 
     const filename = `orden_${sanitize(d.nombre || "paciente")}.pdf`;
@@ -367,7 +363,7 @@ app.post("/guardar-datos-preop", (req, res) => {
     ...datosPaciente,
     comorbilidades: comorbilidades ?? prev.comorbilidades,
     tipoCirugia:   tipoCirugia   ?? prev.tipoCirugia,
-    examenesIA:    examenesIA    ?? prev.examenesIA,
+    examenesIA:    Array.isArray(examenesIA) ? examenesIA : (prev.examenesIA || undefined),
     informeIA:     (typeof informeIA === "string" ? informeIA : prev.informeIA),
     nota:          (typeof nota === "string" ? nota : prev.nota),
     pagoConfirmado: true,
@@ -422,7 +418,7 @@ app.post("/preop-ia", iaPreopHandler(memoria));
 // ⬇️ IA de Generales
 app.post("/ia-generales", generalesIAHandler(memoria));
 
-// Guardar / obtener / PDF Generales
+// Guardar / obtener / PDF Generales (solo lectura)
 app.post("/guardar-datos-generales", (req, res) => {
   const {
     idPago,
@@ -487,6 +483,7 @@ app.get("/pdf-generales/:idPago", async (req, res) => {
 // ============   ORDEN DESDE IA (NUEVO)  ==============
 // =====================================================
 
+// PDF IA (orden) — solo lee lo guardado por módulos IA/trauma/etc.
 app.get("/api/pdf-ia-orden/:idPago", async (req, res) => {
   try {
     const id = req.params.idPago;
@@ -499,20 +496,8 @@ app.get("/api/pdf-ia-orden/:idPago", async (req, res) => {
 
     const generar = await loadOrdenImagenologia();
 
-    const linesIA = Array.isArray(d.examenesIA) ? d.examenesIA : [];
-    const lines =
-      linesIA.length > 0
-        ? linesIA
-        : sugerirExamenImagenologia(d.dolor, d.lado, d.edad);
-
-    const examen =
-      Array.isArray(lines) ? lines.join("\n") : String(lines || "");
-
-    let nota = d.nota;
-    if (!nota) {
-      const m = /Indicaciones:\s*([\s\S]+)/i.exec(d.respuesta || "");
-      nota = (m && m[1] && m[1].trim()) || notaAsistencia(d.dolor);
-    }
+    const examen = buildExamenTextoStrict(d); // solo lo guardado
+    const nota   = buildNotaStrict(d);        // solo lo guardado
 
     const datosParaOrden = { ...d, examen, nota };
 
