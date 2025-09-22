@@ -3,7 +3,7 @@ import PDFDocument from 'pdfkit';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { resolverDerivacion } from './derivacion/derivacion.resolver.js'; // ← añadido
+import { resolverDerivacion } from './derivacion/resolver.js'; // ← añadido
 
 // __dirname para ES Modules
 const __filename = fileURLToPath(import.meta.url);
