@@ -50,7 +50,6 @@ export default function iaPreopHandler(memoria) {
     ["APTT", "TTPA"],
     ["A PTT", "TTPA"],
     ["A-PTT", "TTPA"],
-    ["TTPK", "TTPA"], // normalizamos a TTPA pero mantenemos TTPK en catálogo por compatibilidad
     ["TIEMPO DE PROTROMBINA", "TP/INR"],
     ["INR", "TP/INR"],
     ["COAGULOGRAMA", "PERFIL DE COAGULACION (TP/INR y TTPA)"],
@@ -65,7 +64,6 @@ export default function iaPreopHandler(memoria) {
     ["RX TORAX", "RADIOGRAFIA DE TORAX"],
     ["RADIOGRAFIA TORAX", "RADIOGRAFIA DE TORAX"],
     // Odontología
-    ["PASE ODONTOLOGICO", "PASE ODONTOLOGICO"],
     ["PASE ODONTOLÓGICO", "PASE ODONTOLOGICO"],
     ["PASE DE ODONTOLOGIA", "PASE ODONTOLOGICO"],
     ["EVALUACION ODONTOLOGICA PREOPERATORIA", "PASE ODONTOLOGICO"],
@@ -73,7 +71,7 @@ export default function iaPreopHandler(memoria) {
 
   function normalizarNombre(raw = "") {
     const key = String(raw || "").trim().toUpperCase();
-    if (CANON.has(key)) return key;
+    if (CANON.has(key)) return key;          // respeta EXACTO si está en catálogo
     if (ALIAS.has(key)) return ALIAS.get(key);
     return null;
   }
@@ -207,24 +205,24 @@ export default function iaPreopHandler(memoria) {
     add.add("ORINA COMPLETA");
     add.add("UROCULTIVO");
     add.add("GRUPO Y RH");
+
+    // *** OBLIGATORIOS: COAGULACIÓN (tres variantes para compatibilidad) ***
     add.add("PERFIL DE COAGULACION (TP/INR y TTPA)");
-     add.add("VIH)");
+    add.add("TP/INR");
+    add.add("TTPK");
+
+    // *** OBLIGATORIO: ECG SIEMPRE ***
     add.add("ECG DE REPOSO");
+
     // Cirugía mayor: reservar cruzadas
     if (esArtro) add.add("PRUEBAS CRUZADAS (2U)");
-
-    // Coagulación:
-    add.add("PERFIL DE COAGULACION (TP/INR y TTPA)");
 
     // Diabetes/obesidad: HbA1c
     if (comorbilidades?.dm2 || comorbilidades?.obesidad) {
       add.add("HEMOGLOBINA GLICOSILADA");
     }
 
-    // Cardiovascular/edad: ECG; Rx tórax si mayor60 o EPOC/asma/tabaquismo/cardiopatía
-    if (mayor60 || comorbilidades?.cardiopatia || comorbilidades?.hta) {
-      add.add("ECG DE REPOSO");
-    }
+    // Rx tórax si mayor60 o EPOC/asma/tabaquismo/cardiopatía
     if (
       mayor60 ||
       comorbilidades?.epoc_asma ||
@@ -236,9 +234,6 @@ export default function iaPreopHandler(memoria) {
 
     // Pase odontológico para artroplastia (foco infeccioso)
     if (esArtro) add.add("PASE ODONTOLOGICO");
-
-    // Otros opcionales (dejar en catálogo, IA decidirá agregarlos si corresponde)
-    // add.add("VIH"); add.add("PERFIL LIPIDICO"); …
 
     // Validamos contra catálogo por seguridad
     return validarContraCatalogo(Array.from(add)) || [];
@@ -257,10 +252,10 @@ export default function iaPreopHandler(memoria) {
     const esArtro = /ARTROPLASTIA/i.test(tipoCirugia || "");
     const reglasArtro = esArtro
       ? `
-- Contexto: ARTROPLASTIA (cadera/rodilla). Los exámenes basales ya incluyen hemograma+VHS, PCR, glicemia, HbA1c (si DM/obesidad), bioquímica/renal, perfil hepático, perfil de coagulación (TP/INR y TTPA), orina completa + urocultivo, grupo y RH, pruebas cruzadas (2U), ECG según riesgo/edad, Rx de tórax según riesgo/edad, y pase odontológico.
+- Contexto: ARTROPLASTIA (cadera/rodilla). Los exámenes basales YA INCLUYEN (obligatorios): hemograma+VHS, PCR, glicemia, bioquímica/renal, perfil hepático, COAGULACIÓN (perfil + TP/INR + TTPK), orina completa + urocultivo, grupo y RH, ECG de reposo, pruebas cruzadas (2U), y Rx de tórax según riesgo/edad, además de HbA1c si DM/obesidad y pase odontológico.
 - Tu tarea es AGREGAR del catálogo solo lo que creas faltante según comorbilidades/edad. Si nada falta, devuelve lista vacía para "examenes" (porque ya vienen los basales).`
       : `
-- Hay exámenes basales predefinidos. Solo agrega del catálogo lo que falte por comorbilidades/edad. Si nada falta, devuelve lista vacía para "examenes".`;
+- Hay exámenes basales predefinidos (incluyen ECG y coagulación). Solo agrega del catálogo lo que falte por comorbilidades/edad. Si nada falta, devuelve lista vacía para "examenes".`;
 
     return `
 Eres un asistente clínico para evaluación PREOPERATORIA.
@@ -333,7 +328,7 @@ ${resumen}
           ? catalogoExamenes.map((s) => String(s).trim()).filter(Boolean)
           : CATALOGO_EXAMENES;
 
-      // 2) Construir basales deterministas
+      // 2) Construir basales deterministas (con ECG y coagulación obligatorios)
       const base = examenesBasales(paciente, comorbilidades, tipoCirugia);
 
       // 3) Llamada a OpenAI (si hay API key) para sugerir EXTRAS sobre los basales
