@@ -95,6 +95,15 @@ async function loadGenerales() {
   return _genGenerales;
 }
 
+// NEW: Formulario de Resonancia (PDF)
+let _genRM = null;
+async function loadFormularioRM() {
+  if (_genRM) return _genRM;
+  const m = await import("./resonanciaFormularioPDF.js");
+  _genRM = m.generarFormularioResonancia;
+  return _genRM;
+}
+
 // ===== Utils
 const getBackendBase = (req) =>
   BACKEND_BASE && BACKEND_BASE.startsWith("http")
@@ -514,6 +523,47 @@ app.get("/api/pdf-ia-orden/:idPago", async (req, res) => {
     doc.end();
   } catch (e) {
     console.error("api/pdf-ia-orden error:", e);
+    res.sendStatus(500);
+  }
+});
+
+// =====================================================
+// ===========   FORMULARIO RM (solo lectura)  =========
+// =====================================================
+
+app.get("/pdf-rm/:idPago", async (req, res) => {
+  try {
+    const id = req.params.idPago;
+
+    // autoriza por cualquier espacio (el formulario es auxiliar)
+    const d =
+      memoria.get(ns("ia", id)) ||
+      memoria.get(ns("trauma", id)) ||
+      memoria.get(ns("preop", id)) ||
+      memoria.get(ns("generales", id));
+
+    if (!d) return res.sendStatus(404);
+
+    const generarRM = await loadFormularioRM();
+
+    const filename = `formularioRM_${sanitize(d.nombre || "paciente")}.pdf`;
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+
+    const doc = new PDFDocument({ size: "A4", margin: 50 });
+    doc.pipe(res);
+
+    generarRM(doc, {
+      nombre: d.nombre,
+      rut: d.rut,
+      edad: d.edad,
+      rmForm: d.rmForm || {},                               // ← lo guarda el front/módulo
+      observaciones: d.rmObservaciones || d.observaciones || "",
+    });
+
+    doc.end();
+  } catch (e) {
+    console.error("pdf-rm error:", e);
     res.sendStatus(500);
   }
 });
