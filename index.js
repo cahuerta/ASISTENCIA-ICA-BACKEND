@@ -6,7 +6,7 @@ import PDFDocument from "pdfkit";
 import path from "path";
 import { fileURLToPath } from "url";
 
-// ===== Nuevo módulo Chat GPT
+// ===== Módulos
 import chatRouter from "./nuevoModuloChat.js";
 import iaPreopHandler from "./preopIA.js";        // ← PREOP IA
 import generalesIAHandler from "./generalesIA.js"; // ← GENERALES IA
@@ -25,7 +25,7 @@ const FRONTEND_BASE =
   process.env.RETURN_BASE ||
   "https://asistencia-ica.vercel.app";
 
-// ⬇️ AÑADIDO: permitir también dominio alterno/preview
+// Dominio alterno/preview
 const FRONTENDS = [FRONTEND_BASE, "https://asistencia-ica-fggf.vercel.app"];
 
 app.use(
@@ -58,9 +58,9 @@ const KHIPU_AMOUNT = Number(process.env.KHIPU_AMOUNT || 1000); // CLP
 const KHIPU_SUBJECT = process.env.KHIPU_SUBJECT || "Orden médica ICA";
 const CURRENCY = "CLP";
 
-// ===== Memoria simple
+// ===== Memoria simple (compartida)
 const memoria = new Map();
-app.set("memoria", memoria); // <-- compartir memoria con todos los módulos
+app.set("memoria", memoria);
 
 const ns = (s, id) => `${s}:${id}`;
 const sanitize = (t) => String(t || "").replace(/[^a-zA-Z0-9_-]+/g, "_");
@@ -424,7 +424,7 @@ app.post("/preop-ia", iaPreopHandler(memoria));
 // ============   GENERALES (1 PDF)  ===================
 // =====================================================
 
-// ⬇️ IA de Generales
+// IA de Generales
 app.post("/ia-generales", generalesIAHandler(memoria));
 
 // Guardar / obtener / PDF Generales (solo lectura)
@@ -489,7 +489,7 @@ app.get("/pdf-generales/:idPago", async (req, res) => {
 });
 
 // =====================================================
-// ============   ORDEN DESDE IA (NUEVO)  ==============
+// ============   ORDEN DESDE IA (solo lectura) ========
 // =====================================================
 
 // PDF IA (orden) — solo lee lo guardado por módulos IA/trauma/etc.
@@ -528,9 +528,58 @@ app.get("/api/pdf-ia-orden/:idPago", async (req, res) => {
 });
 
 // =====================================================
-// ===========   FORMULARIO RM (solo lectura)  =========
+// =========   FORMULARIO RM (guardar / pdf)  ==========
 // =====================================================
 
+// Guardar FORMULARIO RM (solo si el caso contiene RM en exámenes)
+app.post("/guardar-rm", (req, res) => {
+  try {
+    const { idPago, rmForm, observaciones } = req.body || {};
+    if (!idPago) {
+      return res.status(400).json({ ok: false, error: "Falta idPago" });
+    }
+
+    // Busca el espacio donde está el caso
+    const spaces = ["ia", "trauma", "preop", "generales"];
+    let foundSpace = null;
+    let base = null;
+    for (const s of spaces) {
+      const v = memoria.get(`${s}:${idPago}`);
+      if (v) { foundSpace = s; base = v; break; }
+    }
+    if (!base) {
+      return res.status(404).json({ ok: false, error: "No hay datos base para ese idPago" });
+    }
+
+    // Debe contener RM en exámenes
+    const texto = buildExamenTextoStrict(base);
+    if (!contieneRM(texto)) {
+      return res.status(409).json({ ok: false, error: "El caso no contiene Resonancia. No corresponde guardar formulario RM." });
+    }
+
+    // Construir cambios solo si vienen con contenido útil
+    const patch = {};
+    const hasRmForm =
+      rmForm && typeof rmForm === "object" && Object.keys(rmForm).length > 0;
+    const hasObs = typeof observaciones === "string";
+
+    if (hasRmForm) patch.rmForm = rmForm;
+    if (hasObs) patch.rmObservaciones = observaciones;
+
+    // Si no vino nada útil, no sobreescribimos
+    if (!hasRmForm && !hasObs) {
+      return res.json({ ok: true, skipped: true });
+    }
+
+    memoria.set(`${foundSpace}:${idPago}`, { ...base, ...patch });
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error("guardar-rm error:", e);
+    return res.status(500).json({ ok: false, error: "No se pudo guardar formulario RM" });
+  }
+});
+
+// PDF del Formulario RM — solo si los exámenes incluyen RM
 app.get("/pdf-rm/:idPago", async (req, res) => {
   try {
     const id = req.params.idPago;
@@ -543,6 +592,12 @@ app.get("/pdf-rm/:idPago", async (req, res) => {
       memoria.get(ns("generales", id));
 
     if (!d) return res.sendStatus(404);
+
+    // Debe contener RM en exámenes
+    const examenTxt = buildExamenTextoStrict(d);
+    if (!contieneRM(examenTxt)) {
+      return res.status(404).json({ ok: false, error: "No corresponde formulario RM: los exámenes no incluyen Resonancia." });
+    }
 
     const generarRM = await loadFormularioRM();
 
@@ -557,7 +612,7 @@ app.get("/pdf-rm/:idPago", async (req, res) => {
       nombre: d.nombre,
       rut: d.rut,
       edad: d.edad,
-      rmForm: d.rmForm || {},                               // ← lo guarda el front/módulo
+      rmForm: d.rmForm || {},                                // ← lo guarda el front/módulo
       observaciones: d.rmObservaciones || d.observaciones || "",
     });
 
