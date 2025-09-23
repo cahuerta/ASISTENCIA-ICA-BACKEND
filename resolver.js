@@ -9,6 +9,8 @@ import { fileURLToPath } from "url";
  * - Permite recarga manual
  * - Infere segmento por datos.segmento o keywords en dolor/examen
  * - Prioriza derivación explícita (si llega desde el front)
+ * - Nota SIEMPRE: "Derivar con equipo de <segmento>, con el examen realizado."
+ *   + "Recomendamos al Dr. <nombre>." SOLO si hay doctor.
  */
 
 const __filename = fileURLToPath(import.meta.url);
@@ -35,17 +37,14 @@ function leerConfig() {
   if (!cfg.segmentos || typeof cfg.segmentos !== "object") {
     throw new Error("derivacion.config.json inválido: falta 'segmentos'.");
   }
+
+  // Defaults (por si los quieres usar en otros contextos)
   if (!cfg.notaDefault) {
-    cfg.notaDefault = "Se recomienda coordinar evaluación con la especialidad correspondiente, presentándose con el estudio realizado.";
+    cfg.notaDefault =
+      "Se recomienda coordinar evaluación con la especialidad correspondiente, presentándose con el estudio realizado.";
   }
   if (!cfg.doctorDefault) {
-    cfg.doctorDefault = {
-      id: "ica_general",
-      nombre: "ICA — Traumatología",
-      especialidad: "Traumatología General",
-      agenda: "ICA Curicó",
-      contactoWeb: "https://www.icarticular.cl",
-    };
+    cfg.doctorDefault = null; // <- preferimos NO recomendar a nadie por defecto
   }
 
   __CACHE = { cfg, mtimeMs: stat.mtimeMs };
@@ -81,31 +80,56 @@ function inferirSegmento(datos = {}) {
   return ""; // desconocido
 }
 
+/** Crea la nota final según el segmento y el doctor (si existe) */
+function buildNota(segmento, doctor) {
+  // Texto fijo por segmento
+  const segTxt =
+    segmento === "cadera"
+      ? "cadera"
+      : segmento === "rodilla"
+      ? "rodilla"
+      : "la especialidad correspondiente";
+
+  // Siempre inicia así:
+  let nota = `Derivar con equipo de ${segTxt}, con el examen realizado.`;
+
+  // Si hay doctor, agrega recomendación
+  if (doctor && (doctor.nombre || doctor.id)) {
+    const nombre = doctor.nombre || "";
+    if (nombre.trim()) {
+      nota += ` Recomendamos al Dr. ${nombre}.`;
+    }
+  }
+
+  return nota;
+}
+
 /**
  * Resolver principal
  * @param {Object} datos - puede incluir:
  *   - segmento: "rodilla" | "cadera" | ...
  *   - dolor, examen: strings (para inferir)
- *   - derivacion: opcional, si ya viene decidida desde el front
+ *   - derivacion: opcional, si ya viene decidida desde el front (doctor, etc.)
  * @returns {Object} { segmento, doctor, nota, source }
  */
 export function resolverDerivacion(datos = {}) {
   const cfg = leerConfig();
 
-  // 1) Prioridad: si viene derivación explícita del front, respetar
+  // 1) Prioridad: derivación explícita desde el front
   if (datos.derivacion?.doctor || datos.derivacion?.doctorId) {
     const d = datos.derivacion;
-    const doctor = d.doctor || {
-      id: d.doctorId || "custom",
-      nombre: d.nombre || "—",
-      especialidad: d.especialidad || "—",
-      agenda: d.agenda || "",
-      contactoWeb: d.contactoWeb || "",
-    };
-    const nota = d.nota || cfg.notaDefault;
+    const doctor =
+      d.doctor ||
+      (d.doctorId
+        ? { id: d.doctorId, nombre: d.nombre || "", especialidad: d.especialidad || "", agenda: d.agenda || "", contactoWeb: d.contactoWeb || "" }
+        : null);
+
+    const segmento = normaliza(datos.segmento) || inferirSegmento(datos);
+    const nota = buildNota(segmento, doctor);
+
     return {
-      segmento: normaliza(datos.segmento) || inferirSegmento(datos),
-      doctor,
+      segmento,
+      doctor: doctor || null,
       nota,
       source: "explicit",
     };
@@ -116,19 +140,23 @@ export function resolverDerivacion(datos = {}) {
   const entry = cfg.segmentos[segmento];
 
   if (entry) {
+    const doctor = entry.doctor || null; // si no hay doctor, no recomendamos a nadie
+    const nota = buildNota(segmento, doctor);
     return {
       segmento,
-      doctor: entry.doctor || cfg.doctorDefault,
-      nota: entry.nota || cfg.notaDefault,
+      doctor,
+      nota,
       source: "segment",
     };
   }
 
-  // 3) Fallback
+  // 3) Fallback: segmento desconocido → no recomendar a nadie
+  const doctor = null;
+  const nota = buildNota("", doctor);
   return {
     segmento: "",
-    doctor: cfg.doctorDefault,
-    nota: cfg.notaDefault,
+    doctor,
+    nota,
     source: "fallback",
   };
 }
