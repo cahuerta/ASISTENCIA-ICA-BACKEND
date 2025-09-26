@@ -1,8 +1,6 @@
-// traumaIA.js — IA para módulo TRAUMA (imagenología) con lectura de puntos dolorosos
-// Node >= 18 (fetch disponible). ESM.
-// Cambios mínimos: se añaden helpers para marcadores y se integran al prompt.
-// Retro-compatible con front actual: sigue aceptando `rodillaMarcadores`.
-// Futuro: acepta `hombroMarcadores`, etc., y también `marcadores:{ region:{ frente/lateral/posterior:[] } }`.
+// traumaIA.js — TRAUMA con prompt estilo "nota breve" (estricto: 1 diagnóstico y 1 examen)
+// Mantiene API de respuesta original: diagnostico, examenes[0], justificacion, informeIA
+// Node >= 18 (fetch). ESM.
 
 const OPENAI_API = "https://api.openai.com/v1/chat/completions";
 const MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
@@ -119,7 +117,7 @@ function _tipsHombro(obj = {}) {
 }
 
 /* ============================================================
-   === Utilidades previas: normalización examen y fallback  ===
+   === Normalización de examen y fallback                    ===
    ============================================================ */
 
 function normalizarExamen(examen = "", dolor = "", lado = "") {
@@ -170,10 +168,42 @@ function fallbackHeuristico(p = {}) {
 }
 
 /* ============================================================
-   === Prompt a la IA (agrega puntos marcados al contexto)   ===
+   === Prompt tipo chat (estricto: 1 Dx y 1 Examen)          ===
    ============================================================ */
 
-function construirMensajesIA(p) {
+const SYSTEM_PROMPT_TXT = `
+Eres un asistente clínico de TRAUMATOLOGÍA para pre-orientación.
+Objetivo: redactar una NOTA BREVE centrada en EXÁMENES a solicitar.
+
+Reglas (ESTRICTAS):
+- Español claro. Extensión total: 140–170 palabras.
+- NO es diagnóstico definitivo ni tratamiento. No prescribas fármacos.
+- Evita alarmismo. Usa condicionales (“podría sugerir”, “compatible con”).
+- Prioriza IMAGENOLOGÍA. Si corresponde, sugiere ECOGRAFÍA en lesiones de partes blandas (p. ej., hombro/codo/mano en pacientes jóvenes).
+- Si hay lateralidad (Derecha/Izquierda), inclúyela explícitamente en el examen.
+- Integra PUNTOS DOLOROSOS si existen; la explicación debe referirse a ellos cuando estén presentes.
+- **EXACTAMENTE 1** diagnóstico presuntivo.
+- **EXACTAMENTE 1** examen sugerido.
+- No repitas identificadores del paciente.
+
+Formato EXACTO (mantén títulos y viñetas tal cual):
+Diagnóstico presuntivo:
+• (una sola entidad clínica específica a la zona)
+
+Explicación breve:
+• (≈60–100 palabras, 1–3 frases que justifiquen el enfoque y el porqué del examen; referencia a los puntos dolorosos si existen)
+
+Exámenes sugeridos:
+• (UN SOLO EXAMEN — incluir lateralidad si aplica)
+
+Indicaciones:
+• Presentarse con la orden; ayuno solo si el examen lo solicita.
+• Acudir a evaluación presencial con el/la especialista sugerido/a.
+
+Devuelve SOLO el texto en este formato (sin comentarios adicionales).
+`.trim();
+
+function construirMensajeUsuarioTXT(p) {
   const info = {
     nombre: p?.nombre || "",
     rut: p?.rut || "",
@@ -181,74 +211,89 @@ function construirMensajesIA(p) {
     genero: p?.genero || "",
     dolor: p?.dolor || "",
     lado: p?.lado || "",
-    detalles: p?.detalles || null,
   };
 
-  // NUEVO: puntos dolorosos y “tips” clínicos a partir de los puntos
   const marc = p?.detalles?.marcadores || {};
-  const txtMarcadores = _marcadoresATexto(marc);
-  const tips = _tipsDesdeMarcadores(marc);
-  const tipsTxt = tips.length ? `\n\nTips clínicos:\n• ${tips.join("\n• ")}` : "";
+  const puntosTxt = _marcadoresATexto(marc);
+  const tipsArr   = _tipsDesdeMarcadores(marc);
+  const tipsTxt   = tipsArr.length ? `\n\nTips clínicos:\n• ${tipsArr.join("\n• ")}` : "";
 
-  const system = [
-    "Eres un asistente clínico de traumatología e imagenología.",
-    "Responde SIEMPRE en JSON válido, sin texto adicional.",
-    "Selecciona UN diagnóstico presuntivo y UN examen imagenológico inicial.",
-    "La justificación clínica DEBE referenciar explícitamente los puntos dolorosos cuando existan.",
-    "Incluye lateralidad (izquierda/derecha) si aplica.",
-    "Evita sobreestudio: prioriza RX o ecografía si resuelven la pregunta clínica.",
-  ].join(" ");
-
-  const user = `
-PACIENTE
-${JSON.stringify(info, null, 2)}
-
-PUNTOS DOLOROSOS (multi-región)
-${txtMarcadores}${tipsTxt}
-
-SALIDA (SOLO JSON VÁLIDO)
-{
-  "diagnostico_presuntivo": "3–8 palabras, específico, con lateralidad si aplica",
-  "examen": "UN SOLO EXAMEN, EN MAYÚSCULAS",
-  "justificacion_clinica": "60–120 palabras, referenciando los puntos y su correlato anatómico/patológico"
-}
-`.trim();
-
-  return [
-    { role: "system", content: system },
-    { role: "user", content: user },
-  ];
+  return (
+    `Edad: ${info.edad || "—"}\n` +
+    (info.genero ? `Género: ${info.genero}\n` : "") +
+    (info.dolor ? `Región de dolor: ${info.dolor}${info.lado ? ` (${info.lado})` : ""}\n` : "") +
+    `Puntos dolorosos marcados:\n${puntosTxt}${tipsTxt}\n\n` +
+    `Redacta EXACTAMENTE con el formato solicitado y el carácter ESTRICTO de 1 diagnóstico y 1 examen.`
+  );
 }
 
 /* ============================================================
-   === Llamada a la IA                                       ===
+   === Llamada a la IA y parsing del texto                   ===
    ============================================================ */
 
-async function llamarIA(mensajes) {
+async function llamarIA_Texto(messages) {
   const key = process.env.OPENAI_API_KEY || "";
   if (!key) throw new Error("OPENAI_API_KEY no configurada");
 
   const r = await fetch(OPENAI_API, {
     method: "POST",
-    headers: {
-      "content-type": "application/json",
-      authorization: `Bearer ${key}`,
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      temperature: 0.35,
-      response_format: { type: "json_object" },
-      messages,
-    }),
+    headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
+    body: JSON.stringify({ model: MODEL, temperature: 0.35, max_tokens: 520, messages }),
   });
-
   if (!r.ok) {
     const raw = await r.text().catch(() => "");
     throw new Error(`OpenAI ${r.status}: ${raw}`);
   }
   const j = await r.json();
-  const txt = j?.choices?.[0]?.message?.content || "{}";
-  return JSON.parse(txt);
+  return (j?.choices?.[0]?.message?.content || "").trim();
+}
+
+/** Extrae secciones del texto estructurado; devuelve 1 Dx y 1 Examen (si hay más, toma el primero) */
+function parseSecciones(text = "") {
+  const out = { diagnostico: "", explicacion: "", examen: "" };
+  if (!text) return out;
+
+  // Diagnóstico presuntivo (primer bullet)
+  const secDx = /Diagn[oó]stico presuntivo:\s*([\s\S]*?)(?:\n\s*Explicaci[oó]n breve:|$)/i.exec(text);
+  if (secDx) {
+    const block = secDx[1] || "";
+    const bullets = block
+      .split(/\r?\n/)
+      .map(l => l.trim())
+      .filter(Boolean)
+      .map(l => (/^[•\-\*]\s*(.+)$/.exec(l)?.[1] || l).trim())
+      .filter(Boolean);
+    out.diagnostico = bullets[0] || "";
+  }
+
+  // Explicación breve (consolidada)
+  const secExp = /Explicaci[oó]n breve:\s*([\s\S]*?)(?:\n\s*Ex[aá]menes sugeridos:|$)/i.exec(text);
+  if (secExp) {
+    const block = secExp[1] || "";
+    const bullets = block
+      .split(/\r?\n/)
+      .map(l => l.trim())
+      .filter(Boolean)
+      .map(l => (/^[•\-\*]\s*(.+)$/.exec(l)?.[1] || l).trim())
+      .filter(Boolean);
+    out.explicacion = bullets.join(" ").replace(/\s+/g, " ").trim();
+  }
+
+  // Exámenes sugeridos (primer bullet)
+  const secEx = /Ex[aá]men(?:es)? sugeridos?:\s*([\s\S]*?)(?:\n\s*Indicaciones:|$)/i.exec(text);
+  if (secEx) {
+    const block = secEx[1] || "";
+    const bullets = block
+      .split(/\r?\n/)
+      .map(l => l.trim())
+      .filter(Boolean)
+      .map(l => (/^[•\-\*]\s*(.+)$/.exec(l)?.[1] || l).trim())
+      .map(l => l.replace(/\s*\.\s*$/, ".")) // normaliza punto final
+      .filter(Boolean);
+    out.examen = bullets[0] || "";
+  }
+
+  return out;
 }
 
 /* ============================================================
@@ -263,30 +308,30 @@ export default function traumaIAHandler(memoria) {
       const { idPago, paciente = {}, detalles = null } = req.body || {};
       if (!idPago) return res.status(400).json({ ok: false, error: "Falta idPago" });
 
-      // === NUEVO: leer puntos dolorosos del body (actual y futuro) ===
+      // Marcadores: leer del body (actual y futuro) y filtrar por dolor
       const marcadoresAll = _leerMarcadoresDesdeBody(req.body);
       const marcadoresRelev = _filtrarRegionesRelevantes(marcadoresAll, paciente?.dolor);
-
-      // inyectar en detalles para el prompt (no rompe tus flujos)
       const detallesAll = { ...(detalles || {}), marcadores: marcadoresRelev };
       const p = { ...paciente, detalles: detallesAll };
 
-      // ===== IA con puntos
+      // ===== IA con prompt estricto (texto)
       let out;
       try {
-        const mensajes = construirMensajesIA(p);
-        const ia = await llamarIA(mensajes);
+        const messages = [
+          { role: "system", content: SYSTEM_PROMPT_TXT },
+          { role: "user", content: construirMensajeUsuarioTXT(p) },
+        ];
+        const texto = await llamarIA_Texto(messages);
+        const { diagnostico, explicacion, examen } = parseSecciones(texto);
 
-        const diagnostico = String(ia?.diagnostico_presuntivo || "").trim();
-        const examenRaw  = String(ia?.examen || "").trim();
-        const justificacion = String(ia?.justificacion_clinica || "").trim();
+        const diagnosticoOk = String(diagnostico || "").trim();
+        const examenOk = normalizarExamen(String(examen || "").trim(), p?.dolor, p?.lado);
+        const justificacion = explicacion || "Justificación clínica basada en región y puntos dolorosos.";
 
-        const examen = normalizarExamen(examenRaw, p?.dolor, p?.lado);
-
-        if (!diagnostico || !examen) {
+        if (!diagnosticoOk || !examenOk) {
           out = fallbackHeuristico(p);
         } else {
-          out = { diagnostico, examen, justificacion };
+          out = { diagnostico: diagnosticoOk, examen: examenOk, justificacion };
         }
       } catch {
         out = fallbackHeuristico(p);
@@ -308,9 +353,9 @@ export default function traumaIAHandler(memoria) {
       return res.json({
         ok: true,
         diagnostico: out.diagnostico,
-        examenes: [out.examen],
+        examenes: [out.examen],          // ← exactamente 1 examen
         justificacion: out.justificacion,
-        informeIA: out.justificacion, // compat extra, por si algún flujo lo usa
+        informeIA: out.justificacion,    // compat (algunos flujos lo usan)
       });
     } catch (e) {
       console.error("ia-trauma error:", e);
