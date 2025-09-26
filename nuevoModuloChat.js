@@ -20,6 +20,8 @@ Reglas:
 - Evita alarmismo. Usa condicionales (“podría sugerir”, “compatible con”).
 - Prioriza IMAGENOLOGÍA. Si corresponde, sugiere ECOGRAFÍA en lesiones de partes blandas (frecuente en hombro/codo/mano).
 - Si hay lateralidad (Derecha/Izquierda), inclúyela explícitamente en los exámenes.
+- Integra los PUNTOS DOLOROSOS DE RODILLA si existen (interlínea medial/lateral → orienta a menisco; dolor peripatela/patelofemoral → síndrome patelofemoral; tuberosidad tibial → Osgood/tendón rotuliano; pes anserino → tendinopatía/bursitis; banda iliotibial/Gerdy → síndrome banda ITB; fosa poplítea → quiste de Baker).
+- La EXPLICACIÓN CLÍNICA debe referenciar explícitamente los puntos dolorosos cuando existan.
 - No repitas identificadores del paciente.
 
 Formato EXACTO (mantén títulos y viñetas tal cual):
@@ -28,7 +30,7 @@ Diagnóstico presuntivo:
 • (2ª entidad diferencial, si procede)
 
 Explicación breve:
-• (≈60–100 palabras, 1–3 frases que justifiquen el enfoque y el porqué de los exámenes)
+• (≈60–100 palabras, 1–3 frases que justifiquen el enfoque y el porqué de los exámenes; referencia a los puntos dolorosos si existen)
 
 Exámenes sugeridos:
 • (EXAMEN 1 — incluir lateralidad si aplica)
@@ -60,7 +62,6 @@ function leerPacienteDeMemoria(memoria, idPago) {
 function parseExamenesSugeridos(text = "") {
   if (!text) return { all: [], firstTwo: [], rm: [], rx: [], eco: [], otros: [] };
 
-  // Captura la sección entre "Examen sugerido:" o "Exámenes sugeridos:" e "Indicaciones:" (o fin)
   const sec =
     /Examen(?:es)? sugeridos?:\s*([\s\S]*?)(?:\n\s*Indicaciones:|$)/i.exec(text);
   if (!sec) return { all: [], firstTwo: [], rm: [], rx: [], eco: [], otros: [] };
@@ -76,7 +77,6 @@ function parseExamenesSugeridos(text = "") {
 
   const firstTwo = bullets.slice(0, 2);
 
-  // Clasificación simple (sobre los 2 primeros)
   const rm = [], rx = [], eco = [], otros = [];
   for (const b of firstTwo) {
     const l = b.toLowerCase();
@@ -110,7 +110,6 @@ function sugerirFallbackSegunClinica(dolor = "", lado = "", edad = null) {
   const joven = Number.isFinite(edadNum) ? edadNum < 40 : false;
   const mayor60 = Number.isFinite(edadNum) ? edadNum > 60 : false;
 
-  // Columna: respetar sub-zona si viene en "dolor"
   if (d.includes("cervical")) return ["RESONANCIA MAGNÉTICA DE COLUMNA CERVICAL."];
   if (d.includes("dorsal"))   return ["RESONANCIA MAGNÉTICA DE COLUMNA DORSAL."];
   if (d.includes("lumbar") || d.includes("columna"))
@@ -186,16 +185,58 @@ function sugerirFallbackSegunClinica(dolor = "", lado = "", edad = null) {
   return ["Evaluación imagenológica según clínica.", "—"];
 }
 
+/* ====== NUEVO: helpers para incorporar puntos de rodilla ====== */
+
+// Construye un bloque de texto legible para el prompt a partir de rodillaMarcadores
+function rodillaPuntosTexto(rodillaMarcadores) {
+  if (!rodillaMarcadores) return "Sin puntos dolorosos marcados.";
+  const vista = (k) => Array.isArray(rodillaMarcadores[k]) ? rodillaMarcadores[k] : [];
+  const bloques = [];
+  const push = (titulo, arr) => {
+    if (arr.length) {
+      bloques.push(`${titulo}:\n• ${arr.join("\n• ")}`);
+    }
+  };
+  push("Frente", vista("frente"));
+  push("Lateral", vista("lateral"));
+  push("Posterior", vista("posterior"));
+  return bloques.length ? bloques.join("\n\n") : "Sin puntos dolorosos marcados.";
+}
+
+// Infiere tips clínicos muy breves (ayuda al modelo a mapear)
+function tipsDesdePuntos(rodillaMarcadores) {
+  if (!rodillaMarcadores) return [];
+  const all = [
+    ...(rodillaMarcadores.frente || []),
+    ...(rodillaMarcadores.lateral || []),
+    ...(rodillaMarcadores.posterior || []),
+  ].map((s) => String(s || "").toLowerCase());
+
+  const has = (rx) => all.some((t) => rx.test(t));
+  const tips = [];
+  if (has(/\binterl[ií]nea?\s+medial\b/)) tips.push("Interlínea medial → sospecha menisco medial.");
+  if (has(/\binterl[ií]nea?\s+lateral\b/)) tips.push("Interlínea lateral → sospecha menisco lateral.");
+  if (has(/\b(r[óo]tula|patelar|patelofemoral|ap(e|é)x)\b/)) tips.push("Dolor patelofemoral → considerar síndrome PF/condropatía.");
+  if (has(/\btuberosidad\s+tibial\b/)) tips.push("Tuberosidad tibial → Osgood–Schlatter / tendón rotuliano.");
+  if (has(/\b(pes\s+anserin[oó]|pata\s+de\s+ganso)\b/)) tips.push("Pes anserino → tendinopatía/bursitis anserina.");
+  if (has(/\b(gerdy|banda\s+ilio?tibial|tracto\s+ilio?tibial)\b/)) tips.push("Banda iliotibial/Gerdy → síndrome banda ITB.");
+  if (has(/\bpopl[ií]tea?\b/)) tips.push("Fosa poplítea → evaluar quiste de Baker.");
+  return tips;
+}
+
 /* ===== Preview IA (antes de pagar) ===== */
 router.post("/preview-informe", async (req, res) => {
   try {
-    const { idPago, consulta } = req.body || {};
+    const { idPago, consulta, rodillaMarcadores: rodillaMarcadoresBody = null } = req.body || {};
     if (!consulta || !idPago) {
       return res.status(400).json({ ok: false, error: "Faltan datos obligatorios" });
     }
 
     const memoria = req.app.get("memoria");
     const prev = leerPacienteDeMemoria(memoria, idPago) || {};
+
+    // Si ya había marcadores guardados en memoria (otra llamada previa), úsalos; si vienen en body, priorízalos
+    const rodillaMarcadores = rodillaMarcadoresBody ?? prev?.rodillaMarcadores ?? null;
 
     const merged = {
       nombre:  req.body?.nombre  ?? prev?.nombre,
@@ -205,12 +246,17 @@ router.post("/preview-informe", async (req, res) => {
       dolor:   req.body?.dolor   ?? prev?.dolor,
       lado:    req.body?.lado    ?? prev?.lado,
       consulta,
+      rodillaMarcadores,
     };
+
+    const puntosTxt = rodillaPuntosTexto(rodillaMarcadores);
+    const tips = tipsDesdePuntos(rodillaMarcadores);
+    const tipsTxt = tips.length ? `\n\nTips clínicos (auto-generados):\n• ${tips.join("\n• ")}` : "";
 
     const completion = await client.chat.completions.create({
       model: "gpt-4o-mini",
       temperature: 0.4,
-      max_tokens: 480,
+      max_tokens: 520,
       messages: [
         { role: "system", content: SYSTEM_PROMPT_IA },
         {
@@ -220,6 +266,7 @@ router.post("/preview-informe", async (req, res) => {
             (merged.genero ? `Género: ${merged.genero}\n` : "") +
             (merged.dolor ? `Región de dolor: ${merged.dolor}${merged.lado ? ` (${merged.lado})` : ""}\n` : "") +
             `Consulta/Indicación (texto libre):\n${merged.consulta}\n\n` +
+            `Puntos dolorosos marcados (si aplica):\n${puntosTxt}${tipsTxt}\n\n` +
             `Redacta EXACTAMENTE con el formato solicitado y dentro del límite de palabras.`,
         },
       ],
@@ -308,7 +355,6 @@ router.get("/pdf-ia-orden/:idPago", async (req, res) => {
     if (!d) return res.sendStatus(404);
     if (!d.pagoConfirmado) return res.sendStatus(402);
 
-    // Toma hasta 2 exámenes de la IA; si no hay, usa fallback (hasta 2).
     const lineas =
       Array.isArray(d.examenesIA) && d.examenesIA.length > 0
         ? d.examenesIA.slice(0, 2)
@@ -324,7 +370,6 @@ router.get("/pdf-ia-orden/:idPago", async (req, res) => {
     const doc = new PDFDocument({ size: "A4", margin: 50 });
     doc.pipe(res);
 
-    // Reusar generador de orden (soporta múltiples líneas en 'examen')
     generarOrdenImagenologia(doc, {
       ...d,
       examen: examenStr,
