@@ -19,21 +19,37 @@ const __dirname = path.dirname(__filename);
 // ===== App base
 const app = express();
 
-// CORS: permite tus frontends en Vercel
+// CORS: permite tus frontends (Vercel + dominio icarticular.cl)
 const FRONTEND_BASE =
   process.env.FRONTEND_BASE ||
   process.env.RETURN_BASE ||
   "https://asistencia-ica.vercel.app";
 
-// Dominio alterno/preview
-const FRONTENDS = [FRONTEND_BASE, "https://asistencia-ica-fggf.vercel.app"];
+// Dominio alterno/preview + dominio propio
+const FRONTENDS = [
+  FRONTEND_BASE,
+  "https://asistencia-ica-fggf.vercel.app",
+  "https://icarticular.cl",
+  "https://www.icarticular.cl",
+];
 
+// --- CORS actualizado (incluye icarticular.cl y alias www)
 app.use(
   cors({
-    origin: FRONTENDS,
+    origin(origin, cb) {
+      if (!origin) return cb(null, true); // Postman/cURL
+      if (FRONTENDS.includes(origin) || /\.vercel\.app$/.test(origin)) {
+        return cb(null, true);
+      }
+      cb(new Error("CORS no permitido: " + origin));
+    },
+    methods: ["GET", "POST", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
     credentials: false,
   })
 );
+app.options("*", cors());
+
 app.use(bodyParser.json());
 
 // ===== Puertos / bases
@@ -653,7 +669,8 @@ app.get("/pdf-rm/:idPago", async (req, res) => {
 // ============   TRAUMA IA (nuevo endpoint) ===========
 // =====================================================
 
-app.post("/ia-trauma", traumaIAHandler(memoria));
+app.post("/ia-trauma", traumaIAHandler(memoria)); // existente
+app.post("/ia/trauma", traumaIAHandler(memoria)); // alias legacy (para evitar 404)
 
 // =====================================================
 // ============   CHAT GPT (nuevo módulo)  =============
