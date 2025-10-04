@@ -23,7 +23,7 @@ const app = express();
 const FRONTEND_BASE =
   process.env.FRONTEND_BASE ||
   process.env.RETURN_BASE ||
-  "https://asistencia-ica.vercel.app";
+  "https://icarticular.cl";
 
 // Dominio alterno/preview + dominio propio
 const FRONTENDS = [
@@ -55,8 +55,7 @@ app.use(bodyParser.json());
 // ===== Puertos / bases
 const PORT = process.env.PORT || 3001;
 const BACKEND_BASE = process.env.BACKEND_BASE || ""; // si está vacío, lo deducimos por request
-const RETURN_BASE =
-  process.env.RETURN_BASE || FRONTEND_BASE || "https://asistencia-ica.vercel.app";
+const RETURN_BASE = process.env.RETURN_BASE || FRONTEND_BASE;
 
 // ===== Khipu config (v3)
 const _ENV = (process.env.KHIPU_ENV || "integration").toLowerCase();
@@ -286,6 +285,7 @@ async function crearPagoHandler(req, res) {
       const url = new URL(RETURN_BASE);
       url.searchParams.set("pago", "ok");
       url.searchParams.set("idPago", idPago);
+      url.searchParams.set("modulo", space);
       return res.json({ ok: true, url: url.toString(), guest: true });
     }
 
@@ -301,8 +301,8 @@ async function crearPagoHandler(req, res) {
       currency: CURRENCY,
       subject: KHIPU_SUBJECT,
       transaction_id: idPago,
-      return_url: `${RETURN_BASE}?pago=ok&idPago=${encodeURIComponent(idPago)}`,
-      cancel_url: `${RETURN_BASE}?pago=cancelado&idPago=${encodeURIComponent(idPago)}`,
+      return_url: `${RETURN_BASE}?pago=ok&idPago=${encodeURIComponent(idPago)}&modulo=${space}`,
+      cancel_url: `${RETURN_BASE}?pago=cancelado&idPago=${encodeURIComponent(idPago)}&modulo=${space}`,
       notify_url: `${backendBase}/webhook`,
     };
 
