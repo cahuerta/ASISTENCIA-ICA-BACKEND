@@ -362,8 +362,8 @@ app.get("/pdf/:idPago", async (req, res) => {
     const meta = memoria.get(ns("meta", req.params.idPago));
     if (!meta || meta.moduloAutorizado !== "trauma") return res.sendStatus(402);
 
-    // *** CAMBIO MÍNIMO: leer desde el mismo origen que usa el preview ***
-    const { data: d } = pickFromSpaces(memoria, req.params.idPago);
+    // *** CAMBIO MÍNIMO: leer SOLO desde trauma ***
+    const d = memoria.get(ns("trauma", req.params.idPago));
     if (!d) return res.sendStatus(404);
 
     const generar = await loadOrdenImagenologia();
