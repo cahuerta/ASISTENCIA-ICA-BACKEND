@@ -43,7 +43,7 @@ app.use(
       }
       cb(new Error("CORS no permitido: " + origin));
     },
-    methods: ["GET", "POST", "OPTIONS"],
+    methods: ["GET", "POST", "DELETE", "OPTIONS"], // ← agregado DELETE
     allowedHeaders: ["Content-Type", "Authorization"],
     credentials: false,
   })
@@ -354,6 +354,29 @@ app.get("/obtener-datos/:idPago", (req, res) => {
   const d = memoria.get(ns("trauma", req.params.idPago));
   if (!d) return res.status(404).json({ ok: false });
   res.json({ ok: true, datos: d });
+});
+
+// ===== RESET (borrado por idPago, usado por el botón Volver/Reiniciar)
+app.delete("/reset/:idPago", (req, res) => {
+  const { idPago } = req.params || {};
+  if (!idPago) return res.status(400).json({ ok: false, error: "Falta idPago" });
+
+  // sanity: aceptar solo id alfanumérico con _ y -
+  if (!/^[a-zA-Z0-9_\-]+$/.test(idPago)) {
+    return res.status(400).json({ ok: false, error: "idPago inválido" });
+  }
+
+  const keys = [
+    ns("ia", idPago),
+    ns("trauma", idPago),
+    ns("preop", idPago),
+    ns("generales", idPago),
+    ns("meta", idPago),
+  ];
+
+  let removed = 0;
+  for (const k of keys) if (memoria.delete(k)) removed++;
+  return res.json({ ok: true, removed });
 });
 
 // ===== PDF ORDEN (TRAUMA) — solo lee, sin fallback
