@@ -5,6 +5,9 @@
 const OPENAI_API = "https://api.openai.com/v1/chat/completions";
 const MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 
+// ✅ Importa tu fallback específico por zona/lateralidad
+import fallbackTrauma from "./fallbackTrauma.js";
+
 /* ============================================================
    === MARCADORES (puntos dolorosos) — helpers retro-compat ===
    ============================================================ */
@@ -144,26 +147,9 @@ function normalizarExamen(examen = "", dolor = "", lado = "") {
   return x;
 }
 
+// ✅ Redefinido: usa tu fallback específico y elimina el genérico “EVALUACIÓN IMAGENOLÓGICA…”
 function fallbackHeuristico(p = {}) {
-  const d = String(p.dolor || "").toLowerCase();
-  const L = (p.lado || "").toUpperCase();
-  const lat = L ? ` ${L}` : "";
-  const mayor60 = Number(p.edad) > 60;
-
-  if (d.includes("rodilla")) {
-    const diagnostico = `Gonalgia${lat ? ` ${L.toLowerCase()}` : ""}`;
-    const examen = mayor60
-      ? `RX DE RODILLA${lat} AP/LATERAL/AXIAL.`
-      : `RESONANCIA MAGNÉTICA DE RODILLA${lat}.`;
-    const justificacion =
-      "Estudio dirigido a estructuras intraarticulares y periarticulares de la rodilla. Se prioriza RX para óseo/degenerativo y RM para meniscos/ligamentos. Los puntos dolorosos orientan la sospecha específica.";
-    return { diagnostico, examen, justificacion };
-  }
-
-  const diagnostico = "Dolor osteoarticular localizado";
-  const examen = "EVALUACIÓN IMAGENOLÓGICA SEGÚN CLÍNICA.";
-  const justificacion =
-    "Se inicia estudio de la región comprometida, priorizando seguridad y costo-efectividad. La selección del examen se ajusta a la sospecha clínica y hallazgos dirigidos.";
+  const { diagnostico, examen, justificacion } = fallbackTrauma(p);
   return { diagnostico, examen, justificacion };
 }
 
