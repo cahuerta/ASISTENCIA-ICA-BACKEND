@@ -11,6 +11,7 @@ import chatRouter from "./nuevoModuloChat.js";
 import iaPreopHandler from "./preopIA.js";        // ← PREOP IA
 import generalesIAHandler from "./generalesIA.js"; // ← GENERALES IA
 import traumaIAHandler from "./traumaIA.js";       // ← TRAUMA IA
+import fallbackTrauma from "./fallbackTrauma.js";  // ← Fallback TRAUMA (nuevo)
 
 // ===== Paths útiles
 const __filename = fileURLToPath(import.meta.url);
@@ -692,8 +693,121 @@ app.get("/pdf-rm/:idPago", async (req, res) => {
 // ============   TRAUMA IA (nuevo endpoint) ===========
 // =====================================================
 
-app.post("/ia-trauma", traumaIAHandler(memoria)); // existente
-app.post("/ia/trauma", traumaIAHandler(memoria)); // alias legacy (para evitar 404)
+// Wrapper: intentar IA y, si falla o no aporta, aplicar fallbackTrauma.
+// No cambia nada más.
+const _traumaIA = traumaIAHandler(memoria);
+function traumaIAWithFallback(handler) {
+  return async (req, res) => {
+    const originalJson = res.json.bind(res);
+    let responded = false;
+
+    // sobrescribe res.json para inspeccionar la salida de IA
+    res.json = (body) => {
+      try {
+        // ¿IA entregó algo útil?
+        const ok = body && body.ok !== false;
+        const hasExamen =
+          (Array.isArray(body?.examenesIA) && body.examenesIA.length > 0) ||
+          (typeof body?.examen === "string" && body.examen.trim());
+
+        if (ok && hasExamen) {
+          responded = true;
+          return originalJson(body);
+        }
+
+        // IA no aportó → fallback
+        const p = req.body?.datosPaciente || req.body || {};
+        const fb = fallbackTrauma(p);
+        const idPago = req.body?.idPago;
+        if (idPago) {
+          const prev = memoria.get(ns("trauma", idPago)) || {};
+          memoria.set(ns("trauma", idPago), {
+            ...prev,
+            ...p,
+            examenesIA: [fb.examen],
+            diagnosticoIA: fb.diagnostico,
+            justificacionIA: fb.justificacion,
+          });
+        }
+        responded = true;
+        return originalJson({
+          ok: true,
+          fallback: true,
+          examenesIA: [fb.examen],
+          diagnosticoIA: fb.diagnostico,
+          justificacionIA: fb.justificacion,
+        });
+      } catch {
+        // último recurso: fallback simple
+        const p = req.body?.datosPaciente || req.body || {};
+        const fb = fallbackTrauma(p);
+        responded = true;
+        return originalJson({
+          ok: true,
+          fallback: true,
+          examenesIA: [fb.examen],
+          diagnosticoIA: fb.diagnostico,
+          justificacionIA: fb.justificacion,
+        });
+      }
+    };
+
+    try {
+      await Promise.resolve(handler(req, res));
+      if (!responded && !res.headersSent) {
+        const p = req.body?.datosPaciente || req.body || {};
+        const fb = fallbackTrauma(p);
+        const idPago = req.body?.idPago;
+        if (idPago) {
+          const prev = memoria.get(ns("trauma", idPago)) || {};
+          memoria.set(ns("trauma", idPago), {
+            ...prev,
+            ...p,
+            examenesIA: [fb.examen],
+            diagnosticoIA: fb.diagnostico,
+            justificacionIA: fb.justificacion,
+          });
+        }
+        return originalJson({
+          ok: true,
+          fallback: true,
+          examenesIA: [fb.examen],
+          diagnosticoIA: fb.diagnostico,
+          justificacionIA: fb.justificacion,
+        });
+      }
+    } catch (_e) {
+      if (!responded && !res.headersSent) {
+        const p = req.body?.datosPaciente || req.body || {};
+        const fb = fallbackTrauma(p);
+        const idPago = req.body?.idPago;
+        if (idPago) {
+          const prev = memoria.get(ns("trauma", idPago)) || {};
+          memoria.set(ns("trauma", idPago), {
+            ...prev,
+            ...p,
+            examenesIA: [fb.examen],
+            diagnosticoIA: fb.diagnostico,
+            justificacionIA: fb.justificacion,
+          });
+        }
+        return originalJson({
+          ok: true,
+          fallback: true,
+          examenesIA: [fb.examen],
+          diagnosticoIA: fb.diagnostico,
+          justificacionIA: fb.justificacion,
+        });
+      }
+    } finally {
+      // restaura res.json por si Express sigue el chain
+      res.json = originalJson;
+    }
+  };
+}
+
+app.post("/ia-trauma", traumaIAWithFallback(_traumaIA));      // existente + fallback
+app.post("/ia/trauma", traumaIAWithFallback(_traumaIA));      // alias legacy + fallback
 
 // =====================================================
 // ============   CHAT GPT (nuevo módulo)  =============
