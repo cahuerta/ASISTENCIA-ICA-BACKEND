@@ -34,22 +34,30 @@ const FRONTENDS = [
   "https://www.icarticular.cl",
 ];
 
-// --- CORS actualizado (incluye icarticular.cl y alias www)
-app.use(
-  cors({
-    origin(origin, cb) {
-      if (!origin) return cb(null, true); // Postman/cURL
-      if (FRONTENDS.includes(origin) || /\.vercel\.app$/.test(origin)) {
-        return cb(null, true);
-      }
-      cb(new Error("CORS no permitido: " + origin));
-    },
-    methods: ["GET", "POST", "DELETE", "OPTIONS"], // ← agregado DELETE
-    allowedHeaders: ["Content-Type", "Authorization"],
-    credentials: false,
-  })
-);
-app.options("*", cors());
+// --- CORS actualizado (misma whitelist en use y en OPTIONS)
+const ALLOWED = [
+  ...FRONTENDS,
+  /^https:\/\/.*\.vercel\.app$/,
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+];
+
+const corsOptions = {
+  origin(origin, cb) {
+    if (!origin) return cb(null, true); // Postman/cURL/WebView sin Origin
+    const ok = ALLOWED.some(rule =>
+      typeof rule === "string" ? origin === rule : rule.test(origin)
+    );
+    cb(ok ? null : new Error("CORS no permitido: " + origin), ok);
+  },
+  methods: ["GET", "POST", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: false,
+  optionsSuccessStatus: 200,
+};
+
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
 
 app.use(bodyParser.json());
 
@@ -507,16 +515,19 @@ app.get("/pdf-preop/:idPago", async (req, res) => {
   }
 });
 
-// ← PREOP IA (y alias de compatibilidad)
-app.post("/ia-preop", iaPreopHandler(memoria));
-app.post("/preop-ia", iaPreopHandler(memoria));
+// ← PREOP IA (y alias de compatibilidad) + preflight explícito
+app.options("/ia-preop", cors(corsOptions));
+app.options("/preop-ia", cors(corsOptions));
+app.post("/ia-preop", cors(corsOptions), iaPreopHandler(memoria));
+app.post("/preop-ia", cors(corsOptions), iaPreopHandler(memoria));
 
 // =====================================================
 // ============   GENERALES (1 PDF)  ===================
 // =====================================================
 
-// IA de Generales
-app.post("/ia-generales", generalesIAHandler(memoria));
+// IA de Generales (con preflight explícito)
+app.options("/ia-generales", cors(corsOptions));
+app.post("/ia-generales", cors(corsOptions), generalesIAHandler(memoria));
 
 // Guardar / obtener / PDF Generales (solo lectura)
 app.post("/guardar-datos-generales", (req, res) => {
@@ -830,8 +841,11 @@ function traumaIAWithFallback(handler) {
   };
 }
 
-app.post("/ia-trauma", traumaIAWithFallback(_traumaIA)); // existente + fallback
-app.post("/ia/trauma", traumaIAWithFallback(_traumaIA)); // alias legacy + fallback
+// Preflight explícito + rutas IA Trauma
+app.options("/ia-trauma", cors(corsOptions));
+app.options("/ia/trauma", cors(corsOptions));
+app.post("/ia-trauma", cors(corsOptions), traumaIAWithFallback(_traumaIA)); // existente + fallback
+app.post("/ia/trauma", cors(corsOptions), traumaIAWithFallback(_traumaIA)); // alias legacy + fallback
 
 // =====================================================
 // ============   CHAT GPT (nuevo módulo)  =============
