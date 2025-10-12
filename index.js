@@ -11,7 +11,7 @@ import chatRouter from "./nuevoModuloChat.js";
 import iaPreopHandler from "./preopIA.js";        // ← PREOP IA
 import generalesIAHandler from "./generalesIA.js"; // ← GENERALES IA
 import traumaIAHandler from "./traumaIA.js";       // ← TRAUMA IA
-import fallbackTrauma from "./fallbackTrauma.js";  // ← Fallback TRAUMA (nuevo)
+import fallbackTrauma from "./fallbackTrauma.js";  // ← Fallback TRAUMA
 
 // ===== Paths útiles
 const __filename = fileURLToPath(import.meta.url);
@@ -139,7 +139,11 @@ function pickFromSpaces(memoria, idPago) {
 function buildExamenTextoStrict(rec = {}) {
   // Prioriza examenesIA[] si existe; si no, usa examen string; si no hay, vacío
   if (Array.isArray(rec.examenesIA) && rec.examenesIA.length > 0) {
-    return rec.examenesIA.map(x => String(x || "").trim()).filter(Boolean).join("\n");
+    return rec
+      .examenesIA
+      .map((x) => String(x || "").trim())
+      .filter(Boolean)
+      .join("\n");
   }
   if (typeof rec.examen === "string" && rec.examen.trim()) {
     return rec.examen.trim();
@@ -150,14 +154,20 @@ function buildExamenTextoStrict(rec = {}) {
 function buildNotaStrict(rec = {}) {
   // Prioriza nota; luego observaciones; luego informeIA; si nada, vacío
   if (typeof rec.nota === "string" && rec.nota.trim()) return rec.nota.trim();
-  if (typeof rec.observaciones === "string" && rec.observaciones.trim()) return rec.observaciones.trim();
-  if (typeof rec.informeIA === "string" && rec.informeIA.trim()) return rec.informeIA.trim();
+  if (typeof rec.observaciones === "string" && rec.observaciones.trim())
+    return rec.observaciones.trim();
+  if (typeof rec.informeIA === "string" && rec.informeIA.trim())
+    return rec.informeIA.trim();
   return "";
 }
 
 function contieneRM(texto = "") {
   const s = String(texto || "").toLowerCase();
-  return s.includes("resonancia") || s.includes("resonancia magn") || /\brm\b/i.test(texto);
+  return (
+    s.includes("resonancia") ||
+    s.includes("resonancia magn") ||
+    /\brm\b/i.test(texto)
+  );
 }
 
 // ===== Salud / debug
@@ -178,13 +188,14 @@ app.get("/health", (_req, res) =>
 app.get("/sugerir-imagenologia", (req, res) => {
   try {
     const { idPago } = req.query || {};
-    if (!idPago) return res.status(400).json({ ok: false, error: "Falta idPago" });
+    if (!idPago)
+      return res.status(400).json({ ok: false, error: "Falta idPago" });
 
     const { data } = pickFromSpaces(memoria, idPago);
     if (!data) return res.status(404).json({ ok: false, error: "No hay datos" });
 
     const texto = buildExamenTextoStrict(data);
-    const nota  = buildNotaStrict(data);
+    const nota = buildNotaStrict(data);
 
     return res.json({
       ok: true,
@@ -220,7 +231,9 @@ app.post("/detectar-resonancia", async (req, res) => {
     return res.json({ ok: true, resonancia, texto });
   } catch (e) {
     console.error("detectar-resonancia error:", e);
-    return res.status(500).json({ ok: false, error: "No se pudo leer los datos" });
+    return res
+      .status(500)
+      .json({ ok: false, error: "No se pudo leer los datos" });
   }
 });
 
@@ -260,21 +273,27 @@ async function crearPagoHandler(req, res) {
       const next = { ...prev };
 
       for (const [k, v] of Object.entries(incoming)) {
-        if (v === undefined) continue;                         // no pisar con undefined
-        if (Array.isArray(v) && v.length === 0) continue;      // no pisar arrays no vacíos con vacíos
+        if (v === undefined) continue; // no pisar con undefined
+        if (Array.isArray(v) && v.length === 0) continue; // no pisar arrays no vacíos con vacíos
         if (typeof v === "string" && v.trim() === "") continue; // no pisar string con vacío
         next[k] = v;
       }
 
       // preservar campos críticos si incoming no aporta
-      if (Array.isArray(prev.examenesIA) && (!Array.isArray(next.examenesIA) || next.examenesIA.length === 0)) {
+      if (
+        Array.isArray(prev.examenesIA) &&
+        (!Array.isArray(next.examenesIA) || next.examenesIA.length === 0)
+      ) {
         next.examenesIA = prev.examenesIA;
       }
-      if (prev.diagnosticoIA && !next.diagnosticoIA) next.diagnosticoIA = prev.diagnosticoIA;
-      if (prev.justificacionIA && !next.justificacionIA) next.justificacionIA = prev.justificacionIA;
+      if (prev.diagnosticoIA && !next.diagnosticoIA)
+        next.diagnosticoIA = prev.diagnosticoIA;
+      if (prev.justificacionIA && !next.justificacionIA)
+        next.justificacionIA = prev.justificacionIA;
 
       if (prev.rmForm && !next.rmForm) next.rmForm = prev.rmForm;
-      if (prev.rmObservaciones && !next.rmObservaciones) next.rmObservaciones = prev.rmObservaciones;
+      if (prev.rmObservaciones && !next.rmObservaciones)
+        next.rmObservaciones = prev.rmObservaciones;
 
       memoria.set(ns(space, idPago), next);
     }
@@ -302,8 +321,12 @@ async function crearPagoHandler(req, res) {
       currency: CURRENCY,
       subject: KHIPU_SUBJECT,
       transaction_id: idPago,
-      return_url: `${RETURN_BASE}?pago=ok&idPago=${encodeURIComponent(idPago)}&modulo=${space}`,
-      cancel_url: `${RETURN_BASE}?pago=cancelado&idPago=${encodeURIComponent(idPago)}&modulo=${space}`,
+      return_url: `${RETURN_BASE}?pago=ok&idPago=${encodeURIComponent(
+        idPago
+      )}&modulo=${space}`,
+      cancel_url: `${RETURN_BASE}?pago=cancelado&idPago=${encodeURIComponent(
+        idPago
+      )}&modulo=${space}`,
       notify_url: `${backendBase}/webhook`,
     };
 
@@ -386,14 +409,14 @@ app.get("/pdf/:idPago", async (req, res) => {
     const meta = memoria.get(ns("meta", req.params.idPago));
     if (!meta || meta.moduloAutorizado !== "trauma") return res.sendStatus(402);
 
-    // *** CAMBIO MÍNIMO: leer SOLO desde trauma ***
+    // *** leer SOLO desde trauma ***
     const d = memoria.get(ns("trauma", req.params.idPago));
     if (!d) return res.sendStatus(404);
 
     const generar = await loadOrdenImagenologia();
 
     const examen = buildExamenTextoStrict(d); // solo lo guardado
-    const nota   = buildNotaStrict(d);        // solo lo guardado
+    const nota = buildNotaStrict(d); // solo lo guardado
 
     const datos = { ...d, examen, nota };
 
@@ -437,10 +460,12 @@ app.post("/guardar-datos-preop", (req, res) => {
     ...prev,
     ...datosPaciente,
     comorbilidades: comorbilidades ?? prev.comorbilidades,
-    tipoCirugia:   tipoCirugia   ?? prev.tipoCirugia,
-    examenesIA:    Array.isArray(examenesIA) ? examenesIA : (prev.examenesIA || undefined),
-    informeIA:     (typeof informeIA === "string" ? informeIA : prev.informeIA),
-    nota:          (typeof nota === "string" ? nota : prev.nota),
+    tipoCirugia: tipoCirugia ?? prev.tipoCirugia,
+    examenesIA: Array.isArray(examenesIA)
+      ? examenesIA
+      : prev.examenesIA || undefined,
+    informeIA: typeof informeIA === "string" ? informeIA : prev.informeIA,
+    nota: typeof nota === "string" ? nota : prev.nota,
     pagoConfirmado: true,
   };
 
@@ -497,11 +522,11 @@ app.post("/ia-generales", generalesIAHandler(memoria));
 app.post("/guardar-datos-generales", (req, res) => {
   const {
     idPago,
-    datosPaciente,   // { nombre, rut, edad, genero, ... }
-    comorbilidades,  // opcional
-    examenesIA,      // opcional (array)
-    informeIA,       // opcional (string)
-    nota,            // opcional (string)
+    datosPaciente, // { nombre, rut, edad, genero, ... }
+    comorbilidades, // opcional
+    examenesIA, // opcional (array)
+    informeIA, // opcional (string)
+    nota, // opcional (string)
   } = req.body || {};
 
   if (!idPago || !datosPaciente)
@@ -513,10 +538,14 @@ app.post("/guardar-datos-generales", (req, res) => {
   const next = {
     ...prev,
     ...datosPaciente,
-    comorbilidades: (typeof comorbilidades === "object" ? comorbilidades : prev.comorbilidades),
-    examenesIA: Array.isArray(examenesIA) ? examenesIA : (prev.examenesIA || undefined),
-    informeIA: typeof informeIA === "string" ? informeIA : (prev.informeIA || undefined),
-    nota: typeof nota === "string" ? nota : (prev.nota || undefined),
+    comorbilidades:
+      typeof comorbilidades === "object" ? comorbilidades : prev.comorbilidades,
+    examenesIA: Array.isArray(examenesIA)
+      ? examenesIA
+      : prev.examenesIA || undefined,
+    informeIA:
+      typeof informeIA === "string" ? informeIA : prev.informeIA || undefined,
+    nota: typeof nota === "string" ? nota : prev.nota || undefined,
     pagoConfirmado: true,
   };
 
@@ -533,7 +562,8 @@ app.get("/obtener-datos-generales/:idPago", (req, res) => {
 app.get("/pdf-generales/:idPago", async (req, res) => {
   try {
     const meta = memoria.get(ns("meta", req.params.idPago));
-    if (!meta || meta.moduloAutorizado !== "generales") return res.sendStatus(402);
+    if (!meta || meta.moduloAutorizado !== "generales")
+      return res.sendStatus(402);
 
     const d = memoria.get(ns("generales", req.params.idPago));
     if (!d) return res.sendStatus(404);
@@ -572,7 +602,7 @@ app.get("/api/pdf-ia-orden/:idPago", async (req, res) => {
     const generar = await loadOrdenImagenologia();
 
     const examen = buildExamenTextoStrict(d); // solo lo guardado
-    const nota   = buildNotaStrict(d);        // solo lo guardado
+    const nota = buildNotaStrict(d); // solo lo guardado
 
     const datosParaOrden = { ...d, examen, nota };
 
@@ -597,7 +627,7 @@ app.get("/api/pdf-ia-orden/:idPago", async (req, res) => {
 // =========   FORMULARIO RM (guardar / pdf)  ==========
 // =====================================================
 
-// Guardar FORMULARIO RM (solo si el caso contiene RM en exámenes)
+// Guardar FORMULARIO RM — solo si los exámenes incluyen RM
 app.post("/guardar-rm", (req, res) => {
   try {
     const { idPago, rmForm, observaciones } = req.body || {};
@@ -611,16 +641,26 @@ app.post("/guardar-rm", (req, res) => {
     let base = null;
     for (const s of spaces) {
       const v = memoria.get(`${s}:${idPago}`);
-      if (v) { foundSpace = s; base = v; break; }
+      if (v) {
+        foundSpace = s;
+        base = v;
+        break;
+      }
     }
     if (!base) {
-      return res.status(404).json({ ok: false, error: "No hay datos base para ese idPago" });
+      return res
+        .status(404)
+        .json({ ok: false, error: "No hay datos base para ese idPago" });
     }
 
     // Debe contener RM en exámenes
     const texto = buildExamenTextoStrict(base);
     if (!contieneRM(texto)) {
-      return res.status(409).json({ ok: false, error: "El caso no contiene Resonancia. No corresponde guardar formulario RM." });
+      return res.status(409).json({
+        ok: false,
+        error:
+          "El caso no contiene Resonancia. No corresponde guardar formulario RM.",
+      });
     }
 
     // Construir cambios solo si vienen con contenido útil
@@ -641,7 +681,9 @@ app.post("/guardar-rm", (req, res) => {
     return res.json({ ok: true });
   } catch (e) {
     console.error("guardar-rm error:", e);
-    return res.status(500).json({ ok: false, error: "No se pudo guardar formulario RM" });
+    return res
+      .status(500)
+      .json({ ok: false, error: "No se pudo guardar formulario RM" });
   }
 });
 
@@ -662,7 +704,11 @@ app.get("/pdf-rm/:idPago", async (req, res) => {
     // Debe contener RM en exámenes
     const examenTxt = buildExamenTextoStrict(d);
     if (!contieneRM(examenTxt)) {
-      return res.status(404).json({ ok: false, error: "No corresponde formulario RM: los exámenes no incluyen Resonancia." });
+      return res.status(404).json({
+        ok: false,
+        error:
+          "No corresponde formulario RM: los exámenes no incluyen Resonancia.",
+      });
     }
 
     const generarRM = await loadFormularioRM();
@@ -678,7 +724,7 @@ app.get("/pdf-rm/:idPago", async (req, res) => {
       nombre: d.nombre,
       rut: d.rut,
       edad: d.edad,
-      rmForm: d.rmForm || {},                                // ← lo guarda el front/módulo
+      rmForm: d.rmForm || {}, // ← lo guarda el front/módulo
       observaciones: d.rmObservaciones || d.observaciones || "",
     });
 
@@ -690,124 +736,102 @@ app.get("/pdf-rm/:idPago", async (req, res) => {
 });
 
 // =====================================================
-// ============   TRAUMA IA (nuevo endpoint) ===========
+// ============   TRAUMA IA (IA → fallback) ============
 // =====================================================
 
-// Wrapper: intentar IA y, si falla o no aporta, aplicar fallbackTrauma.
-// No cambia nada más.
+// Handler IA base
 const _traumaIA = traumaIAHandler(memoria);
+
+// Envoltura: intenta IA; si falla o no aporta, usa fallbackTrauma
 function traumaIAWithFallback(handler) {
   return async (req, res) => {
     const originalJson = res.json.bind(res);
-    let responded = false;
 
-    // sobrescribe res.json para inspeccionar la salida de IA
+    // intercepta res.json para decidir si la IA aportó algo útil
     res.json = (body) => {
-      try {
-        // ¿IA entregó algo útil?
-        const ok = body && body.ok !== false;
-        const hasExamen =
-          (Array.isArray(body?.examenesIA) && body.examenesIA.length > 0) ||
-          (typeof body?.examen === "string" && body.examen.trim());
+      const ok = body && body.ok !== false;
 
-        if (ok && hasExamen) {
-          responded = true;
-          return originalJson(body);
-        }
+      // 1) señales en la respuesta
+      const hasFromBody =
+        (Array.isArray(body?.examenesIA) && body.examenesIA.length > 0) ||
+        (typeof body?.examen === "string" && body.examen.trim()) ||
+        (Array.isArray(body?.examenes) && body.examenes.length > 0) ||
+        (typeof body?.orden?.examen === "string" && body.orden.examen.trim());
 
-        // IA no aportó → fallback
-        const p = req.body?.datosPaciente || req.body || {};
-        const fb = fallbackTrauma(p);
-        const idPago = req.body?.idPago;
-        if (idPago) {
-          const prev = memoria.get(ns("trauma", idPago)) || {};
-          memoria.set(ns("trauma", idPago), {
-            ...prev,
-            ...p,
-            examenesIA: [fb.examen],
-            diagnosticoIA: fb.diagnostico,
-            justificacionIA: fb.justificacion,
-          });
-        }
-        responded = true;
-        return originalJson({
-          ok: true,
-          fallback: true,
-          examenesIA: [fb.examen],
-          diagnosticoIA: fb.diagnostico,
-          justificacionIA: fb.justificacion,
-        });
-      } catch {
-        // último recurso: fallback simple
-        const p = req.body?.datosPaciente || req.body || {};
-        const fb = fallbackTrauma(p);
-        responded = true;
-        return originalJson({
-          ok: true,
-          fallback: true,
+      // 2) señales guardadas por el handler en memoria
+      const id = req.body?.idPago;
+      const saved = id ? memoria.get(ns("trauma", id)) : null;
+      const hasFromMem =
+        !!saved &&
+        ((Array.isArray(saved.examenesIA) && saved.examenesIA.length > 0) ||
+          (typeof saved.examen === "string" && saved.examen.trim()));
+
+      if (ok && (hasFromBody || hasFromMem)) {
+        res.json = originalJson; // restaurar
+        return originalJson(body);
+      }
+
+      // IA no aportó → fallback
+      const p = req.body?.datosPaciente || req.body || {};
+      const fb = fallbackTrauma(p);
+
+      if (id) {
+        const prev = memoria.get(ns("trauma", id)) || {};
+        memoria.set(ns("trauma", id), {
+          ...prev,
+          ...p,
           examenesIA: [fb.examen],
           diagnosticoIA: fb.diagnostico,
           justificacionIA: fb.justificacion,
         });
       }
+
+      res.json = originalJson; // restaurar
+      return originalJson({
+        ok: true,
+        fallback: true,
+        examenesIA: [fb.examen],
+        diagnosticoIA: fb.diagnostico,
+        justificacionIA: fb.justificacion,
+      });
     };
 
     try {
       await Promise.resolve(handler(req, res));
-      if (!responded && !res.headersSent) {
-        const p = req.body?.datosPaciente || req.body || {};
-        const fb = fallbackTrauma(p);
-        const idPago = req.body?.idPago;
-        if (idPago) {
-          const prev = memoria.get(ns("trauma", idPago)) || {};
-          memoria.set(ns("trauma", idPago), {
-            ...prev,
-            ...p,
-            examenesIA: [fb.examen],
-            diagnosticoIA: fb.diagnostico,
-            justificacionIA: fb.justificacion,
-          });
-        }
-        return originalJson({
-          ok: true,
-          fallback: true,
-          examenesIA: [fb.examen],
-          diagnosticoIA: fb.diagnostico,
-          justificacionIA: fb.justificacion,
-        });
-      }
     } catch (_e) {
-      if (!responded && !res.headersSent) {
-        const p = req.body?.datosPaciente || req.body || {};
-        const fb = fallbackTrauma(p);
-        const idPago = req.body?.idPago;
-        if (idPago) {
-          const prev = memoria.get(ns("trauma", idPago)) || {};
-          memoria.set(ns("trauma", idPago), {
-            ...prev,
-            ...p,
-            examenesIA: [fb.examen],
-            diagnosticoIA: fb.diagnostico,
-            justificacionIA: fb.justificacion,
-          });
-        }
-        return originalJson({
-          ok: true,
-          fallback: true,
+      // error real de IA → ir directo a fallback
+      const p = req.body?.datosPaciente || req.body || {};
+      const fb = fallbackTrauma(p);
+      const id = req.body?.idPago;
+
+      if (id) {
+        const prev = memoria.get(ns("trauma", id)) || {};
+        memoria.set(ns("trauma", id), {
+          ...prev,
+          ...p,
           examenesIA: [fb.examen],
           diagnosticoIA: fb.diagnostico,
           justificacionIA: fb.justificacion,
         });
       }
+
+      res.json = originalJson;
+      return originalJson({
+        ok: true,
+        fallback: true,
+        examenesIA: [fb.examen],
+        diagnosticoIA: fb.diagnostico,
+        justificacionIA: fb.justificacion,
+      });
     } finally {
-      // restaura res.json por si Express sigue el chain
+      // restaurar por si Express continúa
       res.json = originalJson;
     }
   };
 }
 
-app.post("/ia-trauma", traumaIAWithFallback(_traumaIA));      // existente + fallback
-app.post("/ia/trauma", traumaIAWithFallback(_traumaIA));      // alias legacy + fallback
+app.post("/ia-trauma", traumaIAWithFallback(_traumaIA)); // existente + fallback
+app.post("/ia/trauma", traumaIAWithFallback(_traumaIA)); // alias legacy + fallback
 
 // =====================================================
 // ============   CHAT GPT (nuevo módulo)  =============
