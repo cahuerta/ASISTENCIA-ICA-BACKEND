@@ -49,7 +49,8 @@ export function generarOrdenImagenologia(doc, datos) {
   doc.moveDown(4);
   doc.font("Helvetica-Bold")
      .fontSize(18)
-     .text(examen || "Evaluación imagenológica según clínica.");
+     // SIN FALLBACK: imprime exactamente lo que llega (puede ser string vacío)
+     .text(examen ?? "");
   doc.moveDown(5);
 
   // --------- NOTA (SOLO desde resolver) ---------
@@ -137,4 +138,15 @@ export function generarOrdenImagenologia(doc, datos) {
     align: "center",
     width: pageW - marginL - marginR,
   });
+
+  // --------- HUELLITA DE DEPURACIÓN (discreta) ---------
+  try {
+    const examPreview = typeof examen === "string" ? examen.slice(0, 80) : "";
+    doc.moveDown(1);
+    doc.fontSize(8).fillColor("#666").text(
+      `DEBUG: id=${datos?.idPago || "-"} | rut=${rut || "-"} | examen=${examPreview}`,
+      { align: "left" }
+    );
+    doc.fillColor("black");
+  } catch {}
 }
