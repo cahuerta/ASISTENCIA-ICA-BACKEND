@@ -48,12 +48,17 @@ const corsOptions = {
     const ok = ALLOWED.some(rule =>
       typeof rule === "string" ? origin === rule : rule.test(origin)
     );
-    cb(ok ? null : new Error("CORS no permitido: " + origin), ok);
+    if (!ok) {
+      console.warn("[CORS] origin NO permitido:", origin);
+      // No lanzar error en preflight: responder sin Allow-Origin y que el navegador bloquee
+      return cb(null, false);
+    }
+    return cb(null, true);
   },
   methods: ["GET", "POST", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
   credentials: false,
-  optionsSuccessStatus: 200,
+  optionsSuccessStatus: 204,
 };
 
 app.use(cors(corsOptions));
