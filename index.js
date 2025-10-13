@@ -164,11 +164,14 @@ function buildExamenTextoStrict(rec = {}) {
   return ""; // sin fallback
 }
 
+// ==== ÚNICO CAMBIO: incluir justificacionIA antes de informeIA ====
 function buildNotaStrict(rec = {}) {
-  // Prioriza nota; luego observaciones; luego informeIA; si nada, vacío
+  // Prioriza nota; luego observaciones; luego justificacionIA; luego informeIA; si nada, vacío
   if (typeof rec.nota === "string" && rec.nota.trim()) return rec.nota.trim();
   if (typeof rec.observaciones === "string" && rec.observaciones.trim())
     return rec.observaciones.trim();
+  if (typeof rec.justificacionIA === "string" && rec.justificacionIA.trim())
+    return rec.justificacionIA.trim();
   if (typeof rec.informeIA === "string" && rec.informeIA.trim())
     return rec.informeIA.trim();
   return "";
