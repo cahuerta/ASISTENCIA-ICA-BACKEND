@@ -462,7 +462,7 @@ async function crearPagoFlowHandler(req, res) {
 
     const urlConfirmation = `${backendBase}/flow-confirmation`;
 
-    const { url } = await crearPagoFlowBackend({
+    const resultadoFlow = await crearPagoFlowBackend({
       idPago,
       amount,
       subject,
@@ -477,7 +477,12 @@ async function crearPagoFlowHandler(req, res) {
       },
     });
 
-    return res.json({ ok: true, url });
+    return res.json({
+      ok: true,
+      url: resultadoFlow.url,
+      token: resultadoFlow.token,
+      flowOrder: resultadoFlow.flowOrder,
+    });
   } catch (e) {
     console.error("crear-pago-flow error:", e);
     return res.status(500).json({ ok: false, error: e.message });
