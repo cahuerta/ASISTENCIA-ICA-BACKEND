@@ -66,7 +66,7 @@ function toFormBody(params) {
  * @param {string} opts.urlReturn       - URL de retorno al frontend (?pago=...)
  * @param {Object} [opts.optionalData]  - datos adicionales para guardar en Flow (se serializan a JSON)
  *
- * @returns {Promise<{url:string, token:string|null}>}
+ * @returns {Promise<{url:string, token:string|null, flowOrder:string|null}>}
  */
 export async function crearPagoFlowBackend({
   idPago,
@@ -130,17 +130,21 @@ export async function crearPagoFlowBackend({
     // Flow a veces devuelve texto plano en errores
   }
 
-  if (!res.ok || !data || data.status !== 1 || !data.url) {
-    const msg =
-      data?.message ||
-      data?.error ||
-      `Error HTTP ${res.status} al crear pago en Flow`;
-    throw new Error(`${msg} — Respuesta: ${raw}`);
+  // === NUEVA LÓGICA ===
+  // Si el HTTP es 2xx y viene una URL, lo consideramos éxito,
+  // aunque no exista data.status.
+  if (res.ok && data && data.url) {
+    return {
+      url: data.url,
+      token: data.token ?? null,
+      flowOrder: data.flowOrder ?? null,
+    };
   }
 
-  return {
-    url: data.url,
-    token: data.token ?? null,
-    flowOrder: data.flowOrder ?? null,
-  };
+  // Si llega acá, es que hubo error real
+  const msg =
+    data?.message ||
+    data?.error ||
+    `Error HTTP ${res.status} al crear pago en Flow`;
+  throw new Error(`${msg} — Respuesta: ${raw}`);
 }
