@@ -456,9 +456,10 @@ async function crearPagoFlowHandler(req, res) {
 
     const backendBase = getBackendBase(req);
 
-    const urlReturn = `${RETURN_BASE}?pago=ok&idPago=${encodeURIComponent(
-      idPago
-    )}&modulo=${space}`;
+    // ← CAMBIO: Flow vuelve al backend, que luego redirige al frontend
+    const urlReturn = `${backendBase}/flow-return?modulo=${encodeURIComponent(
+      space
+    )}&idPago=${encodeURIComponent(idPago)}`;
 
     const urlConfirmation = `${backendBase}/flow-confirmation`;
 
@@ -518,6 +519,24 @@ app.post(
   }
 );
 
+// NUEVO: retorno de Flow → redirigir al frontend
+app.all("/flow-return", (req, res) => {
+  try {
+    const idPago = req.query.idPago || "";
+    const modulo = req.query.modulo || "trauma";
+
+    const finalUrl = new URL(RETURN_BASE);
+    finalUrl.searchParams.set("pago", "ok");
+    if (idPago) finalUrl.searchParams.set("idPago", idPago);
+    finalUrl.searchParams.set("modulo", modulo);
+
+    return res.redirect(302, finalUrl.toString());
+  } catch (e) {
+    console.error("flow-return error:", e);
+    return res.redirect(302, RETURN_BASE);
+  }
+});
+
 app.get("/obtener-datos/:idPago", (req, res) => {
   const d = memoria.get(ns("trauma", req.params.idPago));
   if (!d) return res.status(404).json({ ok: false });
@@ -531,6 +550,7 @@ app.delete("/reset/:idPago", (req, res) => {
     return res.status(400).json({ ok: false, error: "Falta idPago" });
 
   // sanity: aceptar solo id alfanumérico con _ y -
+<|diff_marker|> ADD A1000
   if (!/^[a-zA-Z0-9_\-]+$/.test(idPago)) {
     return res.status(400).json({ ok: false, error: "idPago inválido" });
   }
@@ -551,6 +571,7 @@ app.delete("/reset/:idPago", (req, res) => {
 // ===== PDF ORDEN (TRAUMA) — solo lee, sin fallback
 app.get("/pdf/:idPago", async (req, res) => {
   try {
+<|diff_marker|> ADD A1020
     const meta = memoria.get(ns("meta", req.params.idPago));
     if (!meta || meta.moduloAutorizado !== "trauma") return res.sendStatus(402);
 
@@ -571,6 +592,7 @@ app.get("/pdf/:idPago", async (req, res) => {
 
     const doc = new PDFDocument({ size: "A4", margin: 50 });
     doc.pipe(res);
+<|diff_marker|> ADD A1040
     generar(doc, datos);
     doc.end();
   } catch (e) {
@@ -591,6 +613,7 @@ app.post("/guardar-datos-preop", (req, res) => {
     tipoCirugia,
     examenesIA,
     informeIA,
+<|diff_marker|> ADD A1060
     nota,
   } = req.body || {};
 
@@ -611,6 +634,7 @@ app.post("/guardar-datos-preop", (req, res) => {
       : prev.examenesIA || undefined,
     informeIA: typeof informeIA === "string" ? informeIA : prev.informeIA,
     nota: typeof nota === "string" ? nota : prev.nota,
+<|diff_marker|> ADD A1080
     pagoConfirmado: true,
   };
 
@@ -632,6 +656,7 @@ app.get("/pdf-preop/:idPago", async (req, res) => {
     const d = memoria.get(ns("preop", req.params.idPago));
     if (!d) return res.sendStatus(404);
 
+<|diff_marker|> ADD A1100
     const { _genPreopLab, _genPreopOdonto } = await loadPreop();
 
     const filename = `preop_${sanitize(d.nombre || "paciente")}.pdf`;
@@ -653,6 +678,7 @@ app.get("/pdf-preop/:idPago", async (req, res) => {
 });
 
 // ← PREOP IA (y alias de compatibilidad) + preflight explícito
+<|diff_marker|> ADD A1120
 app.options("/ia-preop", cors(corsOptions));
 app.options("/preop-ia", cors(corsOptions));
 app.post("/ia-preop", cors(corsOptions), iaPreopHandler(memoria));
@@ -673,6 +699,7 @@ app.post("/guardar-datos-generales", (req, res) => {
     datosPaciente, // { nombre, rut, edad, genero, ... }
     comorbilidades, // opcional
     examenesIA, // opcional (array)
+<|diff_marker|> ADD A1140
     informeIA, // opcional (string)
     nota, // opcional (string)
   } = req.body || {};
@@ -693,6 +720,7 @@ app.post("/guardar-datos-generales", (req, res) => {
       : prev.examenesIA || undefined,
     informeIA:
       typeof informeIA === "string" ? informeIA : prev.informeIA || undefined,
+<|diff_marker|> ADD A1160
     nota: typeof nota === "string" ? nota : prev.nota || undefined,
     pagoConfirmado: true,
   };
@@ -713,6 +741,7 @@ app.get("/pdf-generales/:idPago", async (req, res) => {
     if (!meta || meta.moduloAutorizado !== "generales")
       return res.sendStatus(402);
 
+<|diff_marker|> ADD A1180
     const d = memoria.get(ns("generales", req.params.idPago));
     if (!d) return res.sendStatus(404);
 
@@ -733,6 +762,7 @@ app.get("/pdf-generales/:idPago", async (req, res) => {
 });
 
 // =====================================================
+<|diff_marker|> ADD A1200
 // ============   ORDEN DESDE IA (solo lectura) ========
 // =====================================================
 
@@ -753,6 +783,7 @@ app.get("/api/pdf-ia-orden/:idPago", async (req, res) => {
     const nota = buildNotaStrict(d); // solo lo guardado
 
     const datosParaOrden = { ...d, examen, nota };
+<|diff_marker|> ADD A1220
 
     const filename = `ordenIA_${sanitize(d.nombre || "paciente")}.pdf`;
     res.setHeader("Content-Type", "application/pdf");
@@ -773,6 +804,7 @@ app.get("/api/pdf-ia-orden/:idPago", async (req, res) => {
 
 // =====================================================
 // =========   FORMULARIO RM (guardar / pdf)  ==========
+<|diff_marker|> ADD A1240
 // =====================================================
 
 // Guardar FORMULARIO RM — solo si los exámenes incluyen RM
@@ -793,6 +825,7 @@ app.post("/guardar-rm", (req, res) => {
         foundSpace = s;
         base = v;
         break;
+<|diff_marker|> ADD A1260
       }
     }
     if (!base) {
@@ -813,6 +846,7 @@ app.post("/guardar-rm", (req, res) => {
 
     // Construir cambios solo si vienen con contenido útil
     const patch = {};
+<|diff_marker|> ADD A1280
     const hasRmForm =
       rmForm && typeof rmForm === "object" && Object.keys(rmForm).length > 0;
     const hasObs = typeof observaciones === "string";
@@ -833,6 +867,7 @@ app.post("/guardar-rm", (req, res) => {
       .status(500)
       .json({ ok: false, error: "No se pudo guardar formulario RM" });
   }
+<|diff_marker|> ADD A1300
 });
 
 // PDF del Formulario RM — solo si los exámenes incluyen RM
@@ -853,6 +888,7 @@ app.get("/pdf-rm/:idPago", async (req, res) => {
     const examenTxt = buildExamenTextoStrict(d);
     if (!contieneRM(examenTxt)) {
       return res.status(404).json({
+<|diff_marker|> ADD A1320
         ok: false,
         error:
           "No corresponde formulario RM: los exámenes no incluyen Resonancia.",
@@ -873,6 +909,7 @@ app.get("/pdf-rm/:idPago", async (req, res) => {
       rut: d.rut,
       edad: d.edad,
       rmForm: d.rmForm || {}, // ← lo guarda el front/módulo
+<|diff_marker|> ADD A1340
       observaciones: d.rmObservaciones || d.observaciones || "",
     });
 
@@ -893,6 +930,7 @@ const _traumaIA = traumaIAHandler(memoria);
 // Envoltura: intenta IA; si falla o no aporta, usa fallbackTrauma
 function traumaIAWithFallback(handler) {
   return async (req, res) => {
+<|diff_marker|> ADD A1360
     const originalJson = res.json.bind(res);
 
     // intercepta res.json para decidir si la IA aportó algo útil
@@ -914,6 +952,7 @@ function traumaIAWithFallback(handler) {
         ((Array.isArray(saved.examenesIA) && saved.examenesIA.length > 0) ||
           (typeof saved.examen === "string" && saved.examen.trim()));
 
+<|diff_marker|> ADD A1380
       if (ok && (hasFromBody || hasFromMem)) {
         res.json = originalJson; // restaurar
         return originalJson(body);
@@ -934,6 +973,7 @@ function traumaIAWithFallback(handler) {
         });
       }
 
+<|diff_marker|> ADD A1400
       res.json = originalJson; // restaurar
       return originalJson({
         ok: true,
@@ -954,6 +994,7 @@ function traumaIAWithFallback(handler) {
 
       if (id) {
         const prev = memoria.get(ns("trauma", id)) || {};
+<|diff_marker|> ADD A1420
         memoria.set(ns("trauma", id), {
           ...prev,
           ...p,
@@ -974,6 +1015,7 @@ function traumaIAWithFallback(handler) {
     } finally {
       // restaurar por si Express continúa
       res.json = originalJson;
+<|diff_marker|> ADD A1440
     }
   };
 }
@@ -994,6 +1036,7 @@ app.use("/api", chatRouter);
 app.use((req, res) => {
   console.warn("404 no encontrada:", req.method, req.originalUrl);
   res
+<|diff_marker|> ADD A1460
     .status(404)
     .json({ ok: false, error: "Ruta no encontrada", path: req.originalUrl });
 });
