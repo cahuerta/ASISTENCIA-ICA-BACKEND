@@ -13,6 +13,9 @@ import generalesIAHandler from "./generalesIA.js"; // ← GENERALES IA
 import traumaIAHandler from "./traumaIA.js";       // ← TRAUMA IA
 import fallbackTrauma from "./fallbackTrauma.js";  // ← Fallback TRAUMA
 
+// ===== Flow client (NUEVO)
+import { crearPagoFlowBackend } from "./flowClient.js";
+
 // ===== Paths útiles
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -45,7 +48,7 @@ const ALLOWED = [
 const corsOptions = {
   origin(origin, cb) {
     if (!origin) return cb(null, true); // Postman/cURL/WebView sin Origin
-    const ok = ALLOWED.some(rule =>
+    const ok = ALLOWED.some((rule) =>
       typeof rule === "string" ? origin === rule : rule.test(origin)
     );
     if (!ok) {
@@ -87,6 +90,11 @@ const KHIPU_AMOUNT = Number(process.env.KHIPU_AMOUNT || 1000); // CLP
 const KHIPU_SUBJECT = process.env.KHIPU_SUBJECT || "Orden médica ICA";
 const CURRENCY = "CLP";
 
+// ===== Flow config (usa KHIPU_* como fallback) — NUEVO
+const FLOW_AMOUNT = Number(process.env.FLOW_AMOUNT || KHIPU_AMOUNT || 1000);
+const FLOW_SUBJECT =
+  process.env.FLOW_SUBJECT || KHIPU_SUBJECT || "Orden médica ICA";
+
 // ===== Memoria simple (compartida)
 const memoria = new Map();
 app.set("memoria", memoria);
@@ -103,7 +111,8 @@ async function loadOrdenImagenologia() {
   return _genTrauma;
 }
 
-let _genPreopLab = null, _genPreopOdonto = null;
+let _genPreopLab = null,
+  _genPreopOdonto = null;
 async function loadPreop() {
   if (!_genPreopLab) {
     const mLab = await import("./preopOrdenLab.js");
@@ -152,8 +161,7 @@ function pickFromSpaces(memoria, idPago) {
 function buildExamenTextoStrict(rec = {}) {
   // Prioriza examenesIA[] si existe; si no, usa examen string; si no hay, vacío
   if (Array.isArray(rec.examenesIA) && rec.examenesIA.length > 0) {
-    return rec
-      .examenesIA
+    return rec.examenesIA
       .map((x) => String(x || "").trim())
       .filter(Boolean)
       .join("\n");
@@ -208,7 +216,8 @@ app.get("/sugerir-imagenologia", (req, res) => {
       return res.status(400).json({ ok: false, error: "Falta idPago" });
 
     const { data } = pickFromSpaces(memoria, idPago);
-    if (!data) return res.status(404).json({ ok: false, error: "No hay datos" });
+    if (!data)
+      return res.status(404).json({ ok: false, error: "No hay datos" });
 
     const texto = buildExamenTextoStrict(data);
     const nota = buildNotaStrict(data);
@@ -240,7 +249,8 @@ app.post("/detectar-resonancia", async (req, res) => {
       base = datosPaciente || {};
     }
 
-    if (!base) return res.status(404).json({ ok: false, error: "No hay datos" });
+    if (!base)
+      return res.status(404).json({ ok: false, error: "No hay datos" });
 
     const texto = buildExamenTextoStrict(base);
     const resonancia = contieneRM(texto);
@@ -379,7 +389,104 @@ async function crearPagoHandler(req, res) {
 app.post("/crear-pago-khipu", crearPagoHandler);
 app.post("/crear-pago", crearPagoHandler);
 
-// ---- Webhook (opcional)
+// ======== FLOW: crear pago (NUEVO) ==================
+async function crearPagoFlowHandler(req, res) {
+  try {
+    const { idPago, modoGuest, datosPaciente, modulo } = req.body || {};
+    if (!idPago)
+      return res.status(400).json({ ok: false, error: "Falta idPago" });
+
+    const space =
+      modulo === "preop" || String(idPago).startsWith("preop_")
+        ? "preop"
+        : modulo === "generales" || String(idPago).startsWith("generales_")
+        ? "generales"
+        : "trauma";
+
+    // ======= MISMO MERGE NO DESTRUCTIVO QUE KHIPU =======
+    if (datosPaciente) {
+      const prev = memoria.get(ns(space, idPago)) || {};
+      const incoming = datosPaciente || {};
+      const next = { ...prev };
+
+      for (const [k, v] of Object.entries(incoming)) {
+        if (v === undefined) continue;
+        if (Array.isArray(v) && v.length === 0) continue;
+        if (typeof v === "string" && v.trim() === "") continue;
+        next[k] = v;
+      }
+
+      if (
+        Array.isArray(prev.examenesIA) &&
+        (!Array.isArray(next.examenesIA) || next.examenesIA.length === 0)
+      ) {
+        next.examenesIA = prev.examenesIA;
+      }
+      if (prev.diagnosticoIA && !next.diagnosticoIA)
+        next.diagnosticoIA = prev.diagnosticoIA;
+      if (prev.justificacionIA && !next.justificacionIA)
+        next.justificacionIA = prev.justificacionIA;
+
+      if (prev.rmForm && !next.rmForm) next.rmForm = prev.rmForm;
+      if (prev.rmObservaciones && !next.rmObservaciones)
+        next.rmObservaciones = prev.rmObservaciones;
+
+      memoria.set(ns(space, idPago), next);
+    }
+    // ====================================================
+
+    memoria.set(ns("meta", idPago), { moduloAutorizado: space });
+
+    // Guest → saltarse Flow y volver como pagado
+    if (modoGuest === true) {
+      const url = new URL(RETURN_BASE);
+      url.searchParams.set("pago", "ok");
+      url.searchParams.set("idPago", idPago);
+      url.searchParams.set("modulo", space);
+      return res.json({ ok: true, url: url.toString(), guest: true });
+    }
+
+    // Datos mínimos para Flow
+    const amount = FLOW_AMOUNT;
+    const subject = FLOW_SUBJECT;
+    const email =
+      datosPaciente?.email ||
+      process.env.FLOW_FALLBACK_EMAIL ||
+      "sin-correo@icarticular.cl";
+
+    const backendBase = getBackendBase(req);
+
+    const urlReturn = `${RETURN_BASE}?pago=ok&idPago=${encodeURIComponent(
+      idPago
+    )}&modulo=${space}`;
+
+    const urlConfirmation = `${backendBase}/flow-confirmation`;
+
+    const { url } = await crearPagoFlowBackend({
+      idPago,
+      amount,
+      subject,
+      email,
+      modulo: space,
+      urlConfirmation,
+      urlReturn,
+      optionalData: {
+        rut: datosPaciente?.rut || "",
+        nombre: datosPaciente?.nombre || "",
+        modoGuest: !!modoGuest,
+      },
+    });
+
+    return res.json({ ok: true, url });
+  } catch (e) {
+    console.error("crear-pago-flow error:", e);
+    return res.status(500).json({ ok: false, error: e.message });
+  }
+}
+
+app.post("/crear-pago-flow", crearPagoFlowHandler);
+
+// ---- Webhook / confirmación externos
 app.post("/webhook", express.json(), (req, res) => {
   try {
     console.log("Webhook Khipu:", req.body);
@@ -390,6 +497,22 @@ app.post("/webhook", express.json(), (req, res) => {
   }
 });
 
+// Confirmación de Flow (x-www-form-urlencoded)
+app.post(
+  "/flow-confirmation",
+  express.urlencoded({ extended: false }),
+  (req, res) => {
+    try {
+      console.log("Flow confirmation:", req.body);
+      // Aquí podrías validar la firma de Flow y marcar pago en memoria/db
+      res.status(200).send("OK");
+    } catch (e) {
+      console.error("flow-confirmation error:", e);
+      res.status(200).send("OK");
+    }
+  }
+);
+
 app.get("/obtener-datos/:idPago", (req, res) => {
   const d = memoria.get(ns("trauma", req.params.idPago));
   if (!d) return res.status(404).json({ ok: false });
@@ -399,7 +522,8 @@ app.get("/obtener-datos/:idPago", (req, res) => {
 // ===== RESET (borrado por idPago, usado por el botón Volver/Reiniciar)
 app.delete("/reset/:idPago", (req, res) => {
   const { idPago } = req.params || {};
-  if (!idPago) return res.status(400).json({ ok: false, error: "Falta idPago" });
+  if (!idPago)
+    return res.status(400).json({ ok: false, error: "Falta idPago" });
 
   // sanity: aceptar solo id alfanumérico con _ y -
   if (!/^[a-zA-Z0-9_\-]+$/.test(idPago)) {
@@ -629,7 +753,7 @@ app.get("/api/pdf-ia-orden/:idPago", async (req, res) => {
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader(
       "Content-Disposition",
-      `attachment; filename="${filename}"`
+      `attachment; filename=\"${filename}\"`
     );
 
     const doc = new PDFDocument({ size: "A4", margin: 50 });
