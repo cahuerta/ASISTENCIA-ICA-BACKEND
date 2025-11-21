@@ -933,7 +933,52 @@ function traumaIAWithFallback(handler) {
         ((Array.isArray(saved.examenesIA) && saved.examenesIA.length > 0) ||
           (typeof saved.examen === "string" && saved.examen.trim()));
 
+      // === NUEVO: si la IA aportó algo útil, también persistimos en memoria.trauma ===
       if (ok && (hasFromBody || hasFromMem)) {
+        if (id) {
+          const prev = memoria.get(ns("trauma", id)) || {};
+          const p = req.body?.datosPaciente || req.body || {};
+          const next = { ...prev, ...p };
+
+          // Normalizar exámenes desde body → examenesIA[]
+          let exIA = null;
+          if (Array.isArray(body?.examenesIA)) {
+            exIA = body.examenesIA;
+          } else if (Array.isArray(body?.examenes)) {
+            exIA = body.examenes;
+          } else if (
+            typeof body?.examen === "string" &&
+            body.examen.trim()
+          ) {
+            exIA = [body.examen];
+          } else if (
+            typeof body?.orden?.examen === "string" &&
+            body.orden.examen.trim()
+          ) {
+            exIA = [body.orden.examen];
+          }
+
+          if (Array.isArray(exIA) && exIA.length) {
+            next.examenesIA = exIA;
+          }
+
+          // Diagnóstico y justificación, si vienen
+          if (
+            typeof body?.diagnostico === "string" &&
+            body.diagnostico.trim()
+          ) {
+            next.diagnosticoIA = body.diagnostico;
+          }
+          if (
+            typeof body?.justificacion === "string" &&
+            body.justificacion.trim()
+          ) {
+            next.justificacionIA = body.justificacion;
+          }
+
+          memoria.set(ns("trauma", id), next);
+        }
+
         res.json = originalJson; // restaurar
         return originalJson(body);
       }
