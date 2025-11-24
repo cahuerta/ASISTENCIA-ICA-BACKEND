@@ -159,23 +159,27 @@ function pickFromSpaces(memoria, idPago) {
 }
 
 function buildExamenTextoStrict(rec = {}) {
-  // PRIORIDAD: una sola variable estándar → examenes[]
+  // 1) TRAUMA + IA: usamos "examenes" (array)
   if (Array.isArray(rec.examenes) && rec.examenes.length > 0) {
     return rec.examenes
       .map((x) => String(x || "").trim())
       .filter(Boolean)
       .join("\n");
   }
-  // Legacy por si existen casos antiguos con examenesIA
+
+  // 2) Compatibilidad: algunos flujos antiguos (preop/generales) usan "examenesIA"
   if (Array.isArray(rec.examenesIA) && rec.examenesIA.length > 0) {
     return rec.examenesIA
       .map((x) => String(x || "").trim())
       .filter(Boolean)
       .join("\n");
   }
+
+  // 3) String plano
   if (typeof rec.examen === "string" && rec.examen.trim()) {
     return rec.examen.trim();
   }
+
   return ""; // sin fallback
 }
 
@@ -294,17 +298,12 @@ app.post("/guardar-datos", (req, res) => {
     next[k] = v;
   }
 
-  // preservar campos críticos si incoming no aporta (TRAUMA → examenes)
+  // preservar campos críticos si incoming no aporta (TRAUMA → "examenes")
   if (
     Array.isArray(prev.examenes) &&
     (!Array.isArray(next.examenes) || next.examenes.length === 0)
   ) {
     next.examenes = prev.examenes;
-  } else if (
-    Array.isArray(prev.examenesIA) && // legacy → si existía, lo migramos
-    (!Array.isArray(next.examenes) || next.examenes.length === 0)
-  ) {
-    next.examenes = prev.examenesIA;
   }
   if (prev.diagnosticoIA && !next.diagnosticoIA)
     next.diagnosticoIA = prev.diagnosticoIA;
@@ -349,18 +348,25 @@ async function crearPagoHandler(req, res) {
         next[k] = v;
       }
 
-      // preservar campos críticos si incoming no aporta
-      if (
-        Array.isArray(prev.examenes) &&
-        (!Array.isArray(next.examenes) || next.examenes.length === 0)
-      ) {
-        next.examenes = prev.examenes;
-      } else if (
-        Array.isArray(prev.examenesIA) &&
-        (!Array.isArray(next.examenes) || next.examenes.length === 0)
-      ) {
-        next.examenes = prev.examenesIA;
+      // preservar campos críticos según módulo
+      if (space === "trauma") {
+        // TRAUMA → usa "examenes"
+        if (
+          Array.isArray(prev.examenes) &&
+          (!Array.isArray(next.examenes) || next.examenes.length === 0)
+        ) {
+          next.examenes = prev.examenes;
+        }
+      } else {
+        // PREOP / GENERALES → siguen usando examenesIA
+        if (
+          Array.isArray(prev.examenesIA) &&
+          (!Array.isArray(next.examenesIA) || next.examenesIA.length === 0)
+        ) {
+          next.examenesIA = prev.examenesIA;
+        }
       }
+
       if (prev.diagnosticoIA && !next.diagnosticoIA)
         next.diagnosticoIA = prev.diagnosticoIA;
       if (prev.justificacionIA && !next.justificacionIA)
@@ -465,17 +471,22 @@ async function crearPagoFlowHandler(req, res) {
         next[k] = v;
       }
 
-      if (
-        Array.isArray(prev.examenes) &&
-        (!Array.isArray(next.examenes) || next.examenes.length === 0)
-      ) {
-        next.examenes = prev.examenes;
-      } else if (
-        Array.isArray(prev.examenesIA) &&
-        (!Array.isArray(next.examenes) || next.examenes.length === 0)
-      ) {
-        next.examenes = prev.examenesIA;
+      if (space === "trauma") {
+        if (
+          Array.isArray(prev.examenes) &&
+          (!Array.isArray(next.examenes) || next.examenes.length === 0)
+        ) {
+          next.examenes = prev.examenes;
+        }
+      } else {
+        if (
+          Array.isArray(prev.examenesIA) &&
+          (!Array.isArray(next.examenesIA) || next.examenesIA.length === 0)
+        ) {
+          next.examenesIA = prev.examenesIA;
+        }
       }
+
       if (prev.diagnosticoIA && !next.diagnosticoIA)
         next.diagnosticoIA = prev.diagnosticoIA;
       if (prev.justificacionIA && !next.justificacionIA)
@@ -633,7 +644,7 @@ app.get("/pdf/:idPago", async (req, res) => {
 
     const generar = await loadOrdenImagenologia();
 
-    const examen = buildExamenTextoStrict(d); // solo lo guardado (examenes)
+    const examen = buildExamenTextoStrict(d); // solo lo guardado
     const nota = buildNotaStrict(d); // solo lo guardado
 
     const datos = { ...d, examen, nota };
@@ -974,47 +985,49 @@ function traumaIAWithFallback(handler) {
 
       // 1) señales en la respuesta
       const hasFromBody =
+        (Array.isArray(body?.examenes) && body.examenes.length > 0) ||
         (Array.isArray(body?.examenesIA) && body.examenesIA.length > 0) ||
         (typeof body?.examen === "string" && body.examen.trim()) ||
         (Array.isArray(body?.examenes) && body.examenes.length > 0) ||
-        (typeof body?.orden?.examen === "string" && body.orden.examen.trim());
+        (typeof body?.orden?.examen === "string" &&
+          body.orden.examen.trim());
 
-      // 2) señales guardadas por el handler en memoria
+      // 2) señales guardadas por el handler en memoria (TRAUMA → examenes)
       const id = req.body?.idPago;
       const saved = id ? memoria.get(ns("trauma", id)) : null;
       const hasFromMem =
         !!saved &&
         ((Array.isArray(saved.examenes) && saved.examenes.length > 0) ||
-          (typeof saved.examen === "string" && saved.examen.trim()) ||
-          (Array.isArray(saved.examenesIA) && saved.examenesIA.length > 0));
+          (typeof saved.examen === "string" && saved.examen.trim()));
 
-      // === si la IA aportó algo útil, también persistimos en memoria.trauma ===
+      // si la IA aportó algo útil, también persistimos en memoria.trauma
       if (ok && (hasFromBody || hasFromMem)) {
         if (id) {
           const prev = memoria.get(ns("trauma", id)) || {};
           const p = req.body?.datosPaciente || req.body || {};
           const next = { ...prev, ...p };
 
-          // Normalizar exámenes desde body → examenes[]
-          let exIA = null;
-          if (Array.isArray(body?.examenesIA)) {
-            exIA = body.examenesIA;
-          } else if (Array.isArray(body?.examenes)) {
-            exIA = body.examenes;
+          // Normalizar exámenes desde body → examenes[] (TRAUMA)
+          let exList = null;
+          if (Array.isArray(body?.examenes)) {
+            exList = body.examenes;
+          } else if (Array.isArray(body?.examenesIA)) {
+            // compat, por si alguno quedó usando examenesIA
+            exList = body.examenesIA;
           } else if (
             typeof body?.examen === "string" &&
             body.examen.trim()
           ) {
-            exIA = [body.examen];
+            exList = [body.examen];
           } else if (
             typeof body?.orden?.examen === "string" &&
             body.orden.examen.trim()
           ) {
-            exIA = [body.orden.examen];
+            exList = [body.orden.examen];
           }
 
-          if (Array.isArray(exIA) && exIA.length) {
-            next.examenes = exIA;
+          if (Array.isArray(exList) && exList.length) {
+            next.examenes = exList;
           }
 
           // Diagnóstico y justificación, si vienen
@@ -1041,7 +1054,6 @@ function traumaIAWithFallback(handler) {
       // IA no aportó → fallback
       const p = req.body?.datosPaciente || req.body || {};
       const fb = fallbackTrauma(p);
-      const id = req.body?.idPago;
 
       if (id) {
         const prev = memoria.get(ns("trauma", id)) || {};
