@@ -275,7 +275,39 @@ app.post("/guardar-datos", (req, res) => {
       .status(400)
       .json({ ok: false, error: "Faltan idPago o datosPaciente" });
 
-  memoria.set(ns("trauma", idPago), { ...datosPaciente, pagoConfirmado: true });
+  // ==== MERGE NO DESTRUCTIVO SOLO PARA TRAUMA ====
+  const prev = memoria.get(ns("trauma", idPago)) || {};
+  const incoming = datosPaciente || {};
+  const next = { ...prev };
+
+  for (const [k, v] of Object.entries(incoming)) {
+    if (v === undefined) continue;                    // no pisar con undefined
+    if (Array.isArray(v) && v.length === 0) continue; // no pisar arrays no vacíos con vacíos
+    if (typeof v === "string" && v.trim() === "") continue; // no pisar string con vacío
+    next[k] = v;
+  }
+
+  // preservar campos críticos si incoming no aporta
+  if (
+    Array.isArray(prev.examenesIA) &&
+    (!Array.isArray(next.examenesIA) || next.examenesIA.length === 0)
+  ) {
+    next.examenesIA = prev.examenesIA;
+  }
+  if (prev.diagnosticoIA && !next.diagnosticoIA)
+    next.diagnosticoIA = prev.diagnosticoIA;
+  if (prev.justificacionIA && !next.justificacionIA)
+    next.justificacionIA = prev.justificacionIA;
+
+  if (prev.rmForm && !next.rmForm) next.rmForm = prev.rmForm;
+  if (prev.rmObservaciones && !next.rmObservaciones)
+    next.rmObservaciones = prev.rmObservaciones;
+
+  next.pagoConfirmado = true;
+
+  memoria.set(ns("trauma", idPago), next);
+  // ===============================================
+
   res.json({ ok: true });
 });
 
