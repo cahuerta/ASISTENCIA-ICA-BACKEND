@@ -48,9 +48,9 @@ export function generarOrdenImagenologia(doc, datos) {
   doc.font("Helvetica-Bold").text("Examen sugerido:");
   doc.moveDown(4);
   doc.font("Helvetica-Bold")
-     .fontSize(18)
-     // SIN FALLBACK: imprime exactamente lo que llega (puede ser string vacío)
-     .text(examen ?? "");
+    .fontSize(18)
+    // SIN FALLBACK: imprime exactamente lo que llega (puede ser string vacío)
+    .text(examen ?? "");
   doc.moveDown(5);
 
   // --------- NOTA (SOLO desde resolver) ---------
@@ -60,15 +60,14 @@ export function generarOrdenImagenologia(doc, datos) {
   // - Si no aplica → devolver nota vacía (no se recomienda a nadie)
   let bloqueNota = "";
   try {
-    const deriv = (resolverDerivacion && typeof resolverDerivacion === "function")
-      ? (resolverDerivacion({ ...datos, examen, dolor }) || {})
-      : {};
+    const deriv =
+      resolverDerivacion && typeof resolverDerivacion === "function"
+        ? resolverDerivacion({ ...datos, examen, dolor }) || {}
+        : {};
 
-    const notaDelResolver = (typeof deriv.nota === "string" ? deriv.nota.trim() : "");
+    const notaDelResolver = typeof deriv.nota === "string" ? deriv.nota.trim() : "";
 
-    bloqueNota = notaDelResolver
-      ? `Nota:\n\n${notaDelResolver}`
-      : ""; // vacío si el resolver no recomienda a nadie
+    bloqueNota = notaDelResolver ? `Nota:\n\n${notaDelResolver}` : ""; // vacío si el resolver no recomienda a nadie
   } catch (e) {
     console.error("Resolver derivación error:", e.message);
     bloqueNota = ""; // sin fallback: si falla, no recomendamos a nadie
@@ -141,12 +140,34 @@ export function generarOrdenImagenologia(doc, datos) {
 
   // --------- HUELLITA DE DEPURACIÓN (discreta) ---------
   try {
-    const examPreview = typeof examen === "string" ? examen.slice(0, 80) : "";
+    // 1) Intentar el campo clásico: examen (string)
+    let examDebug = "";
+    if (typeof examen === "string" && examen.trim()) {
+      examDebug = examen.trim();
+    } else {
+      // 2) Intentar formato nuevo: datosPaciente.examenesIA o examen/es dentro de datosPaciente
+      const dp = datos?.datosPaciente || datos;
+
+      if (Array.isArray(dp?.examenesIA) && dp.examenesIA.length) {
+        examDebug = dp.examenesIA.join(" | ");
+      } else if (typeof dp?.examen === "string" && dp.examen.trim()) {
+        examDebug = dp.examen.trim();
+      } else if (Array.isArray(dp?.examen) && dp.examen.length) {
+        examDebug = dp.examen.join(" | ");
+      }
+    }
+
+    const examPreview =
+      typeof examDebug === "string" ? examDebug.slice(0, 80) : "";
+
     doc.moveDown(1);
-    doc.fontSize(8).fillColor("#666").text(
-      `DEBUG: id=${datos?.idPago || "-"} | rut=${rut || "-"} | examen=${examPreview}`,
-      { align: "left" }
-    );
+    doc
+      .fontSize(8)
+      .fillColor("#666")
+      .text(
+        `DEBUG: id=${datos?.idPago || "-"} | rut=${rut || "-"} | examen=${examPreview}`,
+        { align: "left" }
+      );
     doc.fillColor("black");
   } catch {}
 }
