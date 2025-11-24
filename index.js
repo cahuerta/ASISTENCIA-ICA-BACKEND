@@ -974,60 +974,52 @@ app.get("/pdf-rm/:idPago", async (req, res) => {
 // Handler IA base
 const _traumaIA = traumaIAHandler(memoria);
 
-// Envoltura: intenta IA; si falla o no aporta, usa fallbackTrauma
+/**
+ * Envoltura para TRAUMA IA:
+ * - Intenta usar la respuesta de IA.
+ * - Si NO aporta exámenes, usa fallbackTrauma.
+ * - Siempre persiste en memoria.trauma usando SOLO "examenes" (array).
+ */
 function traumaIAWithFallback(handler) {
   return async (req, res) => {
     const originalJson = res.json.bind(res);
 
-    // intercepta res.json para decidir si la IA aportó algo útil
+    // Intercepta res.json para decidir si la IA aportó algo útil
     res.json = (body) => {
       const ok = body && body.ok !== false;
+      const idPago = req.body?.idPago;
 
-      // 1) señales en la respuesta
-      const hasFromBody =
-        (Array.isArray(body?.examenes) && body.examenes.length > 0) ||
-        (Array.isArray(body?.examenesIA) && body.examenesIA.length > 0) ||
-        (typeof body?.examen === "string" && body.examen.trim()) ||
-        (Array.isArray(body?.examenes) && body.examenes.length > 0) ||
-        (typeof body?.orden?.examen === "string" &&
-          body.orden.examen.trim());
+      // ---- 1) extraer exámenes desde la RESPUESTA de IA (solo TRAUMA) ----
+      let exFromBody = null;
+      if (Array.isArray(body?.examenes) && body.examenes.length > 0) {
+        exFromBody = body.examenes;
+      } else if (
+        typeof body?.examen === "string" &&
+        body.examen.trim()
+      ) {
+        exFromBody = [body.examen];
+      } else if (
+        typeof body?.orden?.examen === "string" &&
+        body.orden.examen.trim()
+      ) {
+        exFromBody = [body.orden.examen];
+      }
 
-      // 2) señales guardadas por el handler en memoria (TRAUMA → examenes)
-      const id = req.body?.idPago;
-      const saved = id ? memoria.get(ns("trauma", id)) : null;
+      // ---- 2) ver si ya había algo útil guardado en memoria.trauma ----
+      const saved = idPago ? memoria.get(ns("trauma", idPago)) : null;
       const hasFromMem =
-        !!saved &&
-        ((Array.isArray(saved.examenes) && saved.examenes.length > 0) ||
-          (typeof saved.examen === "string" && saved.examen.trim()));
+        Array.isArray(saved?.examenes) && saved.examenes.length > 0;
 
-      // si la IA aportó algo útil, también persistimos en memoria.trauma
-      if (ok && (hasFromBody || hasFromMem)) {
-        if (id) {
-          const prev = memoria.get(ns("trauma", id)) || {};
+      // ===== CASO A: la IA aportó algo (o ya había algo guardado) =====
+      if (ok && (exFromBody || hasFromMem)) {
+        if (idPago) {
+          const prev = saved || {};
           const p = req.body?.datosPaciente || req.body || {};
           const next = { ...prev, ...p };
 
-          // Normalizar exámenes desde body → examenes[] (TRAUMA)
-          let exList = null;
-          if (Array.isArray(body?.examenes)) {
-            exList = body.examenes;
-          } else if (Array.isArray(body?.examenesIA)) {
-            // compat, por si alguno quedó usando examenesIA
-            exList = body.examenesIA;
-          } else if (
-            typeof body?.examen === "string" &&
-            body.examen.trim()
-          ) {
-            exList = [body.examen];
-          } else if (
-            typeof body?.orden?.examen === "string" &&
-            body.orden.examen.trim()
-          ) {
-            exList = [body.orden.examen];
-          }
-
-          if (Array.isArray(exList) && exList.length) {
-            next.examenes = exList;
+          // Normalizar exámenes → siempre "examenes" (array)
+          if (Array.isArray(exFromBody) && exFromBody.length > 0) {
+            next.examenes = exFromBody;
           }
 
           // Diagnóstico y justificación, si vienen
@@ -1044,20 +1036,20 @@ function traumaIAWithFallback(handler) {
             next.justificacionIA = body.justificacion;
           }
 
-          memoria.set(ns("trauma", id), next);
+          memoria.set(ns("trauma", idPago), next);
         }
 
         res.json = originalJson; // restaurar
         return originalJson(body);
       }
 
-      // IA no aportó → fallback
+      // ===== CASO B: IA NO aportó nada útil → usar fallbackTrauma =====
       const p = req.body?.datosPaciente || req.body || {};
-      const fb = fallbackTrauma(p);
+      const fb = fallbackTrauma(p); // { examen, diagnostico, justificacion }
+      const prev = idPago ? memoria.get(ns("trauma", idPago)) || {} : {};
 
-      if (id) {
-        const prev = memoria.get(ns("trauma", id)) || {};
-        memoria.set(ns("trauma", id), {
+      if (idPago) {
+        memoria.set(ns("trauma", idPago), {
           ...prev,
           ...p,
           examenes: [fb.examen],
@@ -1079,14 +1071,14 @@ function traumaIAWithFallback(handler) {
     try {
       await Promise.resolve(handler(req, res));
     } catch (_e) {
-      // error real de IA → ir directo a fallback
+      // ===== ERROR real de IA → ir directo a fallback =====
+      const idPago = req.body?.idPago;
       const p = req.body?.datosPaciente || req.body || {};
       const fb = fallbackTrauma(p);
-      const id = req.body?.idPago;
+      const prev = idPago ? memoria.get(ns("trauma", idPago)) || {} : {};
 
-      if (id) {
-        const prev = memoria.get(ns("trauma", id)) || {};
-        memoria.set(ns("trauma", id), {
+      if (idPago) {
+        memoria.set(ns("trauma", idPago), {
           ...prev,
           ...p,
           examenes: [fb.examen],
@@ -1104,7 +1096,7 @@ function traumaIAWithFallback(handler) {
         justificacionIA: fb.justificacion,
       });
     } finally {
-      // restaurar por si Express continúa
+      // Restaurar por si Express continúa con otros middlewares
       res.json = originalJson;
     }
   };
