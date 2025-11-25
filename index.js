@@ -298,6 +298,12 @@ app.post("/guardar-datos", (req, res) => {
     next[k] = v;
   }
 
+  // NUEVO: si vienen examenesIA desde el frontend (TraumaModulo),
+  // los copiamos a "examenes" que es lo que usan buildExamenTextoStrict/PDF.
+  if (Array.isArray(incoming.examenesIA) && incoming.examenesIA.length > 0) {
+    next.examenes = incoming.examenesIA.slice();
+  }
+
   // preservar campos críticos si incoming no aporta (TRAUMA → "examenes")
   if (
     Array.isArray(prev.examenes) &&
@@ -647,7 +653,8 @@ app.get("/pdf/:idPago", async (req, res) => {
     const examen = buildExamenTextoStrict(d); // solo lo guardado
     const nota = buildNotaStrict(d); // solo lo guardado
 
-    const datos = { ...d, examen, nota };
+    // incluir idPago para debug en PDF
+    const datos = { ...d, examen, nota, idPago: req.params.idPago };
 
     const filename = `orden_${sanitize(d.nombre || "paciente")}.pdf`;
     res.setHeader("Content-Type", "application/pdf");
