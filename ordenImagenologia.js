@@ -4,6 +4,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { resolverDerivacion } from "./resolver.js";
+import { memoria } from "./index.js"; // ← NUEVO: leer memoria directa por idPago
 
 // __dirname para ES Modules
 const __filename = fileURLToPath(import.meta.url);
@@ -143,15 +144,41 @@ export function generarOrdenImagenologia(doc, datos) {
 
   // --------- DEBUG ---------
   try {
+    // Lo que llega desde index (buildExamenTextoStrict)
     const examPreview = (examen || "").slice(0, 80);
-    const memKey = idPago ? `trauma:${idPago}` : "-"; // ← clave directa en memoria para ese idPago
+
+    // Lo que está REALMENTE guardado en memoria para ese idPago
+    let examenMem = "";
+    let rawMem = null;
+
+    if (idPago && memoria && typeof memoria.get === "function") {
+      rawMem = memoria.get(`trauma:${idPago}`);
+      if (rawMem) {
+        if (Array.isArray(rawMem.examenes) && rawMem.examenes.length > 0) {
+          examenMem = rawMem.examenes.join(" | ");
+        } else if (Array.isArray(rawMem.examenesIA) && rawMem.examenesIA.length > 0) {
+          examenMem = rawMem.examenesIA.join(" | ");
+        } else if (typeof rawMem.examen === "string") {
+          examenMem = rawMem.examen;
+        }
+      }
+    }
+
+    // Log a consola para comparar en backend
+    console.log("DEBUG_PDF_TRAUMA", {
+      idPago,
+      rut,
+      examenFromIndex: examen,
+      examenFromMem: examenMem,
+      rawMem,
+    });
 
     doc.moveDown(1);
     doc
       .fontSize(8)
       .fillColor("#666")
-      .text(`DEBUG: id=${idPago || "-"} | rut=${rut || "-"} | examen=${examPreview}`)
-      .text(`DEBUG_MEMKEY: ${memKey}`);
+      .text(`DEBUG: id=${idPago || "-"} | rut=${rut || "-"} | examenIDX=${examPreview}`)
+      .text(`DEBUG_MEM: ${(examenMem || "").slice(0, 80)}`);
     doc.fillColor("black");
   } catch {}
 }
