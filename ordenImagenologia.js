@@ -144,11 +144,14 @@ export function generarOrdenImagenologia(doc, datos) {
   // --------- DEBUG ---------
   try {
     const examPreview = (examen || "").slice(0, 80);
+    const memKey = idPago ? `trauma:${idPago}` : "-"; // ← clave directa en memoria para ese idPago
+
     doc.moveDown(1);
     doc
       .fontSize(8)
       .fillColor("#666")
-      .text(`DEBUG: id=${idPago || "-"} | rut=${rut || "-"} | examen=${examPreview}`);
+      .text(`DEBUG: id=${idPago || "-"} | rut=${rut || "-"} | examen=${examPreview}`)
+      .text(`DEBUG_MEMKEY: ${memKey}`);
     doc.fillColor("black");
   } catch {}
 }
