@@ -334,11 +334,14 @@ async function crearPagoHandler(req, res) {
     if (!idPago)
       return res.status(400).json({ ok: false, error: "Falta idPago" });
 
+    // ⬇️ CORRECCIÓN: ahora soporta también el espacio "ia"
     const space =
       modulo === "preop" || String(idPago).startsWith("preop_")
         ? "preop"
         : modulo === "generales" || String(idPago).startsWith("generales_")
         ? "generales"
+        : modulo === "ia" || String(idPago).startsWith("ia_")
+        ? "ia"
         : "trauma";
 
     // ======= MERGE NO DESTRUCTIVO (evita perder preview IA / checklist RM) =======
@@ -457,11 +460,14 @@ async function crearPagoFlowHandler(req, res) {
     if (!idPago)
       return res.status(400).json({ ok: false, error: "Falta idPago" });
 
+    // ⬇️ CORRECCIÓN: ahora soporta también el espacio "ia"
     const space =
       modulo === "preop" || String(idPago).startsWith("preop_")
         ? "preop"
         : modulo === "generales" || String(idPago).startsWith("generales_")
         ? "generales"
+        : modulo === "ia" || String(idPago).startsWith("ia_")
+        ? "ia"
         : "trauma";
 
     // ======= MISMO MERGE NO DESTRUCTIVO QUE KHIPU =======
