@@ -4,7 +4,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { resolverDerivacion } from "./resolver.js";
-import { memoria } from "./index.js"; // ← NUEVO: leer memoria directa por idPago
+import { memoria } from "./index.js"; // ← leer memoria directa por idPago
 
 // __dirname para ES Modules
 const __filename = fileURLToPath(import.meta.url);
@@ -20,7 +20,7 @@ export function generarOrdenImagenologia(doc, datos) {
     dolor,
     lado,
     examen,   // ← EXAMEN STRING YA PROCESADO EN INDEX
-    nota,     // ← nota final construida en index
+    nota,     // ← nota final construida en index (si la usas luego)
     idPago,
   } = datos;
 
@@ -61,7 +61,7 @@ export function generarOrdenImagenologia(doc, datos) {
   // **ESTE ES EXACTAMENTE EL TEXTO QUE ENVÍA EL INDEX**
   doc.font("Helvetica-Bold")
     .fontSize(18)
-    .text(examen || "");  // ← NO FALLBACK
+    .text(examen || "");  // ← SIN FALLBACK A examenesIA / examenes
 
   doc.moveDown(5);
 
@@ -154,11 +154,8 @@ export function generarOrdenImagenologia(doc, datos) {
     if (idPago && memoria && typeof memoria.get === "function") {
       rawMem = memoria.get(`trauma:${idPago}`);
       if (rawMem) {
-        if (Array.isArray(rawMem.examenes) && rawMem.examenes.length > 0) {
-          examenMem = rawMem.examenes.join(" | ");
-        } else if (Array.isArray(rawMem.examenesIA) && rawMem.examenesIA.length > 0) {
-          examenMem = rawMem.examenesIA.join(" | ");
-        } else if (typeof rawMem.examen === "string") {
+        // AHORA PREFERIMOS SOLO EL STRING FINAL
+        if (typeof rawMem.examen === "string") {
           examenMem = rawMem.examen;
         }
       }
