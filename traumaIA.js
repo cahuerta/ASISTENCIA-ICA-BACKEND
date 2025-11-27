@@ -36,17 +36,19 @@ function _leerMarcadoresDesdeBody(body = {}) {
   return out;
 }
 
-function _slug(s = "") { return String(s).trim().toLowerCase(); }
+function _slug(s = "") {
+  return String(s).trim().toLowerCase();
+}
 function _sanVista(obj = {}) {
   const norm = {};
   for (const vista of ["frente", "lateral", "posterior"]) {
     const arr = Array.isArray(obj[vista]) ? obj[vista] : [];
-    norm[vista] = arr.map(x => String(x||"").trim()).filter(Boolean);
+    norm[vista] = arr.map((x) => String(x || "").trim()).filter(Boolean);
   }
   // copiar vistas extra si un front las define
   for (const [k, v] of Object.entries(obj)) {
     if (!norm[k] && Array.isArray(v)) {
-      norm[k] = v.map(x => String(x||"").trim()).filter(Boolean);
+      norm[k] = v.map((x) => String(x || "").trim()).filter(Boolean);
     }
   }
   return norm;
@@ -57,9 +59,10 @@ function _filtrarRegionesRelevantes(marcadores = {}, dolor = "") {
   const regiones = Object.keys(marcadores);
   if (!regiones.length) return {};
   const d = String(dolor || "").toLowerCase();
-  const hits = regiones.filter(r => d.includes(r));
+  const hits = regiones.filter((r) => d.includes(r));
   if (hits.length) {
-    const out = {}; for (const r of hits) out[r] = marcadores[r];
+    const out = {};
+    for (const r of hits) out[r] = marcadores[r];
     return out;
   }
   return marcadores;
@@ -75,18 +78,23 @@ function _marcadoresATexto(mReg = {}) {
         sub.push(`${_uc(vista)}:\n• ${arr.join("\n• ")}`);
       }
     }
-    if (sub.length) bloques.push(`${_uc(region)} — Puntos marcados\n${sub.join("\n\n")}`);
+    if (sub.length)
+      bloques.push(`${_uc(region)} — Puntos marcados\n${sub.join("\n\n")}`);
   }
-  return bloques.length ? bloques.join("\n\n") : "Sin puntos dolorosos marcados.";
+  return bloques.length
+    ? bloques.join("\n\n")
+    : "Sin puntos dolorosos marcados.";
 }
-function _uc(s=""){ return s ? s[0].toUpperCase()+s.slice(1) : s; }
+function _uc(s = "") {
+  return s ? s[0].toUpperCase() + s.slice(1) : s;
+}
 
 /** Tips clínicos simples por región (opcional). Amplía aquí para nuevas regiones sin tocar el resto. */
 function _tipsDesdeMarcadores(mReg = {}) {
   const tips = [];
   for (const [region, obj] of Object.entries(mReg)) {
     if (region === "rodilla") tips.push(..._tipsRodilla(obj));
-    if (region === "hombro")  tips.push(..._tipsHombro(obj));
+    if (region === "hombro") tips.push(..._tipsHombro(obj));
     // if (region === "codo") tips.push(..._tipsCodo(obj)); // futuro
   }
   return tips;
@@ -94,28 +102,48 @@ function _tipsDesdeMarcadores(mReg = {}) {
 function _flat(obj = {}) {
   const out = [];
   for (const v of Object.values(obj)) if (Array.isArray(v)) out.push(...v);
-  return out.map(s => String(s||"").toLowerCase());
+  return out.map((s) => String(s || "").toLowerCase());
 }
 function _tipsRodilla(obj = {}) {
-  const t = _flat(obj), has = (rx) => t.some(x => rx.test(x));
+  const t = _flat(obj),
+    has = (rx) => t.some((x) => rx.test(x));
   const arr = [];
-  if (has(/\binterl[ií]nea?\s+medial\b/)) arr.push("Interlínea medial → sospecha menisco medial.");
-  if (has(/\binterl[ií]nea?\s+lateral\b/)) arr.push("Interlínea lateral → sospecha menisco lateral.");
-  if (has(/\b(r[óo]tula|patelar|patelofemoral|ap(e|é)x)\b/)) arr.push("Dolor patelofemoral → síndrome PF/condropatía.");
-  if (has(/\btuberosidad\s+tibial\b/)) arr.push("Tuberosidad tibial → Osgood–Schlatter / tendón rotuliano.");
-  if (has(/\b(pes\s+anserin[oó]|pata\s+de\s+ganso)\b/)) arr.push("Pes anserino → tendinopatía/bursitis anserina.");
-  if (has(/\b(gerdy|banda\s+ilio?tibial|tracto\s+ilio?tibial)\b/)) arr.push("Banda ITB/Gerdy → síndrome banda ITB.");
-  if (has(/\bpopl[ií]tea?\b/)) arr.push("Fosa poplítea → evaluar quiste de Baker.");
+  if (has(/\binterl[ií]nea?\s+medial\b/))
+    arr.push("Interlínea medial → sospecha menisco medial.");
+  if (has(/\binterl[ií]nea?\s+lateral\b/))
+    arr.push("Interlínea lateral → sospecha menisco lateral.");
+  if (has(/\b(r[óo]tula|patelar|patelofemoral|ap(e|é)x)\b/))
+    arr.push("Dolor patelofemoral → síndrome PF/condropatía.");
+  if (has(/\btuberosidad\s+tibial\b/))
+    arr.push("Tuberosidad tibial → Osgood–Schlatter / tendón rotuliano.");
+  if (has(/\b(pes\s+anserin[oó]|pata\s+de\s+ganso)\b/))
+    arr.push("Pes anserino → tendinopatía/bursitis anserina.");
+  if (has(/\b(gerdy|banda\s+ilio?tibial|tracto\s+ilio?tibial)\b/))
+    arr.push("Banda ITB/Gerdy → síndrome banda ITB.");
+  if (has(/\bpopl[ií]tea?\b/))
+    arr.push("Fosa poplítea → evaluar quiste de Baker.");
   return arr;
 }
 function _tipsHombro(obj = {}) {
-  const t = _flat(obj), has = (rx) => t.some(x => rx.test(x));
+  const t = _flat(obj),
+    has = (rx) => t.some((x) => rx.test(x));
   const arr = [];
-  if (has(/\b(subacromial|acromion|bursa\s*subacromial)\b/)) arr.push("Dolor subacromial → síndrome subacromial / supraespinoso.");
-  if (has(/\b(tub[eé]rculo\s*mayor|footprint|troquiter)\b/)) arr.push("Tubérculo mayor → tendinopatía del manguito (supra/infra).");
-  if (has(/\b(surco\s*bicipital|bicipital|porci[oó]n\s*larga\s*del\s*b[ií]ceps)\b/)) arr.push("Surco bicipital → tendinopatía de la porción larga del bíceps.");
-  if (has(/\b(acromioclavicular|acromio\-?clavicular|ac)\b/)) arr.push("Dolor AC → artropatía acromioclavicular.");
-  if (has(/\b(posterosuperior|labrum\s*superior|slap)\b/)) arr.push("Dolor posterosuperior → considerar lesión labral (SLAP).");
+  if (has(/\b(subacromial|acromion|bursa\s*subacromial)\b/))
+    arr.push("Dolor subacromial → síndrome subacromial / supraespinoso.");
+  if (has(/\b(tub[eé]rculo\s*mayor|footprint|troquiter)\b/))
+    arr.push(
+      "Tubérculo mayor → tendinopatía del manguito (supra/infra)."
+    );
+  if (has(/\b(surco\s*bicipital|bicipital|porci[oó]n\s*larga\s*del\s*b[ií]ceps)\b/))
+    arr.push(
+      "Surco bicipital → tendinopatía de la porción larga del bíceps."
+    );
+  if (has(/\b(acromioclavicular|acromio\-?clavicular|ac)\b/))
+    arr.push("Dolor AC → artropatía acromioclavicular.");
+  if (has(/\b(posterosuperior|labrum\s*superior|slap)\b/))
+    arr.push(
+      "Dolor posterosuperior → considerar lesión labral (SLAP)."
+    );
   return arr;
 }
 
@@ -132,8 +160,13 @@ function normalizarExamen(examen = "", dolor = "", lado = "") {
   // Lateralidad cuando aplica
   const L = (lado || "").toUpperCase();
   const lat = L ? ` ${L}` : "";
-  if (/\b(CADERA|RODILLA|HOMBRO|TOBILLO|PIERNA|BRAZO|CODO|MUÑECA|MANO|PIE)\b/.test(x) &&
-      lat && !/\b(IZQUIERDA|DERECHA)\b/.test(x)) {
+  if (
+    /\b(CADERA|RODILLA|HOMBRO|TOBILLO|PIERNA|BRAZO|CODO|MUÑECA|MANO|PIE)\b/.test(
+      x
+    ) &&
+    lat &&
+    !/\b(IZQUIERDA|DERECHA)\b/.test(x)
+  ) {
     x = x.replace(/\.$/, "") + lat + ".";
   }
 
@@ -201,13 +234,19 @@ function construirMensajeUsuarioTXT(p) {
 
   const marc = p?.detalles?.marcadores || {};
   const puntosTxt = _marcadoresATexto(marc);
-  const tipsArr   = _tipsDesdeMarcadores(marc);
-  const tipsTxt   = tipsArr.length ? `\n\nTips clínicos:\n• ${tipsArr.join("\n• ")}` : "";
+  const tipsArr = _tipsDesdeMarcadores(marc);
+  const tipsTxt = tipsArr.length
+    ? `\n\nTips clínicos:\n• ${tipsArr.join("\n• ")}`
+    : "";
 
   return (
     `Edad: ${info.edad || "—"}\n` +
     (info.genero ? `Género: ${info.genero}\n` : "") +
-    (info.dolor ? `Región de dolor: ${info.dolor}${info.lado ? ` (${info.lado})` : ""}\n` : "") +
+    (info.dolor
+      ? `Región de dolor: ${info.dolor}${
+          info.lado ? ` (${info.lado})` : ""
+        }\n`
+      : "") +
     `Puntos dolorosos marcados:\n${puntosTxt}${tipsTxt}\n\n` +
     `Redacta EXACTAMENTE con el formato solicitado y el carácter ESTRICTO de 1 diagnóstico y 1 examen.`
   );
@@ -223,8 +262,16 @@ async function llamarIA_Texto(messages) {
 
   const r = await fetch(OPENAI_API, {
     method: "POST",
-    headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
-    body: JSON.stringify({ model: MODEL, temperature: 0.35, max_tokens: 520, messages }),
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${key}`,
+    },
+    body: JSON.stringify({
+      model: MODEL,
+      temperature: 0.35,
+      max_tokens: 520,
+      messages,
+    }),
   });
   if (!r.ok) {
     const raw = await r.text().catch(() => "");
@@ -240,41 +287,50 @@ function parseSecciones(text = "") {
   if (!text) return out;
 
   // Diagnóstico presuntivo (primer bullet)
-  const secDx = /Diagn[oó]stico presuntivo:\s*([\s\S]*?)(?:\n\s*Explicaci[oó]n breve:|$)/i.exec(text);
+  const secDx =
+    /Diagn[oó]stico presuntivo:\s*([\s\S]*?)(?:\n\s*Explicaci[oó]n breve:|$)/i.exec(
+      text
+    );
   if (secDx) {
     const block = secDx[1] || "";
     const bullets = block
       .split(/\r?\n/)
-      .map(l => l.trim())
+      .map((l) => l.trim())
       .filter(Boolean)
-      .map(l => (/^[•\-\*]\s*(.+)$/.exec(l)?.[1] || l).trim())
+      .map((l) => (/^[•\-\*]\s*(.+)$/.exec(l)?.[1] || l).trim())
       .filter(Boolean);
     out.diagnostico = bullets[0] || "";
   }
 
   // Explicación breve (consolidada)
-  const secExp = /Explicaci[oó]n breve:\s*([\s\S]*?)(?:\n\s*Ex[aá]menes sugeridos:|$)/i.exec(text);
+  const secExp =
+    /Explicaci[oó]n breve:\s*([\s\S]*?)(?:\n\s*Ex[aá]menes sugeridos:|$)/i.exec(
+      text
+    );
   if (secExp) {
     const block = secExp[1] || "";
     const bullets = block
       .split(/\r?\n/)
-      .map(l => l.trim())
+      .map((l) => l.trim())
       .filter(Boolean)
-      .map(l => (/^[•\-\*]\s*(.+)$/.exec(l)?.[1] || l).trim())
+      .map((l) => (/^[•\-\*]\s*(.+)$/.exec(l)?.[1] || l).trim())
       .filter(Boolean);
     out.explicacion = bullets.join(" ").replace(/\s+/g, " ").trim();
   }
 
   // Exámenes sugeridos (primer bullet)
-  const secEx = /Ex[aá]men(?:es)? sugeridos?:\s*([\s\S]*?)(?:\n\s*Indicaciones:|$)/i.exec(text);
+  const secEx =
+    /Ex[aá]men(?:es)? sugeridos?:\s*([\s\S]*?)(?:\n\s*Indicaciones:|$)/i.exec(
+      text
+    );
   if (secEx) {
     const block = secEx[1] || "";
     const bullets = block
       .split(/\r?\n/)
-      .map(l => l.trim())
+      .map((l) => l.trim())
       .filter(Boolean)
-      .map(l => (/^[•\-\*]\s*(.+)$/.exec(l)?.[1] || l).trim())
-      .map(l => l.replace(/\s*\.\s*$/, ".")) // normaliza punto final
+      .map((l) => (/^[•\-\*]\s*(.+)$/.exec(l)?.[1] || l).trim())
+      .map((l) => l.replace(/\s*\.\s*$/, ".")) // normaliza punto final
       .filter(Boolean);
     out.examen = bullets[0] || "";
   }
@@ -291,28 +347,74 @@ export default function traumaIAHandler(memoria) {
 
   return async (req, res) => {
     try {
-      const { idPago, paciente = {}, detalles = null } = req.body || {};
-      if (!idPago) return res.status(400).json({ ok: false, error: "Falta idPago" });
+      const {
+        idPago,
+        paciente: pacienteBody = {},
+        detalles: detallesBody = null,
+        traumaJSON = null, // ← NUEVO: soporte para payload unificado
+      } = req.body || {};
 
-      // Marcadores: leer del body (actual y futuro) y filtrar por dolor
-      const marcadoresAll = _leerMarcadoresDesdeBody(req.body);
-      const marcadoresRelev = _filtrarRegionesRelevantes(marcadoresAll, paciente?.dolor);
-      const detallesAll = { ...(detalles || {}), marcadores: marcadoresRelev };
+      if (!idPago)
+        return res
+          .status(400)
+          .json({ ok: false, error: "Falta idPago" });
+
+      let paciente = pacienteBody;
+      let detallesAll = detallesBody || {};
+      let marcadoresAll = _leerMarcadoresDesdeBody(req.body);
+
+      // Si viene traumaJSON (nuevo flujo), lo usamos como fuente principal
+      if (traumaJSON && typeof traumaJSON === "object") {
+        const pacTJ = traumaJSON.paciente || {};
+        paciente = { ...paciente, ...pacTJ };
+
+        const marcTJ = traumaJSON.marcadores || {};
+        if (marcTJ && Object.keys(marcTJ).length > 0) {
+          marcadoresAll = marcTJ;
+        }
+
+        const marcadoresRelevTJ = _filtrarRegionesRelevantes(
+          marcadoresAll,
+          pacTJ.dolor || paciente.dolor
+        );
+
+        detallesAll = {
+          ...detallesAll,
+          marcadores: marcadoresRelevTJ,
+          resonancia: traumaJSON.resonancia || null,
+        };
+      } else {
+        // Flujo antiguo (sin traumaJSON)
+        const marcadoresRelev = _filtrarRegionesRelevantes(
+          marcadoresAll,
+          paciente?.dolor
+        );
+        detallesAll = { ...detallesAll, marcadores: marcadoresRelev };
+      }
+
       const p = { ...paciente, detalles: detallesAll };
 
       // ===== IA con prompt estricto (texto)
       let out;
+      let textoIA = ""; // ← guardamos texto bruto IA para debug
+
       try {
         const messages = [
           { role: "system", content: SYSTEM_PROMPT_TXT },
           { role: "user", content: construirMensajeUsuarioTXT(p) },
         ];
-        const texto = await llamarIA_Texto(messages);
-        const { diagnostico, explicacion, examen } = parseSecciones(texto);
+        textoIA = await llamarIA_Texto(messages);
+        const { diagnostico, explicacion, examen } = parseSecciones(textoIA);
 
         const diagnosticoOk = String(diagnostico || "").trim();
-        const examenOk = normalizarExamen(String(examen || "").trim(), p?.dolor, p?.lado);
-        const justificacion = explicacion || "Justificación clínica basada en región y puntos dolorosos.";
+        const examenOk = normalizarExamen(
+          String(examen || "").trim(),
+          p?.dolor,
+          p?.lado
+        );
+        const justificacion =
+          explicacion ||
+          "Justificación clínica basada en región y puntos dolorosos.";
 
         if (!diagnosticoOk || !examenOk) {
           out = fallbackHeuristico(p);
@@ -326,12 +428,32 @@ export default function traumaIAHandler(memoria) {
       // ===== Persistencia mínima (para PDF / retorno)
       const registro = {
         ...p,
+        examen: out.examen,
         examenesIA: [out.examen],
+        diagnosticoIA: out.diagnostico,
+        justificacionIA: out.justificacion,
+        // variable separada para debug posterior en PDF
+        debugIA: {
+          textoBruto: textoIA,
+          diagnostico: out.diagnostico,
+          examen: out.examen,
+          justificacion: out.justificacion,
+        },
         respuesta: `Diagnóstico presuntivo: ${out.diagnostico}\n\n${out.justificacion}`,
         pagoConfirmado: true,
       };
+
       try {
+        // Guarda en espacio "ia:<idPago>" (histórico)
         memoria?.set?.(ns("ia", idPago), registro);
+
+        // 🔴 NUEVO: refleja también en "trauma:<idPago>", que es lo que usa el PDF para debug
+        const prevTrauma = memoria?.get?.(ns("trauma", idPago)) || {};
+        memoria?.set?.(ns("trauma", idPago), {
+          ...prevTrauma,
+          ...registro,
+        });
+
         memoria?.set?.(ns("meta", idPago), { moduloAutorizado: "ia" });
       } catch {}
 
@@ -339,9 +461,9 @@ export default function traumaIAHandler(memoria) {
       return res.json({
         ok: true,
         diagnostico: out.diagnostico,
-        examenes: [out.examen],          // ← exactamente 1 examen
+        examenes: [out.examen], // ← exactamente 1 examen
         justificacion: out.justificacion,
-        informeIA: out.justificacion,    // compat (algunos flujos lo usan)
+        informeIA: out.justificacion, // compat (algunos flujos lo usan)
       });
     } catch (e) {
       console.error("ia-trauma error:", e);
