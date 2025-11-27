@@ -8,10 +8,10 @@ import { fileURLToPath } from "url";
 
 // ===== Módulos
 import chatRouter from "./nuevoModuloChat.js";
-import iaPreopHandler from "./preopIA.js";        // ← PREOP IA
+import iaPreopHandler from "./preopIA.js"; // ← PREOP IA
 import generalesIAHandler from "./generalesIA.js"; // ← GENERALES IA
-import traumaIAHandler from "./traumaIA.js";       // ← TRAUMA IA
-import fallbackTrauma from "./fallbackTrauma.js";  // ← Fallback TRAUMA
+import traumaIAHandler from "./traumaIA.js"; // ← TRAUMA IA
+import fallbackTrauma from "./fallbackTrauma.js"; // ← Fallback TRAUMA
 
 // ===== Flow client (NUEVO)
 import { crearPagoFlowBackend } from "./flowClient.js";
@@ -279,16 +279,59 @@ app.post("/detectar-resonancia", async (req, res) => {
 // =====================================================
 
 // Guardar (como ya lo tenías). Los módulos son los que definen los campos.
+// AHORA soporta también traumaJSON desde el frontend nuevo.
 app.post("/guardar-datos", (req, res) => {
-  const { idPago, datosPaciente } = req.body || {};
-  if (!idPago || !datosPaciente)
-    return res
-      .status(400)
-      .json({ ok: false, error: "Faltan idPago o datosPaciente" });
+  const { idPago, datosPaciente, traumaJSON, resonanciaChecklist, resonanciaResumenTexto, ordenAlternativa } =
+    req.body || {};
+
+  if (!idPago || (!datosPaciente && !traumaJSON)) {
+    return res.status(400).json({
+      ok: false,
+      error: "Faltan idPago o datosPaciente/traumaJSON",
+    });
+  }
+
+  // ==== Construir "incoming" plano para memoria TRAUMA ====
+  let incoming = datosPaciente || {};
+
+  if (traumaJSON) {
+    const { paciente = {}, ia = {}, resonancia = {}, marcadores = {} } =
+      traumaJSON;
+
+    incoming = {
+      ...paciente,
+      // IA
+      examenesIA: Array.isArray(ia.examenes) ? ia.examenes : [],
+      diagnosticoIA: ia.diagnostico || "",
+      justificacionIA: ia.justificacion || "",
+      // RM (desde traumaJSON)
+      rmForm: resonancia.checklist || null,
+      rmObservaciones: resonancia.resumenTexto || "",
+      ordenAlternativa: resonancia.ordenAlternativa || "",
+      // Además considerar los campos que pueda mandar la ruta como antes
+      // (compatibilidad con TraumaModulo actual)
+      ...(resonanciaChecklist
+        ? { rmForm: resonanciaChecklist }
+        : null),
+      ...(resonanciaResumenTexto
+        ? { rmObservaciones: resonanciaResumenTexto }
+        : null),
+      ...(ordenAlternativa ? { ordenAlternativa } : null),
+      // Marcadores
+      marcadores,
+      rodillaMarcadores: marcadores.rodilla || null,
+      manoMarcadores: marcadores.mano || null,
+      hombroMarcadores: marcadores.hombro || null,
+      codoMarcadores: marcadores.codo || null,
+      tobilloMarcadores: marcadores.tobillo || null,
+    };
+
+    // opcional: guardamos también el JSON crudo para debug
+    incoming.traumaJSON = traumaJSON;
+  }
 
   // ==== MERGE NO DESTRUCTIVO SOLO PARA TRAUMA ====
   const prev = memoria.get(ns("trauma", idPago)) || {};
-  const incoming = datosPaciente || {};
   const next = { ...prev };
 
   for (const [k, v] of Object.entries(incoming)) {
@@ -627,6 +670,7 @@ app.delete("/reset/:idPago", (req, res) => {
     return res.status(400).json({ ok: false, error: "Falta idPago" });
 
   // sanity: aceptar solo id alfanumérico con _ y -
+//=========
   if (!/^[a-zA-Z0-9_\-]+$/.test(idPago)) {
     return res.status(400).json({ ok: false, error: "idPago inválido" });
   }
@@ -992,10 +1036,16 @@ const _traumaIA = traumaIAHandler(memoria);
  * - Intenta usar la respuesta de IA.
  * - Si NO aporta exámenes, usa fallbackTrauma.
  * - Siempre persiste en memoria.trauma usando SOLO "examenes" (array).
+ * - AHORA entiende body con { idPago, traumaJSON } desde el frontend nuevo.
  */
 function traumaIAWithFallback(handler) {
   return async (req, res) => {
     const originalJson = res.json.bind(res);
+
+    // 💡 Normalizar body para que traumaIAHandler vea datosPaciente
+    if (req.body?.traumaJSON && !req.body.datosPaciente) {
+      req.body.datosPaciente = req.body.traumaJSON.paciente || {};
+    }
 
     // Intercepta res.json para decidir si la IA aportó algo útil
     res.json = (body) => {
@@ -1023,12 +1073,19 @@ function traumaIAWithFallback(handler) {
       const hasFromMem =
         Array.isArray(saved?.examenes) && saved.examenes.length > 0;
 
+      // Función para obtener paciente plano desde el request
+      const traumaJSON = req.body?.traumaJSON;
+      const paciente =
+        traumaJSON?.paciente ||
+        req.body?.datosPaciente ||
+        req.body ||
+        {};
+
       // ===== CASO A: la IA aportó algo (o ya había algo guardado) =====
       if (ok && (exFromBody || hasFromMem)) {
         if (idPago) {
           const prev = saved || {};
-          const p = req.body?.datosPaciente || req.body || {};
-          const next = { ...prev, ...p };
+          const next = { ...prev, ...paciente };
 
           // Normalizar exámenes → siempre "examenes" (array)
           if (Array.isArray(exFromBody) && exFromBody.length > 0) {
@@ -1057,14 +1114,13 @@ function traumaIAWithFallback(handler) {
       }
 
       // ===== CASO B: IA NO aportó nada útil → usar fallbackTrauma =====
-      const p = req.body?.datosPaciente || req.body || {};
-      const fb = fallbackTrauma(p); // { examen, diagnostico, justificacion }
+      const fb = fallbackTrauma(paciente); // { examen, diagnostico, justificacion }
       const prev = idPago ? memoria.get(ns("trauma", idPago)) || {} : {};
 
       if (idPago) {
         memoria.set(ns("trauma", idPago), {
           ...prev,
-          ...p,
+          ...paciente,
           examenes: [fb.examen],
           diagnosticoIA: fb.diagnostico,
           justificacionIA: fb.justificacion,
@@ -1086,14 +1142,20 @@ function traumaIAWithFallback(handler) {
     } catch (_e) {
       // ===== ERROR real de IA → ir directo a fallback =====
       const idPago = req.body?.idPago;
-      const p = req.body?.datosPaciente || req.body || {};
-      const fb = fallbackTrauma(p);
+      const traumaJSON = req.body?.traumaJSON;
+      const paciente =
+        traumaJSON?.paciente ||
+        req.body?.datosPaciente ||
+        req.body ||
+        {};
+
+      const fb = fallbackTrauma(paciente);
       const prev = idPago ? memoria.get(ns("trauma", idPago)) || {} : {};
 
       if (idPago) {
         memoria.set(ns("trauma", idPago), {
           ...prev,
-          ...p,
+          ...paciente,
           examenes: [fb.examen],
           diagnosticoIA: fb.diagnostico,
           justificacionIA: fb.justificacion,
