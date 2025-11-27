@@ -281,8 +281,14 @@ app.post("/detectar-resonancia", async (req, res) => {
 // Guardar (como ya lo tenías). Los módulos son los que definen los campos.
 // AHORA soporta también traumaJSON desde el frontend nuevo.
 app.post("/guardar-datos", (req, res) => {
-  const { idPago, datosPaciente, traumaJSON, resonanciaChecklist, resonanciaResumenTexto, ordenAlternativa } =
-    req.body || {};
+  const {
+    idPago,
+    datosPaciente,
+    traumaJSON,
+    resonanciaChecklist,
+    resonanciaResumenTexto,
+    ordenAlternativa,
+  } = req.body || {};
 
   if (!idPago || (!datosPaciente && !traumaJSON)) {
     return res.status(400).json({
@@ -310,9 +316,7 @@ app.post("/guardar-datos", (req, res) => {
       ordenAlternativa: resonancia.ordenAlternativa || "",
       // Además considerar los campos que pueda mandar la ruta como antes
       // (compatibilidad con TraumaModulo actual)
-      ...(resonanciaChecklist
-        ? { rmForm: resonanciaChecklist }
-        : null),
+      ...(resonanciaChecklist ? { rmForm: resonanciaChecklist } : null),
       ...(resonanciaResumenTexto
         ? { rmObservaciones: resonanciaResumenTexto }
         : null),
@@ -324,6 +328,7 @@ app.post("/guardar-datos", (req, res) => {
       hombroMarcadores: marcadores.hombro || null,
       codoMarcadores: marcadores.codo || null,
       tobilloMarcadores: marcadores.tobillo || null,
+      caderaMarcadores: marcadores.cadera || null, // ← CADERA AQUÍ
     };
 
     // opcional: guardamos también el JSON crudo para debug
@@ -1056,10 +1061,7 @@ function traumaIAWithFallback(handler) {
       let exFromBody = null;
       if (Array.isArray(body?.examenes) && body.examenes.length > 0) {
         exFromBody = body.examenes;
-      } else if (
-        typeof body?.examen === "string" &&
-        body.examen.trim()
-      ) {
+      } else if (typeof body?.examen === "string" && body.examen.trim()) {
         exFromBody = [body.examen];
       } else if (
         typeof body?.orden?.examen === "string" &&
@@ -1076,10 +1078,7 @@ function traumaIAWithFallback(handler) {
       // Función para obtener paciente plano desde el request
       const traumaJSON = req.body?.traumaJSON;
       const paciente =
-        traumaJSON?.paciente ||
-        req.body?.datosPaciente ||
-        req.body ||
-        {};
+        traumaJSON?.paciente || req.body?.datosPaciente || req.body || {};
 
       // ===== CASO A: la IA aportó algo (o ya había algo guardado) =====
       if (ok && (exFromBody || hasFromMem)) {
@@ -1144,10 +1143,7 @@ function traumaIAWithFallback(handler) {
       const idPago = req.body?.idPago;
       const traumaJSON = req.body?.traumaJSON;
       const paciente =
-        traumaJSON?.paciente ||
-        req.body?.datosPaciente ||
-        req.body ||
-        {};
+        traumaJSON?.paciente || req.body?.datosPaciente || req.body || {};
 
       const fb = fallbackTrauma(paciente);
       const prev = idPago ? memoria.get(ns("trauma", idPago)) || {} : {};
