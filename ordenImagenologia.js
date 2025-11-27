@@ -3,8 +3,8 @@ import PDFDocument from "pdfkit";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import { resolverDerivacion } from "./resolver.js";
-import { memoria } from "./index.js"; // ← NUEVO: leer memoria directa por idPago
+import { resolverDerivacion } from "./resolver.js"; 
+// ⬆️ OJO: quitamos import { memoria } from "./index.js" para evitar ciclo
 
 // __dirname para ES Modules
 const __filename = fileURLToPath(import.meta.url);
@@ -20,9 +20,9 @@ export function generarOrdenImagenologia(doc, datos) {
     dolor,
     lado,
     examen,   // ← EXAMEN STRING YA PROCESADO EN INDEX
-    nota,     // ← nota final construida en index
+    nota,     // ← nota final construida en index (si la usas)
     idPago,
-  } = datos;
+  } = datos || {};
 
   // --------- ENCABEZADO ---------
   try {
@@ -58,10 +58,10 @@ export function generarOrdenImagenologia(doc, datos) {
   doc.font("Helvetica-Bold").text("Examen sugerido:");
   doc.moveDown(4);
 
-  // **ESTE ES EXACTAMENTE EL TEXTO QUE ENVÍA EL INDEX**
+  // TEXTO EXACTO QUE ENVÍA EL INDEX
   doc.font("Helvetica-Bold")
     .fontSize(18)
-    .text(examen || "");  // ← NO FALLBACK
+    .text(examen || "");  // ← SIN FALLBACK AQUÍ
 
   doc.moveDown(5);
 
@@ -132,7 +132,10 @@ export function generarOrdenImagenologia(doc, datos) {
     align: "center",
     width: pageW - marginL - marginR,
   });
-  doc.text("RUT: 14.015.125-4", { align: "center", width: pageW - marginL - marginR });
+  doc.text("RUT: 14.015.125-4", {
+    align: "center",
+    width: pageW - marginL - marginR,
+  });
   doc.text("Cirujano de Reconstrucción Articular", {
     align: "center",
     width: pageW - marginL - marginR,
@@ -142,43 +145,23 @@ export function generarOrdenImagenologia(doc, datos) {
     width: pageW - marginL - marginR,
   });
 
-  // --------- DEBUG ---------
+  // --------- DEBUG SIMPLE (SIN MEMORIA) ---------
   try {
-    // Lo que llega desde index (buildExamenTextoStrict)
-    const examPreview = (examen || "").slice(0, 80);
-
-    // Lo que está REALMENTE guardado en memoria para ese idPago
-    let examenMem = "";
-    let rawMem = null;
-
-    if (idPago && memoria && typeof memoria.get === "function") {
-      rawMem = memoria.get(`trauma:${idPago}`);
-      if (rawMem) {
-        if (Array.isArray(rawMem.examenes) && rawMem.examenes.length > 0) {
-          examenMem = rawMem.examenes.join(" | ");
-        } else if (Array.isArray(rawMem.examenesIA) && rawMem.examenesIA.length > 0) {
-          examenMem = rawMem.examenesIA.join(" | ");
-        } else if (typeof rawMem.examen === "string") {
-          examenMem = rawMem.examen;
-        }
-      }
-    }
-
-    // Log a consola para comparar en backend
+    const examPreview = (examen || "").slice(0, 120);
     console.log("DEBUG_PDF_TRAUMA", {
       idPago,
       rut,
       examenFromIndex: examen,
-      examenFromMem: examenMem,
-      rawMem,
+      examenPreview: examPreview,
     });
 
     doc.moveDown(1);
     doc
       .fontSize(8)
       .fillColor("#666")
-      .text(`DEBUG: id=${idPago || "-"} | rut=${rut || "-"} | examenIDX=${examPreview}`)
-      .text(`DEBUG_MEM: ${(examenMem || "").slice(0, 80)}`);
+      .text(
+        `DEBUG: id=${idPago || "-"} | rut=${rut || "-"} | examenIDX=${examPreview}`
+      );
     doc.fillColor("black");
   } catch {}
 }
