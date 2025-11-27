@@ -1,181 +1,492 @@
-// ordenImagenologia.js
-import PDFDocument from "pdfkit";
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
-import { resolverDerivacion } from "./resolver.js";
-import { memoria } from "./index.js"; // ← leer memoria directa por idPago
+// traumaIA.js — TRAUMA con prompt estilo "nota breve" (estricto: 1 diagnóstico y 1 examen)
+// Mantiene API de respuesta original: diagnostico, examenes[0], justificacion, informeIA
+// Node >= 18 (fetch). ESM.
 
-// __dirname para ES Modules
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const OPENAI_API = "https://api.openai.com/v1/chat/completions";
+const MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 
-export function generarOrdenImagenologia(doc, datos) {
-  // EL INDEX GARANTIZA QUE "examen" VIENE COMO STRING FINAL
-  // buildExamenTextoStrict() → index.js
-  const {
-    nombre,
-    edad,
-    rut,
-    dolor,
-    lado,
-    examen,   // ← EXAMEN STRING YA PROCESADO EN INDEX
-    nota,     // ← nota final construida en index (si la usas luego)
-    idPago,
-  } = datos;
+// ✅ Importa tu fallback específico por zona/lateralidad
+import fallbackTrauma from "./fallbackTrauma.js";
 
-  // --------- ENCABEZADO ---------
-  try {
-    const logoPath = path.join(__dirname, "assets", "ica.jpg");
-    if (fs.existsSync(logoPath)) {
-      doc.image(logoPath, 50, 40, { width: 120 });
+/* ============================================================
+   === MARCADORES (puntos dolorosos) — helpers retro-compat ===
+   ============================================================ */
+
+/** Lee marcadores desde body en formatos:
+ *  - moderno:  body.marcadores = { rodilla:{frente:[],lateral:[],posterior:[]}, hombro:{...}, ... }
+ *  - legacy:   body.<region>Marcadores (ej: rodillaMarcadores, hombroMarcadores, …)
+ */
+function _leerMarcadoresDesdeBody(body = {}) {
+  const out = {};
+
+  // 1) estándar recomendado (moderno)
+  if (body.marcadores && typeof body.marcadores === "object") {
+    for (const [region, obj] of Object.entries(body.marcadores)) {
+      if (obj && typeof obj === "object") out[_slug(region)] = _sanVista(obj);
     }
-  } catch {}
-
-  doc.moveDown(1.5);
-  doc.font("Helvetica-Bold").fontSize(18)
-    .text("INSTITUTO DE CIRUGÍA ARTICULAR", 180, 50);
-  doc.moveDown(1.5);
-  doc.fontSize(16)
-    .text("Orden Médica de Imagenología", 180, undefined, { underline: true });
-
-  doc.moveDown(4);
-  doc.x = doc.page.margins.left;
-
-  // --------- DATOS PACIENTE ---------
-  const sintomas = `${dolor ?? ""} ${lado ?? ""}`.trim();
-  doc.font("Helvetica").fontSize(14);
-  doc.text(`Nombre: ${nombre ?? ""}`);
-  doc.moveDown(1);
-  doc.text(`Edad: ${edad ?? ""}`);
-  doc.moveDown(0.5);
-  doc.text(`RUT: ${rut ?? ""}`);
-  doc.moveDown(0.5);
-  doc.text(`Descripción de síntomas: Dolor en ${sintomas}`);
-  doc.moveDown(2);
-
-  // --------- EXAMEN (LO QUE ENVÍA EL INDEX) ---------
-  doc.font("Helvetica-Bold").text("Examen sugerido:");
-  doc.moveDown(4);
-
-  // **ESTE ES EXACTAMENTE EL TEXTO QUE ENVÍA EL INDEX**
-  doc.font("Helvetica-Bold")
-    .fontSize(18)
-    .text(examen || "");  // ← SIN FALLBACK A examenesIA / examenes
-
-  doc.moveDown(5);
-
-  // --------- NOTA (resolver derivación) ---------
-  let bloqueNota = "";
-  try {
-    const deriv =
-      resolverDerivacion && typeof resolverDerivacion === "function"
-        ? resolverDerivacion({ ...datos, examen, dolor }) || {}
-        : {};
-
-    const notaDeriv = typeof deriv.nota === "string" ? deriv.nota.trim() : "";
-    bloqueNota = notaDeriv ? `Nota:\n\n${notaDeriv}` : "";
-  } catch {}
-
-  if (bloqueNota) {
-    doc.font("Helvetica").fontSize(12).text(bloqueNota, { align: "left" });
   }
 
-  // --------- FIRMA Y TIMBRE ---------
-  const pageW = doc.page.width;
-  const pageH = doc.page.height;
-  const marginL = doc.page.margins.left || 50;
-  const marginR = doc.page.margins.right || 50;
-  const baseY = pageH - 170;
-
-  doc.font("Helvetica").fontSize(12);
-  doc.text("_________________________", marginL, baseY, {
-    align: "center",
-    width: pageW - marginL - marginR,
-  });
-  doc.text("Firma y Timbre Médico", marginL, baseY + 18, {
-    align: "center",
-    width: pageW - marginL - marginR,
-  });
-
-  // Firma
-  try {
-    const firmaPath = path.join(__dirname, "assets", "FIRMA.png");
-    if (fs.existsSync(firmaPath)) {
-      const firmaW = 250;
-      const firmaX = (pageW - firmaW) / 2;
-      const firmaY = baseY - 45;
-      doc.image(firmaPath, firmaX, firmaY, { width: firmaW });
+  // 2) retro-compatibilidad: <region>Marcadores (rodillaMarcadores, hombroMarcadores, …)
+  for (const [k, v] of Object.entries(body)) {
+    const m = /^([a-zA-ZñÑ]+)Marcadores$/.exec(k);
+    if (m && v && typeof v === "object") {
+      out[_slug(m[1])] = _sanVista(v);
     }
-  } catch {}
+  }
+  return out;
+}
 
-  // Timbre
-  try {
-    const timbrePath = path.join(__dirname, "assets", "timbre.jpg");
-    if (fs.existsSync(timbrePath)) {
-      const firmaW = 250;
-      const firmaX = (pageW - firmaW) / 2;
-      const timbreW = 110;
-      const timbreX = firmaX + firmaW;
-      const timbreY = (baseY - 45) - 20;
-
-      doc.save();
-      doc.rotate(20, { origin: [timbreX + timbreW / 2, timbreY + timbreW / 2] });
-      doc.image(timbrePath, timbreX, timbreY, { width: timbreW });
-      doc.restore();
+function _slug(s = "") {
+  return String(s).trim().toLowerCase();
+}
+function _sanVista(obj = {}) {
+  const norm = {};
+  for (const vista of ["frente", "lateral", "posterior"]) {
+    const arr = Array.isArray(obj[vista]) ? obj[vista] : [];
+    norm[vista] = arr.map((x) => String(x || "").trim()).filter(Boolean);
+  }
+  // copiar vistas extra si un front las define
+  for (const [k, v] of Object.entries(obj)) {
+    if (!norm[k] && Array.isArray(v)) {
+      norm[k] = v.map((x) => String(x || "").trim()).filter(Boolean);
     }
-  } catch {}
+  }
+  return norm;
+}
 
-  // --------- PIE ---------
-  doc.font("Helvetica").fontSize(12);
-  doc.text("Dr. Cristóbal Huerta Cortés", marginL, baseY + 52, {
-    align: "center",
-    width: pageW - marginL - marginR,
-  });
-  doc.text("RUT: 14.015.125-4", { align: "center", width: pageW - marginL - marginR });
-  doc.text("Cirujano de Reconstrucción Articular", {
-    align: "center",
-    width: pageW - marginL - marginR,
-  });
-  doc.text("INSTITUTO DE CIRUGIA ARTICULAR", {
-    align: "center",
-    width: pageW - marginL - marginR,
-  });
+/** Si `dolor` menciona “rodilla/hombro/…”, prioriza esas regiones; si no, devuelve todas. */
+function _filtrarRegionesRelevantes(marcadores = {}, dolor = "") {
+  const regiones = Object.keys(marcadores);
+  if (!regiones.length) return {};
+  const d = String(dolor || "").toLowerCase();
+  const hits = regiones.filter((r) => d.includes(r));
+  if (hits.length) {
+    const out = {};
+    for (const r of hits) out[r] = marcadores[r];
+    return out;
+  }
+  return marcadores;
+}
 
-  // --------- DEBUG ---------
-  try {
-    // Lo que llega desde index (buildExamenTextoStrict)
-    const examPreview = (examen || "").slice(0, 80);
-
-    // Lo que está REALMENTE guardado en memoria para ese idPago
-    let examenMem = "";
-    let rawMem = null;
-
-    if (idPago && memoria && typeof memoria.get === "function") {
-      rawMem = memoria.get(`trauma:${idPago}`);
-      if (rawMem) {
-        // AHORA PREFERIMOS SOLO EL STRING FINAL
-        if (typeof rawMem.examen === "string") {
-          examenMem = rawMem.examen;
-        }
+/** Texto legible para el prompt, multi-región y multi-vista. */
+function _marcadoresATexto(mReg = {}) {
+  const bloques = [];
+  for (const [region, vistas] of Object.entries(mReg)) {
+    const sub = [];
+    for (const [vista, arr] of Object.entries(vistas)) {
+      if (Array.isArray(arr) && arr.length) {
+        sub.push(`${_uc(vista)}:\n• ${arr.join("\n• ")}`);
       }
     }
+    if (sub.length)
+      bloques.push(`${_uc(region)} — Puntos marcados\n${sub.join("\n\n")}`);
+  }
+  return bloques.length
+    ? bloques.join("\n\n")
+    : "Sin puntos dolorosos marcados.";
+}
+function _uc(s = "") {
+  return s ? s[0].toUpperCase() + s.slice(1) : s;
+}
 
-    // Log a consola para comparar en backend
-    console.log("DEBUG_PDF_TRAUMA", {
-      idPago,
-      rut,
-      examenFromIndex: examen,
-      examenFromMem: examenMem,
-      rawMem,
-    });
+/** Tips clínicos simples por región (opcional). Amplía aquí para nuevas regiones sin tocar el resto. */
+function _tipsDesdeMarcadores(mReg = {}) {
+  const tips = [];
+  for (const [region, obj] of Object.entries(mReg)) {
+    if (region === "rodilla") tips.push(..._tipsRodilla(obj));
+    if (region === "hombro") tips.push(..._tipsHombro(obj));
+    // if (region === "codo") tips.push(..._tipsCodo(obj)); // futuro
+  }
+  return tips;
+}
+function _flat(obj = {}) {
+  const out = [];
+  for (const v of Object.values(obj)) if (Array.isArray(v)) out.push(...v);
+  return out.map((s) => String(s || "").toLowerCase());
+}
+function _tipsRodilla(obj = {}) {
+  const t = _flat(obj),
+    has = (rx) => t.some((x) => rx.test(x));
+  const arr = [];
+  if (has(/\binterl[ií]nea?\s+medial\b/))
+    arr.push("Interlínea medial → sospecha menisco medial.");
+  if (has(/\binterl[ií]nea?\s+lateral\b/))
+    arr.push("Interlínea lateral → sospecha menisco lateral.");
+  if (has(/\b(r[óo]tula|patelar|patelofemoral|ap(e|é)x)\b/))
+    arr.push("Dolor patelofemoral → síndrome PF/condropatía.");
+  if (has(/\btuberosidad\s+tibial\b/))
+    arr.push("Tuberosidad tibial → Osgood–Schlatter / tendón rotuliano.");
+  if (has(/\b(pes\s+anserin[oó]|pata\s+de\s+ganso)\b/))
+    arr.push("Pes anserino → tendinopatía/bursitis anserina.");
+  if (has(/\b(gerdy|banda\s+ilio?tibial|tracto\s+ilio?tibial)\b/))
+    arr.push("Banda ITB/Gerdy → síndrome banda ITB.");
+  if (has(/\bpopl[ií]tea?\b/))
+    arr.push("Fosa poplítea → evaluar quiste de Baker.");
+  return arr;
+}
+function _tipsHombro(obj = {}) {
+  const t = _flat(obj),
+    has = (rx) => t.some((x) => rx.test(x));
+  const arr = [];
+  if (has(/\b(subacromial|acromion|bursa\s*subacromial)\b/))
+    arr.push("Dolor subacromial → síndrome subacromial / supraespinoso.");
+  if (has(/\b(tub[eé]rculo\s*mayor|footprint|troquiter)\b/))
+    arr.push(
+      "Tubérculo mayor → tendinopatía del manguito (supra/infra)."
+    );
+  if (has(/\b(surco\s*bicipital|bicipital|porci[oó]n\s*larga\s*del\s*b[ií]ceps)\b/))
+    arr.push(
+      "Surco bicipital → tendinopatía de la porción larga del bíceps."
+    );
+  if (has(/\b(acromioclavicular|acromio\-?clavicular|ac)\b/))
+    arr.push("Dolor AC → artropatía acromioclavicular.");
+  if (has(/\b(posterosuperior|labrum\s*superior|slap)\b/))
+    arr.push(
+      "Dolor posterosuperior → considerar lesión labral (SLAP)."
+    );
+  return arr;
+}
 
-    doc.moveDown(1);
-    doc
-      .fontSize(8)
-      .fillColor("#666")
-      .text(`DEBUG: id=${idPago || "-"} | rut=${rut || "-"} | examenIDX=${examPreview}`)
-      .text(`DEBUG_MEM: ${(examenMem || "").slice(0, 80)}`);
-    doc.fillColor("black");
-  } catch {}
+/* ============================================================
+   === Normalización de examen y fallback                    ===
+   ============================================================ */
+
+function normalizarExamen(examen = "", dolor = "", lado = "") {
+  let x = String(examen || "").trim();
+  if (!x) return "";
+  x = x.toUpperCase();
+  if (!x.endsWith(".")) x += ".";
+
+  // Lateralidad cuando aplica
+  const L = (lado || "").toUpperCase();
+  const lat = L ? ` ${L}` : "";
+  if (
+    /\b(CADERA|RODILLA|HOMBRO|TOBILLO|PIERNA|BRAZO|CODO|MUÑECA|MANO|PIE)\b/.test(
+      x
+    ) &&
+    lat &&
+    !/\b(IZQUIERDA|DERECHA)\b/.test(x)
+  ) {
+    x = x.replace(/\.$/, "") + lat + ".";
+  }
+
+  // Estandariza ECO partes blandas con zona
+  if (/ECOGRAF[ÍI]A.*PARTES\s+BLANDAS/.test(x) && !/\bDE\b/.test(x)) {
+    const zona = (dolor || "").toUpperCase();
+    if (zona && !/COLUMNA/.test(zona)) {
+      x = `ECOGRAFÍA DE PARTES BLANDAS DE ${zona}${lat}.`.toUpperCase();
+    }
+  }
+  return x;
+}
+
+// ✅ Redefinido: usa tu fallback específico y elimina el genérico “EVALUACIÓN IMAGENOLÓGICA…”
+function fallbackHeuristico(p = {}) {
+  const { diagnostico, examen, justificacion } = fallbackTrauma(p);
+  return { diagnostico, examen, justificacion };
+}
+
+/* ============================================================
+   === Prompt tipo chat (estricto: 1 Dx y 1 Examen)          ===
+   ============================================================ */
+
+const SYSTEM_PROMPT_TXT = `
+Eres un asistente clínico de TRAUMATOLOGÍA para pre-orientación.
+Objetivo: redactar una NOTA BREVE centrada en EXÁMENES a solicitar.
+
+Reglas (ESTRICTAS):
+- Español claro. Extensión total: 140–170 palabras.
+- NO es diagnóstico definitivo ni tratamiento. No prescribas fármacos.
+- Evita alarmismo. Usa condicionales (“podría sugerir”, “compatible con”).
+- Prioriza IMAGENOLOGÍA. Si corresponde, sugiere ECOGRAFÍA en lesiones de partes blandas (p. ej., hombro/codo/mano en pacientes jóvenes).
+- Si hay lateralidad (Derecha/Izquierda), inclúyela explícitamente en el examen.
+- Integra PUNTOS DOLOROSOS si existen; la explicación debe referirse a ellos cuando estén presentes.
+- **EXACTAMENTE 1** diagnóstico presuntivo.
+- **EXACTAMENTE 1** examen sugerido.
+- No repitas identificadores del paciente.
+
+Formato EXACTO (mantén títulos y viñetas tal cual):
+Diagnóstico presuntivo:
+• (una sola entidad clínica específica a la zona)
+
+Explicación breve:
+• (≈60–100 palabras, 1–3 frases que justifiquen el enfoque y el porqué del examen; referencia a los puntos dolorosos si existen)
+
+Exámenes sugeridos:
+• (UN SOLO EXAMEN — incluir lateralidad si aplica)
+
+Indicaciones:
+• Presentarse con la orden; ayuno solo si el examen lo solicita.
+• Acudir a evaluación presencial con el/la especialista sugerido/a.
+
+Devuelve SOLO el texto en este formato (sin comentarios adicionales).
+`.trim();
+
+function construirMensajeUsuarioTXT(p) {
+  const info = {
+    nombre: p?.nombre || "",
+    rut: p?.rut || "",
+    edad: p?.edad || "",
+    genero: p?.genero || "",
+    dolor: p?.dolor || "",
+    lado: p?.lado || "",
+  };
+
+  const marc = p?.detalles?.marcadores || {};
+  const puntosTxt = _marcadoresATexto(marc);
+  const tipsArr = _tipsDesdeMarcadores(marc);
+  const tipsTxt = tipsArr.length
+    ? `\n\nTips clínicos:\n• ${tipsArr.join("\n• ")}`
+    : "";
+
+  return (
+    `Edad: ${info.edad || "—"}\n` +
+    (info.genero ? `Género: ${info.genero}\n` : "") +
+    (info.dolor
+      ? `Región de dolor: ${info.dolor}${
+          info.lado ? ` (${info.lado})` : ""
+        }\n`
+      : "") +
+    `Puntos dolorosos marcados:\n${puntosTxt}${tipsTxt}\n\n` +
+    `Redacta EXACTAMENTE con el formato solicitado y el carácter ESTRICTO de 1 diagnóstico y 1 examen.`
+  );
+}
+
+/* ============================================================
+   === Llamada a la IA y parsing del texto                   ===
+   ============================================================ */
+
+async function llamarIA_Texto(messages) {
+  const key = process.env.OPENAI_API_KEY || "";
+  if (!key) throw new Error("OPENAI_API_KEY no configurada");
+
+  const r = await fetch(OPENAI_API, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${key}`,
+    },
+    body: JSON.stringify({
+      model: MODEL,
+      temperature: 0.35,
+      max_tokens: 520,
+      messages,
+    }),
+  });
+  if (!r.ok) {
+    const raw = await r.text().catch(() => "");
+    throw new Error(`OpenAI ${r.status}: ${raw}`);
+  }
+  const j = await r.json();
+  return (j?.choices?.[0]?.message?.content || "").trim();
+}
+
+/** Extrae secciones del texto estructurado; devuelve 1 Dx y 1 Examen (si hay más, toma el primero) */
+function parseSecciones(text = "") {
+  const out = { diagnostico: "", explicacion: "", examen: "" };
+  if (!text) return out;
+
+  // Diagnóstico presuntivo (primer bullet)
+  const secDx =
+    /Diagn[oó]stico presuntivo:\s*([\s\S]*?)(?:\n\s*Explicaci[oó]n breve:|$)/i.exec(
+      text
+    );
+  if (secDx) {
+    const block = secDx[1] || "";
+    const bullets = block
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .map((l) => (/^[•\-\*]\s*(.+)$/.exec(l)?.[1] || l).trim())
+      .filter(Boolean);
+    out.diagnostico = bullets[0] || "";
+  }
+
+  // Explicación breve (consolidada)
+  const secExp =
+    /Explicaci[oó]n breve:\s*([\s\S]*?)(?:\n\s*Ex[aá]menes sugeridos:|$)/i.exec(
+      text
+    );
+  if (secExp) {
+    const block = secExp[1] || "";
+    const bullets = block
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .map((l) => (/^[•\-\*]\s*(.+)$/.exec(l)?.[1] || l).trim())
+      .filter(Boolean);
+    out.explicacion = bullets.join(" ").replace(/\s+/g, " ").trim();
+  }
+
+  // Exámenes sugeridos (primer bullet)
+  const secEx =
+    /Ex[aá]men(?:es)? sugeridos?:\s*([\s\S]*?)(?:\n\s*Indicaciones:|$)/i.exec(
+      text
+    );
+  if (secEx) {
+    const block = secEx[1] || "";
+    const bullets = block
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .map((l) => (/^[•\-\*]\s*(.+)$/.exec(l)?.[1] || l).trim())
+      .map((l) => l.replace(/\s*\.\s*$/, ".")) // normaliza punto final
+      .filter(Boolean);
+    out.examen = bullets[0] || "";
+  }
+
+  return out;
+}
+
+/* ============================================================
+   === Handler principal (export)                             ===
+   ============================================================ */
+
+export default function traumaIAHandler(memoria) {
+  const ns = (s, id) => `${s}:${id}`;
+
+  return async (req, res) => {
+    try {
+      const {
+        idPago,
+        paciente: pacienteBody = {},
+        detalles: detallesBody = null,
+        traumaJSON = null, // ← NUEVO: soporte para payload unificado
+      } = req.body || {};
+
+      if (!idPago)
+        return res
+          .status(400)
+          .json({ ok: false, error: "Falta idPago" });
+
+      let paciente = pacienteBody;
+      let detallesAll = detallesBody || {};
+      let marcadoresAll = _leerMarcadoresDesdeBody(req.body);
+
+      // Si viene traumaJSON (nuevo flujo), lo usamos como fuente principal
+      if (traumaJSON && typeof traumaJSON === "object") {
+        const pacTJ = traumaJSON.paciente || {};
+        paciente = { ...paciente, ...pacTJ };
+
+        const marcTJ = traumaJSON.marcadores || {};
+        if (marcTJ && Object.keys(marcTJ).length > 0) {
+          marcadoresAll = marcTJ;
+        }
+
+        const marcadoresRelevTJ = _filtrarRegionesRelevantes(
+          marcadoresAll,
+          pacTJ.dolor || paciente.dolor
+        );
+
+        detallesAll = {
+          ...detallesAll,
+          marcadores: marcadoresRelevTJ,
+          resonancia: traumaJSON.resonancia || null,
+        };
+      } else {
+        // Flujo antiguo (sin traumaJSON)
+        const marcadoresRelev = _filtrarRegionesRelevantes(
+          marcadoresAll,
+          paciente?.dolor
+        );
+        detallesAll = { ...detallesAll, marcadores: marcadoresRelev };
+      }
+
+      const p = { ...paciente, detalles: detallesAll };
+
+      // ===== IA con prompt estricto (texto)
+      let out;
+      let textoIA = ""; // ← guardamos texto bruto IA para debug
+
+      try {
+        const messages = [
+          { role: "system", content: SYSTEM_PROMPT_TXT },
+          { role: "user", content: construirMensajeUsuarioTXT(p) },
+        ];
+        textoIA = await llamarIA_Texto(messages);
+        const { diagnostico, explicacion, examen } = parseSecciones(textoIA);
+
+        const diagnosticoOk = String(diagnostico || "").trim();
+        const examenOk = normalizarExamen(
+          String(examen || "").trim(),
+          p?.dolor,
+          p?.lado
+        );
+        const justificacion =
+          explicacion ||
+          "Justificación clínica basada en región y puntos dolorosos.";
+
+        if (!diagnosticoOk || !examenOk) {
+          out = fallbackHeuristico(p);
+        } else {
+          out = { diagnostico: diagnosticoOk, examen: examenOk, justificacion };
+        }
+      } catch {
+        out = fallbackHeuristico(p);
+      }
+
+      // ===== Persistencia mínima (para PDF / retorno)
+      const registro = {
+        ...p,
+        examen: out.examen,
+        examenesIA: [out.examen],
+        diagnosticoIA: out.diagnostico,
+        justificacionIA: out.justificacion,
+        // variable separada para debug posterior en PDF
+        debugIA: {
+          textoBruto: textoIA,
+          diagnostico: out.diagnostico,
+          examen: out.examen,
+          justificacion: out.justificacion,
+        },
+        respuesta: `Diagnóstico presuntivo: ${out.diagnostico}\n\n${out.justificacion}`,
+        pagoConfirmado: true,
+      };
+
+      // ===== DEBUG (similar al PDF) =====
+      try {
+        console.log("DEBUG_IA_TRAUMA", {
+          idPago,
+          paciente: {
+            nombre: p?.nombre,
+            rut: p?.rut,
+            edad: p?.edad,
+            genero: p?.genero,
+            dolor: p?.dolor,
+            lado: p?.lado,
+          },
+          marcadores: p?.detalles?.marcadores || null,
+          resonancia: p?.detalles?.resonancia || null,
+          out,             // { diagnostico, examen, justificacion }
+          textoIA,         // texto bruto devuelto por la IA
+        });
+      } catch {}
+
+      try {
+        // Guarda en espacio "ia:<idPago>" (histórico)
+        memoria?.set?.(ns("ia", idPago), registro);
+
+        // Refleja también en "trauma:<idPago>", que es lo que usa el PDF para debug
+        const prevTrauma = memoria?.get?.(ns("trauma", idPago)) || {};
+        memoria?.set?.(ns("trauma", idPago), {
+          ...prevTrauma,
+          ...registro,
+        });
+
+        memoria?.set?.(ns("meta", idPago), { moduloAutorizado: "ia" });
+      } catch {}
+
+      // ===== Respuesta compatible con tu frontend
+      return res.json({
+        ok: true,
+        diagnostico: out.diagnostico,
+        examenes: [out.examen], // ← exactamente 1 examen
+        justificacion: out.justificacion,
+        informeIA: out.justificacion, // compat (algunos flujos lo usan)
+      });
+    } catch (e) {
+      console.error("ia-trauma error:", e);
+      return res.status(500).json({ ok: false, error: e.message });
+    }
+  };
 }
