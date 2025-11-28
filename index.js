@@ -401,7 +401,7 @@ async function crearPagoHandler(req, res) {
     if (!idPago)
       return res.status(400).json({ ok: false, error: "Falta idPago" });
 
-    // ⬇️ Soporta también el espacio "ia"
+    // Soporta también el espacio "ia"
     const space =
       modulo === "preop" || String(idPago).startsWith("preop_")
         ? "preop"
@@ -528,7 +528,7 @@ async function crearPagoFlowHandler(req, res) {
     if (!idPago)
       return res.status(400).json({ ok: false, error: "Falta idPago" });
 
-    // ⬇️ Soporta también el espacio "ia"
+    // Soporta también el espacio "ia"
     const space =
       modulo === "preop" || String(idPago).startsWith("preop_")
         ? "preop"
@@ -840,7 +840,7 @@ app.post("/guardar-datos-generales", (req, res) => {
     examenesIA, // opcional (array)
     informeIA, // opcional (string)
     nota, // opcional (string)
-  } = req.body || {}>;
+  } = req.body || {};
 
   if (!idPago || !datosPaciente)
     return res
