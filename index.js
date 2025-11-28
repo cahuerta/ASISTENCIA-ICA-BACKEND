@@ -102,6 +102,25 @@ export { memoria };
 const ns = (s, id) => `${s}:${id}`;
 const sanitize = (t) => String(t || "").replace(/[^a-zA-Z0-9_-]+/g, "_");
 
+// ====== MODO GUEST GENERAL (nombre + RUT) ======
+const GUEST_PERFIL = {
+  nombre: "Guest",
+  rut: "11.111.111-1",
+};
+
+function normRut(str) {
+  return String(str || "").replace(/[^0-9kK]/g, "").toUpperCase();
+}
+
+function esGuestPaciente(datos = {}) {
+  const nombreOk =
+    String(datos?.nombre || "")
+      .trim()
+      .toLowerCase() === "guest";
+  const rutOk = normRut(datos?.rut) === normRut(GUEST_PERFIL.rut);
+  return nombreOk && rutOk;
+}
+
 // ===== Carga perezosa de generadores PDF
 let _genTrauma = null;
 async function loadOrdenImagenologia() {
@@ -382,7 +401,7 @@ async function crearPagoHandler(req, res) {
     if (!idPago)
       return res.status(400).json({ ok: false, error: "Falta idPago" });
 
-    // ⬇️ CORRECCIÓN: ahora soporta también el espacio "ia"
+    // ⬇️ Soporta también el espacio "ia"
     const space =
       modulo === "preop" || String(idPago).startsWith("preop_")
         ? "preop"
@@ -439,7 +458,8 @@ async function crearPagoHandler(req, res) {
 
     memoria.set(ns("meta", idPago), { moduloAutorizado: space });
 
-    if (modoGuest === true || KHIPU_MODE === "guest") {
+    // ====== MODO GUEST GENERAL (Khipu): si el paciente es Guest, saltar pago ======
+    if (datosPaciente && esGuestPaciente(datosPaciente)) {
       const url = new URL(RETURN_BASE);
       url.searchParams.set("pago", "ok");
       url.searchParams.set("idPago", idPago);
@@ -508,7 +528,7 @@ async function crearPagoFlowHandler(req, res) {
     if (!idPago)
       return res.status(400).json({ ok: false, error: "Falta idPago" });
 
-    // ⬇️ CORRECCIÓN: ahora soporta también el espacio "ia"
+    // ⬇️ Soporta también el espacio "ia"
     const space =
       modulo === "preop" || String(idPago).startsWith("preop_")
         ? "preop"
@@ -562,8 +582,8 @@ async function crearPagoFlowHandler(req, res) {
 
     memoria.set(ns("meta", idPago), { moduloAutorizado: space });
 
-    // Guest → saltarse Flow y volver como pagado
-    if (modoGuest === true) {
+    // ====== MODO GUEST GENERAL (Flow): si el paciente es Guest, saltar Flow ======
+    if (datosPaciente && esGuestPaciente(datosPaciente)) {
       const url = new URL(RETURN_BASE);
       url.searchParams.set("pago", "ok");
       url.searchParams.set("idPago", idPago);
@@ -820,7 +840,7 @@ app.post("/guardar-datos-generales", (req, res) => {
     examenesIA, // opcional (array)
     informeIA, // opcional (string)
     nota, // opcional (string)
-  } = req.body || {};
+  } = req.body || {}>;
 
   if (!idPago || !datosPaciente)
     return res
