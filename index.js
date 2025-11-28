@@ -152,7 +152,7 @@ const getBackendBase = (req) =>
 function pickFromSpaces(memoria, idPago) {
   const spaces = ["ia", "trauma", "preop", "generales"];
   for (const s of spaces) {
-    const v = memoria.get(`${s}:${idPago}`);
+    const v = memoria.get(ns(s, idPago));
     if (v) return { space: s, data: { ...v } };
   }
   return { space: null, data: null };
@@ -675,7 +675,6 @@ app.delete("/reset/:idPago", (req, res) => {
     return res.status(400).json({ ok: false, error: "Falta idPago" });
 
   // sanity: aceptar solo id alfanumérico con _ y -
-//=========
   if (!/^[a-zA-Z0-9_\-]+$/.test(idPago)) {
     return res.status(400).json({ ok: false, error: "idPago inválido" });
   }
@@ -879,6 +878,166 @@ app.get("/pdf-generales/:idPago", async (req, res) => {
 });
 
 // =====================================================
+// ============   IA MÓDULO PRINCIPAL  =================
+// =====================================================
+
+// Guarda IA (preview + marcadores + RM).
+// Soporta tanto un JSON grande (iaJSON) como el formato plano actual de IAModulo.
+app.post("/api/guardar-datos-ia", (req, res) => {
+  try {
+    const {
+      idPago,
+      iaJSON,
+      datosPaciente,
+      examen,
+      marcadores,
+      rodillaMarcadores,
+      manoMarcadores,
+      hombroMarcadores,
+      codoMarcadores,
+      tobilloMarcadores,
+      caderaMarcadores,
+      resonanciaChecklist,
+      resonanciaResumenTexto,
+      ordenAlternativa,
+      pagoConfirmado,
+    } = req.body || {};
+
+    if (!idPago) {
+      return res.status(400).json({ ok: false, error: "Falta idPago" });
+    }
+
+    const prev = memoria.get(ns("ia", idPago)) || {};
+    const next = { ...prev };
+
+    const mergeField = (key, value) => {
+      if (value === undefined || value === null) return;
+      if (Array.isArray(value) && value.length === 0) return;
+      if (typeof value === "string" && value.trim() === "") return;
+      if (
+        typeof value === "object" &&
+        !Array.isArray(value) &&
+        Object.keys(value).length === 0
+      )
+        return;
+      next[key] = value;
+    };
+
+    // --- Forma JSON grande (similar a traumaJSON) ---
+    if (iaJSON && typeof iaJSON === "object") {
+      const {
+        paciente = {},
+        consulta,
+        informeIA,
+        examenes,
+        examenesIA,
+        nota,
+        observaciones,
+        marcadores: iaMarcadores = {},
+        resonancia = {},
+      } = iaJSON;
+
+      if (paciente && typeof paciente === "object") {
+        next.paciente = { ...(next.paciente || {}), ...paciente };
+        mergeField("nombre", paciente.nombre);
+        mergeField("rut", paciente.rut);
+        mergeField("edad", paciente.edad);
+        mergeField("genero", paciente.genero);
+        mergeField("dolor", paciente.dolor);
+        mergeField("lado", paciente.lado);
+      }
+
+      mergeField("consulta", consulta);
+      mergeField("informeIA", informeIA);
+      mergeField("nota", nota);
+      mergeField("observaciones", observaciones);
+
+      if (Array.isArray(examenes) && examenes.length > 0) {
+        mergeField("examenes", examenes);
+      }
+      if (Array.isArray(examenesIA) && examenesIA.length > 0) {
+        mergeField("examenesIA", examenesIA);
+        if (!Array.isArray(next.examenes) || next.examenes.length === 0) {
+          next.examenes = examenesIA.slice();
+        }
+      }
+
+      if (iaMarcadores && typeof iaMarcadores === "object") {
+        next.marcadores = { ...(next.marcadores || {}), ...iaMarcadores };
+        mergeField("rodillaMarcadores", iaMarcadores.rodilla);
+        mergeField("manoMarcadores", iaMarcadores.mano);
+        mergeField("hombroMarcadores", iaMarcadores.hombro);
+        mergeField("codoMarcadores", iaMarcadores.codo);
+        mergeField("tobilloMarcadores", iaMarcadores.tobillo);
+        mergeField("caderaMarcadores", iaMarcadores.cadera);
+      }
+
+      if (resonancia && typeof resonancia === "object") {
+        if (resonancia.checklist) mergeField("rmForm", resonancia.checklist);
+        if (resonancia.resumenTexto)
+          mergeField("rmObservaciones", resonancia.resumenTexto);
+        if (resonancia.ordenAlternativa)
+          mergeField("ordenAlternativa", resonancia.ordenAlternativa);
+      }
+
+      next.iaJSON = iaJSON; // debug
+    }
+
+    // --- Forma plana actual de IAModulo ---
+    if (datosPaciente && typeof datosPaciente === "object") {
+      for (const [k, v] of Object.entries(datosPaciente)) {
+        mergeField(k, v);
+      }
+    }
+
+    if (typeof examen === "string" && examen.trim()) {
+      mergeField("examen", examen.trim());
+    }
+
+    if (marcadores && typeof marcadores === "object") {
+      next.marcadores = { ...(next.marcadores || {}), ...marcadores };
+      mergeField("rodillaMarcadores", marcadores.rodilla);
+      mergeField("manoMarcadores", marcadores.mano);
+      mergeField("hombroMarcadores", marcadores.hombro);
+      mergeField("codoMarcadores", marcadores.codo);
+      mergeField("tobilloMarcadores", marcadores.tobillo);
+      mergeField("caderaMarcadores", marcadores.cadera);
+    }
+
+    mergeField("rodillaMarcadores", rodillaMarcadores);
+    mergeField("manoMarcadores", manoMarcadores);
+    mergeField("hombroMarcadores", hombroMarcadores);
+    mergeField("codoMarcadores", codoMarcadores);
+    mergeField("tobilloMarcadores", tobilloMarcadores);
+    mergeField("caderaMarcadores", caderaMarcadores);
+
+    if (resonanciaChecklist) mergeField("rmForm", resonanciaChecklist);
+    if (typeof resonanciaResumenTexto === "string")
+      mergeField("rmObservaciones", resonanciaResumenTexto);
+    if (ordenAlternativa) mergeField("ordenAlternativa", ordenAlternativa);
+
+    // Marcamos pagoConfirmado si viene explícito o si ya estaba
+    if (pagoConfirmado === true || prev.pagoConfirmado) {
+      next.pagoConfirmado = true;
+    }
+
+    memoria.set(ns("ia", idPago), next);
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error("api/guardar-datos-ia error:", e);
+    return res
+      .status(500)
+      .json({ ok: false, error: "No se pudo guardar datos IA" });
+  }
+});
+
+app.get("/api/obtener-datos-ia/:idPago", (req, res) => {
+  const d = memoria.get(ns("ia", req.params.idPago));
+  if (!d) return res.status(404).json({ ok: false });
+  return res.json({ ok: true, datos: d });
+});
+
+// =====================================================
 // ============   ORDEN DESDE IA (solo lectura) ========
 // =====================================================
 
@@ -934,7 +1093,7 @@ app.post("/guardar-rm", (req, res) => {
     let foundSpace = null;
     let base = null;
     for (const s of spaces) {
-      const v = memoria.get(`${s}:${idPago}`);
+      const v = memoria.get(ns(s, idPago));
       if (v) {
         foundSpace = s;
         base = v;
@@ -971,7 +1130,7 @@ app.post("/guardar-rm", (req, res) => {
       return res.json({ ok: true, skipped: true });
     }
 
-    memoria.set(`${foundSpace}:${idPago}`, { ...base, ...patch });
+    memoria.set(ns(foundSpace, idPago), { ...base, ...patch });
     return res.json({ ok: true });
   } catch (e) {
     console.error("guardar-rm error:", e);
