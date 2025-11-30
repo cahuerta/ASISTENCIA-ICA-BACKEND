@@ -1070,7 +1070,6 @@ app.get("/api/pdf-ia-orden/:idPago", async (req, res) => {
 
     const d = memoria.get(ns("ia", id));
     if (!d) return res.sendStatus(404);
-    if (!d.pagoConfirmado) return res.sendStatus(402);
 
     const generar = await loadOrdenImagenologia();
 
