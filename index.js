@@ -130,6 +130,15 @@ async function loadOrdenImagenologia() {
   return _genTrauma;
 }
 
+// *** NUEVO: generador de orden IA separado ***
+let _genIAOrden = null;
+async function loadIAOrdenImagenologia() {
+  if (_genIAOrden) return _genIAOrden;
+  const m = await import("./iaOrdenImagenologia.js");
+  _genIAOrden = m.generarOrdenImagenologiaIA;
+  return _genIAOrden;
+}
+
 let _genPreopLab = null,
   _genPreopOdonto = null;
 async function loadPreop() {
@@ -337,8 +346,7 @@ app.post("/guardar-datos", (req, res) => {
       // (compatibilidad con TraumaModulo actual)
       ...(resonanciaChecklist ? { rmForm: resonanciaChecklist } : null),
       ...(resonanciaResumenTexto
-        ? { rmObservaciones: resonanciaResumenTexto }
-        : null),
+        ? { rmObservaciones: resonanciaResumenTexto } : null),
       ...(ordenAlternativa ? { ordenAlternativa } : null),
       // Marcadores
       marcadores,
@@ -1061,7 +1069,7 @@ app.get("/api/obtener-datos-ia/:idPago", (req, res) => {
 // ============   ORDEN DESDE IA (solo lectura) ========
 // =====================================================
 
-// PDF IA (orden) — solo lee lo guardado por módulos IA/trauma/etc.
+// PDF IA (orden) — solo lee lo guardado por módulos IA.
 app.get("/api/pdf-ia-orden/:idPago", async (req, res) => {
   try {
     const id = req.params.idPago;
@@ -1071,12 +1079,14 @@ app.get("/api/pdf-ia-orden/:idPago", async (req, res) => {
     const d = memoria.get(ns("ia", id));
     if (!d) return res.sendStatus(404);
 
-    const generar = await loadOrdenImagenologia();
+    // *** AHORA USAMOS EL GENERADOR ESPECÍFICO DE IA ***
+    const generar = await loadIAOrdenImagenologia();
 
     const examen = buildExamenTextoStrict(d); // solo lo guardado
     const nota = buildNotaStrict(d); // solo lo guardado
 
-    const datosParaOrden = { ...d, examen, nota };
+    // incluimos idPago para debug en el PDF IA
+    const datosParaOrden = { ...d, examen, nota, idPago: id };
 
     const filename = `ordenIA_${sanitize(d.nombre || "paciente")}.pdf`;
     res.setHeader("Content-Type", "application/pdf");
