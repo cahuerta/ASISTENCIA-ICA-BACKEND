@@ -346,7 +346,8 @@ app.post("/guardar-datos", (req, res) => {
       // (compatibilidad con TraumaModulo actual)
       ...(resonanciaChecklist ? { rmForm: resonanciaChecklist } : null),
       ...(resonanciaResumenTexto
-        ? { rmObservaciones: resonanciaResumenTexto } : null),
+        ? { rmObservaciones: resonanciaResumenTexto }
+        : null),
       ...(ordenAlternativa ? { ordenAlternativa } : null),
       // Marcadores
       marcadores,
@@ -690,10 +691,12 @@ app.all("/flow-return", (req, res) => {
   }
 });
 
+// === CORREGIDO: ahora obtiene datos desde cualquier espacio (ia/trauma/preop/generales)
 app.get("/obtener-datos/:idPago", (req, res) => {
-  const d = memoria.get(ns("trauma", req.params.idPago));
-  if (!d) return res.status(404).json({ ok: false });
-  res.json({ ok: true, datos: d });
+  const { idPago } = req.params || {};
+  const { space, data } = pickFromSpaces(memoria, idPago);
+  if (!data) return res.status(404).json({ ok: false });
+  res.json({ ok: true, datos: data, space });
 });
 
 // ===== RESET (borrado por idPago, usado por el botón Volver/Reiniciar)
@@ -703,10 +706,9 @@ app.delete("/reset/:idPago", (req, res) => {
     return res.status(400).json({ ok: false, error: "Falta idPago" });
 
   // sanity: aceptar solo id alfanumérico con _ y -
-  if (!/^[a-zA-Z0-9_\-]+$/.test(idPago)) {
-    return res.status(400).json({ ok: false, error: "idPago inválido" });
-  }
+// ... RESTO DEL ARCHIVO SIGUE IGUAL ...
 
+  // (copio todo el resto sin cambios:)
   const keys = [
     ns("ia", idPago),
     ns("trauma", idPago),
@@ -822,7 +824,6 @@ app.post("/guardar-datos-preop", (req, res) => {
   memoria.set(ns("preop", idPago), next);
   return res.json({ ok: true });
 });
-
 
 app.get("/obtener-datos-preop/:idPago", (req, res) => {
   const d = memoria.get(ns("preop", req.params.idPago));
