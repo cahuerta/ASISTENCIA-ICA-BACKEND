@@ -1,4 +1,4 @@
-// generalesOrden.js  (ESM) — VERSIÓN DEBUG COMPLETA
+// generalesOrden.js  (ESM) — VERSIÓN LIMPIA QUE SOLO USA LO QUE LE ENTREGAN
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -18,28 +18,6 @@ function safeJson(obj, maxLen = 1000) {
   } catch {
     return "[no se pudo serializar]";
   }
-}
-
-function buildGeneralesList(generoRaw = '') {
-  const genero = String(generoRaw || '').trim().toLowerCase();
-
-  if (genero === 'hombre') {
-    const base = PREOP_BASE.filter((x) => x !== 'UROCULTIVO');
-    return [...base, 'PERFIL HEPÁTICO', 'ANTÍGENO PROSTÁTICO', 'CEA'];
-  }
-
-  if (genero === 'mujer') {
-    return [
-      ...PREOP_BASE,
-      'PERFIL HEPÁTICO',
-      'MAMOGRAFÍA',
-      'TSHm y T4 LIBRE',
-      'CALCIO',
-      'PAPANICOLAO (según edad)',
-    ];
-  }
-
-  return PREOP_BASE;
 }
 
 function drawBulletList(doc, items = [], opts = {}) {
@@ -120,6 +98,13 @@ function dibujarFirmaTimbre(doc) {
    ==================== ORDEN GENERALES =================
    ====================================================== */
 
+/**
+ * ⚠️ ESTA VERSIÓN:
+ * - NO genera base de exámenes
+ * - NO usa PREOP_BASE
+ * - NO inventa exámenes según género
+ * - SOLO imprime examenesIA tal como vienen desde el backend
+ */
 export function generarOrdenGenerales(doc, datos = {}) {
   const { nombre, edad, rut, genero, examenesIA, informeIA, idPago } = datos;
 
@@ -144,9 +129,8 @@ export function generarOrdenGenerales(doc, datos = {}) {
   doc.text(`Edad: ${edad ?? ''}`);     doc.moveDown(0.6);
   doc.text(`Género: ${genero ?? ''}`); doc.moveDown(1.6);
 
-  /* ========= LISTA DE EXÁMENES ========= */
-  const listaIA = Array.isArray(examenesIA) ? examenesIA.filter(Boolean) : [];
-  const lista = listaIA.length > 0 ? listaIA : buildGeneralesList(genero);
+  /* ========= LISTA DE EXÁMENES (SOLO LOS RECIBIDOS) ========= */
+  const lista = Array.isArray(examenesIA) ? examenesIA.filter(Boolean) : [];
 
   const W = doc.page.width - doc.page.margins.left - doc.page.margins.right;
 
@@ -185,11 +169,9 @@ export function generarOrdenGenerales(doc, datos = {}) {
     doc.fillColor("black");
   } catch {}
 
-
   /* ======================================================
      ===================== PÁGINA 2 DEBUG ==================
      ====================================================== */
-
   try {
     doc.addPage();
 
@@ -210,7 +192,6 @@ export function generarOrdenGenerales(doc, datos = {}) {
     doc.moveDown(0.2);
     doc.text(safeJson(debugFront));
 
-
     /* 2) MEMORIA generales:idPago */
     let snapGen = null;
     if (idPago && memoria?.get) snapGen = memoria.get(`generales:${idPago}`) || null;
@@ -219,7 +200,6 @@ export function generarOrdenGenerales(doc, datos = {}) {
     doc.font("Helvetica-Bold").text("2) MEMORIA generales:idPago:");
     doc.moveDown(0.2);
     doc.font("Helvetica").text(safeJson(snapGen));
-
 
     /* 3) IA debug */
     const snapIA =
