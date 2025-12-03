@@ -1,30 +1,30 @@
-// preopOrdenLab.js (ESM)
+// preopOrdenLab.js (ESM) — VERSIÓN DEBUG COMPLETA
 import PDFDocument from "pdfkit";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import { memoria } from "./index.js"; // ← leer memoria directa por idPago
 
-// __dirname para ES Modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-/**
- * Normaliza una lista vinda del backend (IA) para el PDF.
- * Acepta array de strings o de objetos { nombre } y devuelve
- * solo strings no vacíos.
- *
- * La idea es: lo que venga en `examenesIA` ya está validado en preopIA.js,
- * aquí solo lo formateamos para mostrarlo.
- */
+/* Helper seguro para debug de objetos grandes */
+function safeJson(obj, maxLen = 1000) {
+  try {
+    const s = JSON.stringify(obj ?? null, null, 2);
+    return s.length > maxLen ? s.slice(0, maxLen) + "...[truncado]" : s;
+  } catch {
+    return "[no se pudo serializar]";
+  }
+}
+
+/* Normaliza lista IA para PDF */
 function normalizarListaDesdeIA(lista) {
   if (!Array.isArray(lista)) return [];
-  const out = [];
-  for (const it of lista) {
-    const raw = typeof it === "string" ? it : (it && it.nombre) || "";
-    const name = String(raw).trim();
-    if (name) out.push(name);
-  }
-  return out;
+  return lista
+    .map((it) => (typeof it === "string" ? it : it?.nombre || ""))
+    .map((s) => String(s).trim())
+    .filter(Boolean);
 }
 
 export function generarOrdenPreopLab(doc, datos = {}) {
@@ -34,31 +34,32 @@ export function generarOrdenPreopLab(doc, datos = {}) {
     edad,
     dolor,
     lado,
+    tipoCirugia,
+    examenesIA,
     nota,
-    tipoCirugia, // <-- puede venir del flujo nuevo
-    examenesIA,  // <-- lista devuelta por IA
+    idPago,
   } = datos || {};
 
-  // —— ENCABEZADO ——
+  /* ================= ENCABEZADO ================= */
   try {
     const logoPath = path.join(__dirname, "assets", "ica.jpg");
     if (fs.existsSync(logoPath)) doc.image(logoPath, 50, 40, { width: 120 });
   } catch {}
+
   doc.moveDown(1.5);
-  doc
-    .font("Helvetica-Bold")
-    .fontSize(18)
+  doc.font("Helvetica-Bold").fontSize(18)
     .text("INSTITUTO DE CIRUGÍA ARTICULAR", 180, 50);
+
   doc.moveDown(1.5);
-  doc
-    .fontSize(16)
+  doc.fontSize(16)
     .text("Orden Preoperatoria – Laboratorio y ECG", 180, undefined, {
       underline: true,
     });
+
   doc.moveDown(4);
   doc.x = doc.page.margins.left;
 
-  // —— PACIENTE ——
+  /* ================= PACIENTE ================= */
   const sintomas = `${dolor ?? ""} ${lado ?? ""}`.trim();
   doc.font("Helvetica").fontSize(14);
   doc.text(`Nombre: ${nombre ?? ""}`);
@@ -74,7 +75,7 @@ export function generarOrdenPreopLab(doc, datos = {}) {
   doc.text(`Descripción de síntomas: ${sintomas || "—"}`);
   doc.moveDown(2);
 
-  // —— EXÁMENES (solo IA) ——
+  /* ================= EXÁMENES ================= */
   const listaExamenes = normalizarListaDesdeIA(examenesIA);
 
   doc.font("Helvetica-Bold").text("Solicito los siguientes exámenes:");
@@ -89,13 +90,12 @@ export function generarOrdenPreopLab(doc, datos = {}) {
 
   doc.moveDown(3);
 
-  // Nota opcional
   if (nota) {
     doc.font("Helvetica-Oblique").fontSize(11).text(nota);
     doc.moveDown(2);
   }
 
-  // —— PIE: FIRMA + TIMBRE ——
+  /* ================= PIE: FIRMA ================= */
   const pageW = doc.page.width;
   const pageH = doc.page.height;
   const marginL = doc.page.margins.left || 50;
@@ -112,20 +112,20 @@ export function generarOrdenPreopLab(doc, datos = {}) {
     width: pageW - marginL - marginR,
   });
 
-  const firmaW = 250;
-  const firmaX = (pageW - firmaW) / 2;
-  const firmaY = baseY - 45;
-
+  /* Firma */
   try {
     const firmaPath = path.join(__dirname, "assets", "FIRMA.png");
-    if (fs.existsSync(firmaPath)) doc.image(firmaPath, firmaX, firmaY, { width: firmaW });
+    if (fs.existsSync(firmaPath))
+      doc.image(firmaPath, (pageW - 250) / 2, baseY - 45, { width: 250 });
   } catch {}
+
+  /* Timbre */
   try {
     const timbrePath = path.join(__dirname, "assets", "timbre.jpg");
     if (fs.existsSync(timbrePath)) {
-      const timbreW = 110,
-        timbreX = firmaX + firmaW,
-        timbreY = firmaY - 20;
+      const timbreW = 110;
+      const timbreX = (pageW - 250) / 2 + 250;
+      const timbreY = baseY - 65;
       doc.save();
       doc.rotate(20, {
         origin: [timbreX + timbreW / 2, timbreY + timbreW / 2],
@@ -152,4 +152,93 @@ export function generarOrdenPreopLab(doc, datos = {}) {
     align: "center",
     width: pageW - marginL - marginR,
   });
+
+  /* ======================================================
+     ========= DEBUG FOOTER PÁGINA 1 (RESUMIDO) ============
+     ====================================================== */
+  try {
+    // Lo que está realmente en memoria preop:idPago
+    let memPreop = null;
+    if (idPago && memoria && typeof memoria.get === "function") {
+      memPreop = memoria.get(`preop:${idPago}`) || null;
+    }
+
+    const exFront = (examenesIA || []).join(" | ");
+    const exMem = (memPreop?.examenesIA || []).join(" | ");
+
+    console.log("DEBUG_PDF_PREOP", {
+      idPago,
+      examenesFront: examenesIA,
+      examenesMem: memPreop?.examenesIA,
+      memPreop,
+    });
+
+    doc.moveDown(1.5);
+    doc.fontSize(8).fillColor("#666");
+    doc.text(`DEBUG(1/2): id=${idPago || "-"} | front=[${exFront}]`);
+    doc.text(
+      `DEBUG_MEM_EXAMENES: ${String(exMem || "").slice(0, 150)}`
+    );
+    doc.fillColor("black");
+  } catch {}
+
+
+  /* ======================================================
+     ================ PÁGINA 2: DEBUG COMPLETO =============
+     ====================================================== */
+  try {
+    doc.addPage();
+    doc.font("Helvetica-Bold").fontSize(14).text("DEBUG ORDEN PREOP / IA", {
+      align: "left",
+    });
+
+    doc.moveDown(0.8);
+    doc.font("Helvetica").fontSize(10);
+
+    // 1) Payload desde index.js
+    const debugPayloadFront = {
+      idPago,
+      nombre,
+      rut,
+      edad,
+      dolor,
+      lado,
+      tipoCirugia,
+      examenesIA,
+      nota,
+    };
+
+    doc.text("1) PAYLOAD DESDE INDEX (datos enviados al PDF):");
+    doc.moveDown(0.2);
+    doc.text(safeJson(debugPayloadFront));
+
+    // 2) Lo que hay realmente en memoria preop:idPago
+    let snapPreop = null;
+    if (idPago && memoria?.get) {
+      snapPreop = memoria.get(`preop:${idPago}`) || null;
+    }
+
+    doc.moveDown(0.8);
+    doc.font("Helvetica-Bold").text(
+      "2) MEMORIA preop:idPago (memoria.get('preop:idPago')):"
+    );
+    doc.moveDown(0.2);
+    doc.font("Helvetica").text(safeJson(snapPreop));
+
+    // 3) IA (si existe debugIA)
+    const snapIA =
+      (snapPreop && snapPreop.debugIA) ||
+      (memoria.get(`ia:${idPago}`) || null);
+
+    doc.moveDown(0.8);
+    doc.font("Helvetica-Bold").text("3) DEBUG IA (respuesta bruta + exámenes):");
+    doc.moveDown(0.2);
+    doc.font("Helvetica").text(
+      safeJson(
+        snapIA || { info: "No se encontró debugIA en memoria. Revisa preopIA.js." }
+      )
+    );
+  } catch (e) {
+    console.error("ERROR_DEBUG_PDF_PREOP", { idPago, error: e?.message });
+  }
 }
