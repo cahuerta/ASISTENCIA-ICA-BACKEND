@@ -169,7 +169,7 @@ Diagnóstico presuntivo:
 Explicación breve:
 • (≈60–100 palabras, 1–3 frases que justifiquen el enfoque y el porqué de los exámenes; referencia a los puntos dolorosos si existen)
 
-Exámenes sugeridos:
+Examenes sugeridos:
 • (EXAMEN 1 — incluir lateralidad si aplica)
 • (EXAMEN 2 — complementario o alternativa razonable; incluir lateralidad si aplica)
 
