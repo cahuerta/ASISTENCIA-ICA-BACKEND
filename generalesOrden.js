@@ -1,46 +1,34 @@
-// generalesOrden.js  (ESM)
+// generalesOrden.js  (ESM) — VERSIÓN DEBUG COMPLETA
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { memoria } from './index.js'; // ← acceso a memoria
 
-// __dirname para ES Modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Base PRE-OP (exacta, en mayúsculas)
-const PREOP_BASE = [
-  'HEMOGRAMA',
-  'VHS',
-  'PCR',
-  'ELECTROLITOS PLASMATICOS',
-  'PERFIL BIOQUIMICO',
-  'PERFIL LIPIDICO',
-  'CREATININA',
-  'TTPK',
-  'HEMOGLOBINA GLICOSILADA',
-  'VITAMINA D',
-  'ORINA',
-  'UROCULTIVO',
-  'ECG DE REPOSO',
-];
+/* ======================================================
+   ========== HELPERS PARA DEBUG Y NORMALIZACIÓN =========
+   ====================================================== */
 
-// Construye lista de “Exámenes generales” según género (fallback si no hay IA)
+function safeJson(obj, maxLen = 1000) {
+  try {
+    const s = JSON.stringify(obj ?? null, null, 2);
+    return s.length > maxLen ? s.slice(0, maxLen) + "...[truncado]" : s;
+  } catch {
+    return "[no se pudo serializar]";
+  }
+}
+
 function buildGeneralesList(generoRaw = '') {
   const genero = String(generoRaw || '').trim().toLowerCase();
 
   if (genero === 'hombre') {
-    // Hombre: mismos PREOP, quitar UROCULTIVO, + PERFIL HEPÁTICO, ANTÍGENO PROSTÁTICO, CEA
     const base = PREOP_BASE.filter((x) => x !== 'UROCULTIVO');
-    return [
-      ...base,
-      'PERFIL HEPÁTICO',
-      'ANTÍGENO PROSTÁTICO',
-      'CEA',
-    ];
+    return [...base, 'PERFIL HEPÁTICO', 'ANTÍGENO PROSTÁTICO', 'CEA'];
   }
 
   if (genero === 'mujer') {
-    // Mujer: mismos PREOP, + PERFIL HEPÁTICO, MAMOGRAFÍA, TSHm y T4 LIBRE, CALCIO, PAPANICOLAO (según edad)
     return [
       ...PREOP_BASE,
       'PERFIL HEPÁTICO',
@@ -51,20 +39,18 @@ function buildGeneralesList(generoRaw = '') {
     ];
   }
 
-  // Sin género → muestra base PREOP (neutral)
   return PREOP_BASE;
 }
 
-// Viñetas alineadas usando PDFKit.list (mejor espaciado y sangrías)
 function drawBulletList(doc, items = [], opts = {}) {
   const {
     bulletRadius = 2.2,
-    bulletIndent = 10, // distancia desde el margen al “bullet”
-    textIndent   = 6,  // sangría adicional del texto respecto al bullet
+    bulletIndent = 10,
+    textIndent   = 6,
     lineGap      = 2,
     font         = 'Helvetica',
     fontSize     = 13,
-    width,             // ancho opcional
+    width,
   } = opts;
 
   const W = width || (doc.page.width - doc.page.margins.left - doc.page.margins.right);
@@ -78,11 +64,9 @@ function drawBulletList(doc, items = [], opts = {}) {
     width: W,
   });
 
-  // Restablece X al margen izquierdo tras la lista
   doc.x = doc.page.margins.left;
 }
 
-// Firma + timbre reutilizable para cada página
 function dibujarFirmaTimbre(doc) {
   const pageW = doc.page.width;
   const pageH = doc.page.height;
@@ -91,8 +75,14 @@ function dibujarFirmaTimbre(doc) {
   const baseY = pageH - 170;
 
   doc.font('Helvetica').fontSize(12);
-  doc.text('_________________________', marginL, baseY, { align: 'center', width: pageW - marginL - marginR });
-  doc.text('Firma y Timbre Médico',   marginL, baseY + 18, { align: 'center', width: pageW - marginL - marginR });
+  doc.text('_________________________', marginL, baseY, {
+    align: 'center',
+    width: pageW - marginL - marginR,
+  });
+  doc.text('Firma y Timbre Médico', marginL, baseY + 18, {
+    align: 'center',
+    width: pageW - marginL - marginR,
+  });
 
   const firmaW = 250;
   const firmaX = (pageW - firmaW) / 2;
@@ -100,12 +90,8 @@ function dibujarFirmaTimbre(doc) {
 
   try {
     const firmaPath = path.join(__dirname, 'assets', 'FIRMA.png');
-    if (fs.existsSync(firmaPath)) {
-      doc.image(firmaPath, firmaX, firmaY, { width: firmaW });
-    }
-  } catch (err) {
-    console.error('Firma error:', err.message);
-  }
+    if (fs.existsSync(firmaPath)) doc.image(firmaPath, firmaX, firmaY, { width: firmaW });
+  } catch {}
 
   try {
     const timbrePath = path.join(__dirname, 'assets', 'timbre.jpg');
@@ -119,103 +105,134 @@ function dibujarFirmaTimbre(doc) {
       doc.image(timbrePath, timbreX, timbreY, { width: timbreW });
       doc.restore();
     }
-  } catch (err) {
-    console.error('Timbre error:', err.message);
-  }
+  } catch {}
 
   doc.font('Helvetica').fontSize(12);
-  doc.text('Dr. Cristóbal Huerta Cortés',      marginL, baseY + 52, { align: 'center', width: pageW - marginL - marginR });
-  doc.text('RUT: 14.015.125-4',                                 { align: 'center', width: pageW - marginL - marginR });
-  doc.text('Cirujano de Reconstrucción Articular',              { align: 'center', width: pageW - marginL - marginR });
-  doc.text('INSTITUTO DE CIRUGIA ARTICULAR',                    { align: 'center', width: pageW - marginL - marginR });
+  doc.text("Dr. Cristóbal Huerta Cortés", marginL, baseY + 52, {
+    align: 'center', width: pageW - marginL - marginR
+  });
+  doc.text("RUT: 14.015.125-4", { align: 'center', width: pageW - marginL - marginR });
+  doc.text("Cirujano de Reconstrucción Articular", { align: 'center', width: pageW - marginL - marginR });
+  doc.text("INSTITUTO DE CIRUGIA ARTICULAR", { align: 'center', width: pageW - marginL - marginR });
 }
 
-export function generarOrdenGenerales(doc, datos = {}) {
-  const { nombre, edad, rut, genero } = datos;
+/* ======================================================
+   ==================== ORDEN GENERALES =================
+   ====================================================== */
 
-  // --------- ENCABEZADO (página 1) ---------
+export function generarOrdenGenerales(doc, datos = {}) {
+  const { nombre, edad, rut, genero, examenesIA, informeIA, idPago } = datos;
+
+  /* ================= ENCABEZADO ================= */
   try {
     const logoPath = path.join(__dirname, 'assets', 'ica.jpg');
-    if (fs.existsSync(logoPath)) {
-      doc.image(logoPath, 50, 40, { width: 120 });
-    }
-  } catch (err) {
-    console.error('Logo error:', err.message);
-  }
+    if (fs.existsSync(logoPath)) doc.image(logoPath, 50, 40, { width: 120 });
+  } catch {}
 
   doc.moveDown(1.5);
-  doc.font('Helvetica-Bold')
-     .fontSize(18)
-     .text('INSTITUTO DE CIRUGÍA ARTICULAR', 180, 50);
+  doc.font('Helvetica-Bold').fontSize(18).text('INSTITUTO DE CIRUGÍA ARTICULAR', 180, 50);
   doc.moveDown(1.5);
-  doc.fontSize(16)
-     .text('Orden de Exámenes Generales', 180, undefined, { underline: true });
+  doc.fontSize(16).text('Orden de Exámenes Generales', 180, undefined, { underline: true });
   doc.moveDown(4);
 
-  // Reset X para partir en margen izquierdo
   doc.x = doc.page.margins.left;
 
-  // --------- DATOS PACIENTE ---------
+  /* ========= DATOS PACIENTE ========== */
   doc.font('Helvetica').fontSize(14);
-  doc.text(`Nombre: ${nombre ?? ''}`);
-  doc.moveDown(0.6);
-  doc.text(`RUT: ${rut ?? ''}`);
-  doc.moveDown(0.6);
-  doc.text(`Edad: ${edad ?? ''}`);
-  doc.moveDown(0.6);
-  doc.text(`Género: ${genero ?? ''}`);
-  doc.moveDown(1.6);
+  doc.text(`Nombre: ${nombre ?? ''}`); doc.moveDown(0.6);
+  doc.text(`RUT: ${rut ?? ''}`);       doc.moveDown(0.6);
+  doc.text(`Edad: ${edad ?? ''}`);     doc.moveDown(0.6);
+  doc.text(`Género: ${genero ?? ''}`); doc.moveDown(1.6);
 
-  // --------- EXÁMENES ---------
-  const listaIA = Array.isArray(datos?.examenesIA) ? datos.examenesIA.filter(Boolean) : [];
-  const lista = (listaIA.length > 0) ? listaIA : buildGeneralesList(genero);
+  /* ========= LISTA DE EXÁMENES ========= */
+  const listaIA = Array.isArray(examenesIA) ? examenesIA.filter(Boolean) : [];
+  const lista = listaIA.length > 0 ? listaIA : buildGeneralesList(genero);
 
-  const CONTENT_W = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+  const W = doc.page.width - doc.page.margins.left - doc.page.margins.right;
 
   doc.font('Helvetica-Bold').fontSize(14).text('Exámenes solicitados:');
   doc.moveDown(0.8);
-  drawBulletList(doc, lista, { fontSize: 13, bulletIndent: 10, textIndent: 6, lineGap: 2, width: CONTENT_W });
+  drawBulletList(doc, lista, { width: W, fontSize: 13 });
+
   doc.moveDown(1.6);
 
-  // --------- PIE DE PÁGINA: FIRMA + TIMBRE (página 1) ---------
+  /* ========= PIE PÁGINA 1 ========= */
   dibujarFirmaTimbre(doc);
 
-  // ===== SEGUNDA HOJA: JUSTIFICACIÓN (si existe informeIA)
-  const tieneInforme = typeof datos?.informeIA === 'string' && datos.informeIA.trim();
-  if (tieneInforme) {
-    doc.addPage();
+  /* ======================================================
+     =============== DEBUG FOOTER PÁGINA 1 =================
+     ====================================================== */
+  try {
+    let memGen = null;
+    if (idPago && memoria?.get) {
+      memGen = memoria.get(`generales:${idPago}`) || null;
+    }
 
-    // Encabezado igual
-    try {
-      const logoPath = path.join(__dirname, 'assets', 'ica.jpg');
-      if (fs.existsSync(logoPath)) {
-        doc.image(logoPath, 50, 40, { width: 120 });
-      }
-    } catch {}
+    const exFront = (examenesIA || []).join(" | ");
+    const exMem = (memGen?.examenesIA || []).join(" | ");
 
-    doc.moveDown(1.5);
-    doc.font('Helvetica-Bold').fontSize(18).text('INSTITUTO DE CIRUGÍA ARTICULAR', 180, 50);
-    doc.moveDown(1.5);
-    doc.fontSize(16).text('Orden de Exámenes Generales', 180, undefined, { underline: true });
-    doc.moveDown(4);
-    doc.x = doc.page.margins.left;
-
-    // Datos paciente nuevamente
-    doc.font('Helvetica').fontSize(14);
-    doc.text(`Nombre: ${nombre ?? ''}`); doc.moveDown(0.6);
-    doc.text(`RUT: ${rut ?? ''}`);       doc.moveDown(0.6);
-    doc.text(`Edad: ${edad ?? ''}`);     doc.moveDown(0.6);
-    doc.text(`Género: ${genero ?? ''}`); doc.moveDown(1.6);
-
-    // Título + cuerpo
-    doc.font('Helvetica-Bold').fontSize(14).text('Justificación:');
-    doc.moveDown(0.4);
-    doc.font('Helvetica').fontSize(12).text(datos.informeIA.trim(), {
-      align: 'left',
-      width: CONTENT_W,
+    console.log("DEBUG_PDF_GENERALES", {
+      idPago,
+      examenesFront: examenesIA,
+      examenesMem: memGen?.examenesIA,
+      memoria: memGen
     });
 
-    // Firma y timbre en la segunda hoja también
-    dibujarFirmaTimbre(doc);
-  }
+    doc.moveDown(1.5);
+    doc.fontSize(8).fillColor("#666");
+    doc.text(`DEBUG(1/2): id=${idPago || "-"} | front=[${exFront}]`);
+    doc.text(`DEBUG_MEM: ${String(exMem || "").slice(0,150)}`);
+    doc.fillColor("black");
+  } catch {}
+
+
+  /* ======================================================
+     ===================== PÁGINA 2 DEBUG ==================
+     ====================================================== */
+
+  try {
+    doc.addPage();
+
+    doc.font("Helvetica-Bold").fontSize(14)
+      .text("DEBUG ORDEN GENERALES / IA", { align: "left" });
+
+    doc.moveDown(0.8);
+    doc.font("Helvetica").fontSize(10);
+
+    /* 1) Payload front */
+    const debugFront = {
+      idPago,
+      nombre, edad, rut, genero,
+      examenesIA, informeIA
+    };
+
+    doc.text("1) PAYLOAD DESDE INDEX:");
+    doc.moveDown(0.2);
+    doc.text(safeJson(debugFront));
+
+
+    /* 2) MEMORIA generales:idPago */
+    let snapGen = null;
+    if (idPago && memoria?.get) snapGen = memoria.get(`generales:${idPago}`) || null;
+
+    doc.moveDown(0.8);
+    doc.font("Helvetica-Bold").text("2) MEMORIA generales:idPago:");
+    doc.moveDown(0.2);
+    doc.font("Helvetica").text(safeJson(snapGen));
+
+
+    /* 3) IA debug */
+    const snapIA =
+      (snapGen && snapGen.debugIA) ||
+      (memoria.get(`ia:${idPago}`) || null);
+
+    doc.moveDown(0.8);
+    doc.font("Helvetica-Bold").text("3) DEBUG IA:");
+    doc.moveDown(0.2);
+    doc.font("Helvetica").text(
+      safeJson(
+        snapIA || { info: "No se encontró debugIA. Revisa generalesIA.js." }
+      )
+    );
+  } catch {}
 }
