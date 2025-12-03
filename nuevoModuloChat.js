@@ -3,7 +3,6 @@ import express from "express";
 import OpenAI from "openai";
 import PDFDocument from "pdfkit";
 import { generarInformeIA } from "./informeIA.js";
-import { generarOrdenImagenologia } from "./ordenImagenologia.js";
 
 const router = express.Router();
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -36,17 +35,19 @@ function leerMarcadoresDesdeBody(body = {}) {
   return out;
 }
 
-function slug(s = "") { return String(s).trim().toLowerCase(); }
+function slug(s = "") {
+  return String(s).trim().toLowerCase();
+}
 function sanVista(obj = {}) {
   const norm = {};
   for (const vista of ["frente", "lateral", "posterior"]) {
     const arr = Array.isArray(obj[vista]) ? obj[vista] : [];
-    norm[vista] = arr.map(x => String(x||"").trim()).filter(Boolean);
+    norm[vista] = arr.map((x) => String(x || "").trim()).filter(Boolean);
   }
   // copiar vistas extra si un front las define
   for (const [k, v] of Object.entries(obj)) {
     if (!norm[k] && Array.isArray(v)) {
-      norm[k] = v.map(x => String(x||"").trim()).filter(Boolean);
+      norm[k] = v.map((x) => String(x || "").trim()).filter(Boolean);
     }
   }
   return norm;
@@ -57,9 +58,10 @@ function filtrarRegionesRelevantes(marcadores = {}, dolor = "") {
   const regiones = Object.keys(marcadores);
   if (!regiones.length) return {};
   const d = String(dolor || "").toLowerCase();
-  const hits = regiones.filter(r => d.includes(r));
+  const hits = regiones.filter((r) => d.includes(r));
   if (hits.length) {
-    const out = {}; for (const r of hits) out[r] = marcadores[r];
+    const out = {};
+    for (const r of hits) out[r] = marcadores[r];
     return out;
   }
   return marcadores;
@@ -75,18 +77,21 @@ function marcadoresATextoPrompt(mReg = {}) {
         sub.push(`${uc(vista)}:\n• ${arr.join("\n• ")}`);
       }
     }
-    if (sub.length) bloques.push(`${uc(region)} — Puntos marcados\n${sub.join("\n\n")}`);
+    if (sub.length)
+      bloques.push(`${uc(region)} — Puntos marcados\n${sub.join("\n\n")}`);
   }
   return bloques.length ? bloques.join("\n\n") : "Sin puntos dolorosos marcados.";
 }
-function uc(s=""){ return s ? s[0].toUpperCase()+s.slice(1) : s; }
+function uc(s = "") {
+  return s ? s[0].toUpperCase() + s.slice(1) : s;
+}
 
 /** Tips clínicos simples por región (opcional). Amplía aquí para nuevas regiones sin tocar el resto. */
 function marcadoresATips(mReg = {}) {
   const tips = [];
   for (const [region, obj] of Object.entries(mReg)) {
     if (region === "rodilla") tips.push(...tipsRodilla(obj));
-    if (region === "hombro")  tips.push(...tipsHombro(obj));
+    if (region === "hombro") tips.push(...tipsHombro(obj));
     // if (region === "codo") tips.push(...tipsCodo(obj)); // futuro
   }
   return tips;
@@ -94,28 +99,48 @@ function marcadoresATips(mReg = {}) {
 function flatVistas(obj = {}) {
   const out = [];
   for (const v of Object.values(obj)) if (Array.isArray(v)) out.push(...v);
-  return out.map(s => String(s||"").toLowerCase());
+  return out.map((s) => String(s || "").toLowerCase());
 }
 function tipsRodilla(obj = {}) {
-  const t = flatVistas(obj), has = (rx) => t.some(x => rx.test(x));
+  const t = flatVistas(obj),
+    has = (rx) => t.some((x) => rx.test(x));
   const arr = [];
-  if (has(/\binterl[ií]nea?\s+medial\b/)) arr.push("Interlínea medial → sospecha menisco medial.");
-  if (has(/\binterl[ií]nea?\s+lateral\b/)) arr.push("Interlínea lateral → sospecha menisco lateral.");
-  if (has(/\b(r[óo]tula|patelar|patelofemoral|ap(e|é)x)\b/)) arr.push("Dolor patelofemoral → síndrome PF/condropatía.");
-  if (has(/\btuberosidad\s+tibial\b/)) arr.push("Tuberosidad tibial → Osgood–Schlatter / tendón rotuliano.");
-  if (has(/\b(pes\s+anserin[oó]|pata\s+de\s+ganso)\b/)) arr.push("Pes anserino → tendinopatía/bursitis anserina.");
-  if (has(/\b(gerdy|banda\s+ilio?tibial|tracto\s+ilio?tibial)\b/)) arr.push("Banda ITB/Gerdy → síndrome banda ITB.");
-  if (has(/\bpopl[ií]tea?\b/)) arr.push("Fosa poplítea → evaluar quiste de Baker.");
+  if (has(/\binterl[ií]nea?\s+medial\b/))
+    arr.push("Interlínea medial → sospecha menisco medial.");
+  if (has(/\binterl[ií]nea?\s+lateral\b/))
+    arr.push("Interlínea lateral → sospecha menisco lateral.");
+  if (has(/\b(r[óo]tula|patelar|patelofemoral|ap(e|é)x)\b/))
+    arr.push("Dolor patelofemoral → síndrome PF/condropatía.");
+  if (has(/\btuberosidad\s+tibial\b/))
+    arr.push("Tuberosidad tibial → Osgood–Schlatter / tendón rotuliano.");
+  if (has(/\b(pes\s+anserin[oó]|pata\s+de\s+ganso)\b/))
+    arr.push("Pes anserino → tendinopatía/bursitis anserina.");
+  if (has(/\b(gerdy|banda\s+ilio?tibial|tracto\s+ilio?tibial)\b/))
+    arr.push("Banda ITB/Gerdy → síndrome banda ITB.");
+  if (has(/\bpopl[ií]tea?\b/))
+    arr.push("Fosa poplítea → evaluar quiste de Baker.");
   return arr;
 }
 function tipsHombro(obj = {}) {
-  const t = flatVistas(obj), has = (rx) => t.some(x => rx.test(x));
+  const t = flatVistas(obj),
+    has = (rx) => t.some((x) => rx.test(x));
   const arr = [];
-  if (has(/\b(subacromial|acromion|bursa\s*subacromial)\b/)) arr.push("Dolor subacromial → síndrome subacromial / supraespinoso.");
-  if (has(/\b(tub[eé]rculo\s*mayor|footprint|troquiter)\b/)) arr.push("Tubérculo mayor → tendinopatía del manguito (supra/infra).");
-  if (has(/\b(surco\s*bicipital|bicipital|porci[oó]n\s*larga\s*del\s*b[ií]ceps)\b/)) arr.push("Surco bicipital → tendinopatía de la porción larga del bíceps.");
-  if (has(/\b(acromioclavicular|acromio\-?clavicular|ac)\b/)) arr.push("Dolor AC → artropatía acromioclavicular.");
-  if (has(/\b(posterosuperior|labrum\s*superior|slap)\b/)) arr.push("Dolor posterosuperior → considerar lesión labral (SLAP).");
+  if (has(/\b(subacromial|acromion|bursa\s*subacromial)\b/))
+    arr.push("Dolor subacromial → síndrome subacromial / supraespinoso.");
+  if (has(/\b(tub[eé]rculo\s*mayor|footprint|troquiter)\b/))
+    arr.push(
+      "Tubérculo mayor → tendinopatía del manguito (supra/infra)."
+    );
+  if (has(/\b(surco\s*bicipital|bicipital|porci[oó]n\s*larga\s*del\s*b[ií]ceps)\b/))
+    arr.push(
+      "Surco bicipital → tendinopatía de la porción larga del bíceps."
+    );
+  if (has(/\b(acromioclavicular|acromio\-?clavicular|ac)\b/))
+    arr.push("Dolor AC → artropatía acromioclavicular.");
+  if (has(/\b(posterosuperior|labrum\s*superior|slap)\b/))
+    arr.push(
+      "Dolor posterosuperior → considerar lesión labral (SLAP)."
+    );
   return arr;
 }
 
@@ -157,7 +182,7 @@ Devuelve SOLO el texto en este formato (sin comentarios adicionales).
 
 function recortar(str, max = 1200) {
   if (!str) return "";
-  return str.length > max ? (str.slice(0, max).trim() + "…") : str;
+  return str.length > max ? str.slice(0, max).trim() + "…" : str;
 }
 
 // Lee datos previos del paciente desde la "memoria" del backend
@@ -172,12 +197,16 @@ function leerPacienteDeMemoria(memoria, idPago) {
 
 /* --- Parser de “Exámenes sugeridos” (toma hasta 2) --- */
 function parseExamenesSugeridos(text = "") {
-  if (!text) return { all: [], firstTwo: [], rm: [], rx: [], eco: [], otros: [] };
+  if (!text)
+    return { all: [], firstTwo: [], rm: [], rx: [], eco: [], otros: [] };
 
   // Captura la sección entre "Examen(es) sugeridos:" e "Indicaciones:" (o fin)
   const sec =
-    /Examen(?:es)? sugeridos?:\s*([\s\S]*?)(?:\n\s*Indicaciones:|$)/i.exec(text);
-  if (!sec) return { all: [], firstTwo: [], rm: [], rx: [], eco: [], otros: [] };
+    /Examen(?:es)? sugeridos?:\s*([\s\S]*?)(?:\n\s*Indicaciones:|$)/i.exec(
+      text
+    );
+  if (!sec)
+    return { all: [], firstTwo: [], rm: [], rx: [], eco: [], otros: [] };
 
   const bloque = sec[1] || "";
   const bullets = bloque
@@ -185,18 +214,32 @@ function parseExamenesSugeridos(text = "") {
     .map((l) => l.trim())
     .filter(Boolean)
     .map((l) => (/^[•\-\*]\s*(.+)$/.exec(l)?.[1] || l).trim())
-    .map((l) => l.replace(/\s+/g, " ").replace(/\s*\.\s*$/, ".")) // normaliza punto final
+    .map((l) => l.replace(/\s+/g, " ").replace(/\s*\.\s*$/, "."))
     .filter(Boolean);
 
   const firstTwo = bullets.slice(0, 2);
 
   // Clasificación simple (sobre los 2 primeros)
-  const rm = [], rx = [], eco = [], otros = [];
+  const rm = [],
+    rx = [],
+    eco = [],
+    otros = [];
   for (const b of firstTwo) {
     const l = b.toLowerCase();
-    const isRM  = l.includes("resonancia") || /\brm\b/.test(l) || l.includes("resonancia magn");
-    const isRX  = /\brx\b/.test(l) || l.includes("radiografía") || l.includes("rayos x") || l.includes("teleradiograf");
-    const isECO = l.includes("ecografía") || l.includes("ecografia") || l.includes("ultrasonido") || /\beco\b/.test(l);
+    const isRM =
+      l.includes("resonancia") ||
+      /\brm\b/.test(l) ||
+      l.includes("resonancia magn");
+    const isRX =
+      /\brx\b/.test(l) ||
+      l.includes("radiografía") ||
+      l.includes("rayos x") ||
+      l.includes("teleradiograf");
+    const isECO =
+      l.includes("ecografía") ||
+      l.includes("ecografia") ||
+      l.includes("ultrasonido") ||
+      /\beco\b/.test(l);
     if (isRM) rm.push(b);
     else if (isRX) rx.push(b);
     else if (isECO) eco.push(b);
@@ -206,98 +249,16 @@ function parseExamenesSugeridos(text = "") {
   return { all: bullets, firstTwo, rm, rx, eco, otros };
 }
 
-/* --- Helpers mínimos para la orden IA --- */
+/* --- Helpers mínimos para la orden IA (solo usados en fallback PDF-orden viejo; ahora la orden vive en index.js) --- */
 function notaAsistenciaIA(dolor = "") {
   const d = String(dolor || "").toLowerCase();
-  const base = "Presentarse con esta orden. Ayuno NO requerido salvo indicación.";
-  if (d.includes("rodilla")) return `${base}\nConsultar con nuestro especialista en rodilla Dr Jaime Espinoza.`;
-  if (d.includes("cadera"))  return `${base}\nConsultar con nuestro especialista en cadera Dr Cristóbal Huerta.`;
+  const base =
+    "Presentarse con esta orden. Ayuno NO requerido salvo indicación.";
+  if (d.includes("rodilla"))
+    return `${base}\nConsultar con nuestro especialista en rodilla Dr Jaime Espinoza.`;
+  if (d.includes("cadera"))
+    return `${base}\nConsultar con nuestro especialista en cadera Dr Cristóbal Huerta.`;
   return base;
-}
-
-/* --- Fallback (hasta 2 exámenes) priorizando clínica básica --- */
-function sugerirFallbackSegunClinica(dolor = "", lado = "", edad = null) {
-  const d = String(dolor || "").toLowerCase();
-  const L = String(lado || "").trim();
-  const ladoTxt = L ? ` ${L.toUpperCase()}` : "";
-  const edadNum = Number(edad);
-  const joven = Number.isFinite(edadNum) ? edadNum < 40 : false;
-  const mayor60 = Number.isFinite(edadNum) ? edadNum > 60 : false;
-
-  // Columna: respetar sub-zona si viene en "dolor"
-  if (d.includes("cervical")) return ["RESONANCIA MAGNÉTICA DE COLUMNA CERVICAL."];
-  if (d.includes("dorsal"))   return ["RESONANCIA MAGNÉTICA DE COLUMNA DORSAL."];
-  if (d.includes("lumbar") || d.includes("columna"))
-    return ["RESONANCIA MAGNÉTICA DE COLUMNA LUMBAR."];
-
-  if (d.includes("rodilla")) {
-    return mayor60
-      ? [
-          `RX DE RODILLA${ladoTxt} AP/LATERAL/AXIAL.`,
-          `RM DE RODILLA${ladoTxt}.`,
-        ]
-      : [
-          `RM DE RODILLA${ladoTxt}.`,
-          `RX DE RODILLA${ladoTxt} AP/LATERAL.`,
-        ];
-  }
-
-  if (d.includes("cadera")) {
-    return mayor60
-      ? [
-          "RX DE PELVIS AP Y LÖWENSTEIN.",
-          `RM DE CADERA${ladoTxt}.`,
-        ]
-      : [
-          `RM DE CADERA${ladoTxt}.`,
-          "RX DE PELVIS AP.",
-        ];
-  }
-
-  if (d.includes("hombro")) {
-    return joven
-      ? [
-          `ECOGRAFÍA DE HOMBRO${ladoTxt}.`,
-          `RM DE HOMBRO${ladoTxt}.`,
-        ]
-      : [
-          `RX DE HOMBRO${ladoTxt} AP/AXIAL.`,
-          `RM DE HOMBRO${ladoTxt}.`,
-        ];
-  }
-
-  if (d.includes("codo")) {
-    return joven
-      ? [
-          `ECOGRAFÍA DE CODO${ladoTxt}.`,
-          `RM DE CODO${ladoTxt}.`,
-        ]
-      : [
-          `RX DE CODO${ladoTxt} AP/LATERAL.`,
-          `RM DE CODO${ladoTxt}.`,
-        ];
-  }
-
-  if (d.includes("muñeca") || d.includes("muneca") || d.includes("mano")) {
-    return joven
-      ? [
-          `ECOGRAFÍA DE MANO/MUÑECA${ladoTxt}.`,
-          `RM DE MUÑECA${ladoTxt}.`,
-        ]
-      : [
-          `RX DE MANO/MUÑECA${ladoTxt} AP/OBLICUA/LATERAL.`,
-          `RM DE MUÑECA${ladoTxt}.`,
-        ];
-  }
-
-  if (d.includes("tobillo") || d.includes("pie")) {
-    return [
-      `RX DE TOBILLO/PIE${ladoTxt} AP/LATERAL/OBLICUA.`,
-      `RM DE TOBILLO${ladoTxt}.`,
-    ];
-  }
-
-  return ["Evaluación imagenológica según clínica.", "—"];
 }
 
 /* ===== Preview IA (antes de pagar) ===== */
@@ -305,7 +266,9 @@ router.post("/preview-informe", async (req, res) => {
   try {
     const { idPago, consulta } = req.body || {};
     if (!consulta || !idPago) {
-      return res.status(400).json({ ok: false, error: "Faltan datos obligatorios" });
+      return res
+        .status(400)
+        .json({ ok: false, error: "Faltan datos obligatorios" });
     }
 
     const memoria = req.app.get("memoria");
@@ -317,22 +280,27 @@ router.post("/preview-informe", async (req, res) => {
     // Mezcla con lo previo y filtra por región de dolor
     const prevMarc = prev?.marcadores || {};
     const mergedMarc = { ...prevMarc, ...entrantes };
-    const relevantes = filtrarRegionesRelevantes(mergedMarc, req.body?.dolor ?? prev?.dolor);
+    const relevantes = filtrarRegionesRelevantes(
+      mergedMarc,
+      req.body?.dolor ?? prev?.dolor
+    );
 
     const merged = {
-      nombre:  req.body?.nombre  ?? prev?.nombre,
-      edad:    req.body?.edad    ?? prev?.edad,
-      rut:     req.body?.rut     ?? prev?.rut,
-      genero:  req.body?.genero  ?? prev?.genero,
-      dolor:   req.body?.dolor   ?? prev?.dolor,
-      lado:    req.body?.lado    ?? prev?.lado,
+      nombre: req.body?.nombre ?? prev?.nombre,
+      edad: req.body?.edad ?? prev?.edad,
+      rut: req.body?.rut ?? prev?.rut,
+      genero: req.body?.genero ?? prev?.genero,
+      dolor: req.body?.dolor ?? prev?.dolor,
+      lado: req.body?.lado ?? prev?.lado,
       consulta,
       marcadores: relevantes, // guardamos para uso posterior/PDF
     };
 
     const puntosTxt = marcadoresATextoPrompt(relevantes);
-    const tipsArr   = marcadoresATips(relevantes);
-    const tipsTxt   = tipsArr.length ? `\n\nTips clínicos:\n• ${tipsArr.join("\n• ")}` : "";
+    const tipsArr = marcadoresATips(relevantes);
+    const tipsTxt = tipsArr.length
+      ? `\n\nTips clínicos:\n• ${tipsArr.join("\n• ")}`
+      : "";
 
     const completion = await client.chat.completions.create({
       model: "gpt-4o-mini",
@@ -345,7 +313,11 @@ router.post("/preview-informe", async (req, res) => {
           content:
             `Edad: ${merged.edad ?? "—"}\n` +
             (merged.genero ? `Género: ${merged.genero}\n` : "") +
-            (merged.dolor ? `Región de dolor: ${merged.dolor}${merged.lado ? ` (${merged.lado})` : ""}\n` : "") +
+            (merged.dolor
+              ? `Región de dolor: ${merged.dolor}${
+                  merged.lado ? ` (${merged.lado})` : ""
+                }\n`
+              : "") +
             `Consulta/Indicación (texto libre):\n${merged.consulta}\n\n` +
             `Puntos dolorosos marcados:\n${puntosTxt}${tipsTxt}\n\n` +
             `Redacta EXACTAMENTE con el formato solicitado y dentro del límite de palabras.`,
@@ -353,7 +325,10 @@ router.post("/preview-informe", async (req, res) => {
       ],
     });
 
-    const respuesta = recortar(completion.choices?.[0]?.message?.content || "", 1200);
+    const respuesta = recortar(
+      completion.choices?.[0]?.message?.content || "",
+      1200
+    );
 
     // Extrae y guarda HASTA 2 exámenes sugeridos (los dos primeros)
     const parsed = parseExamenesSugeridos(respuesta);
@@ -373,31 +348,10 @@ router.post("/preview-informe", async (req, res) => {
     res.json({ ok: true, respuesta });
   } catch (err) {
     console.error("Error GPT (preview-informe):", err);
-    res.status(500).json({ ok: false, error: "Error al generar preview" });
+    res
+      .status(500)
+      .json({ ok: false, error: "Error al generar preview" });
   }
-});
-
-/* ===== Guardar datos IA tras pago confirmado ===== */
-router.post("/guardar-datos-ia", (req, res) => {
-  const { idPago } = req.body || {};
-  if (!idPago) return res.status(400).json({ ok: false, error: "Falta idPago" });
-
-  const memoria = req.app.get("memoria");
-  const d = memoria.get(`ia:${idPago}`);
-  if (!d) return res.status(404).json({ ok: false, error: "No hay datos previos" });
-
-  memoria.set(`ia:${idPago}`, { ...d, pagoConfirmado: true });
-  memoria.set(`meta:${idPago}`, { moduloAutorizado: "ia" });
-
-  res.json({ ok: true });
-});
-
-/* ===== Obtener datos IA (para frontend) ===== */
-router.get("/obtener-datos-ia/:idPago", (req, res) => {
-  const memoria = req.app.get("memoria");
-  const d = memoria.get(`ia:${req.params.idPago}`);
-  if (!d) return res.status(404).json({ ok: false });
-  res.json({ ok: true, datos: d });
 });
 
 /* ===== PDF IA (informe de texto) ===== */
@@ -413,7 +367,10 @@ router.get("/pdf-ia/:idPago", (req, res) => {
 
     const filename = `informeIA_${req.params.idPago}.pdf`;
     res.setHeader("Content-Type", "application/pdf");
-    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${filename}"`
+    );
 
     const doc = new PDFDocument({ size: "A4", margin: 50 });
     doc.pipe(res);
@@ -421,47 +378,6 @@ router.get("/pdf-ia/:idPago", (req, res) => {
     doc.end();
   } catch (err) {
     console.error("pdf-ia error:", err);
-    res.sendStatus(500);
-  }
-});
-
-/* ===== PDF IA (Orden de Exámenes) — HASTA 2 EXÁMENES ===== */
-router.get("/pdf-ia-orden/:idPago", async (req, res) => {
-  try {
-    const memoria = req.app.get("memoria");
-    const meta = memoria.get(`meta:${req.params.idPago}`);
-    if (!meta || meta.moduloAutorizado !== "ia") return res.sendStatus(402);
-
-    const d = memoria.get(`ia:${req.params.idPago}`);
-    if (!d) return res.sendStatus(404);
-    if (!d.pagoConfirmado) return res.sendStatus(402);
-
-    // Toma hasta 2 exámenes de la IA; si no hay, usa fallback (hasta 2).
-    const lineas =
-      Array.isArray(d.examenesIA) && d.examenesIA.length > 0
-        ? d.examenesIA.slice(0, 2)
-        : sugerirFallbackSegunClinica(d.dolor, d.lado, d.edad).slice(0, 2);
-
-    const examenStr = lineas.filter(Boolean).join("\n"); // varias líneas si hay 2
-    const nota = notaAsistenciaIA(d.dolor);
-
-    const filename = `ordenIA_${req.params.idPago}.pdf`;
-    res.setHeader("Content-Type", "application/pdf");
-    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-
-    const doc = new PDFDocument({ size: "A4", margin: 50 });
-    doc.pipe(res);
-
-    // Reusar generador de orden (soporta múltiples líneas en 'examen')
-    generarOrdenImagenologia(doc, {
-      ...d,
-      examen: examenStr,
-      nota,
-    });
-
-    doc.end();
-  } catch (err) {
-    console.error("pdf-ia-orden error:", err);
     res.sendStatus(500);
   }
 });
