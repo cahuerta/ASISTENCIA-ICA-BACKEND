@@ -9,43 +9,22 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 /**
- * Fallback si la IA no entregó nada o viene vacío.
- * Idealmente debe parecerse a los basales que usa preopIA.
- */
-const EXAMENES_FIJOS = [
-  "HEMOGRAMA MAS VHS",
-  "PCR",
-  "GLICEMIA",
-  "ELECTROLITOS PLASMATICOS",
-  "PERFIL BIOQUIMICO",
-  "PERFIL HEPATICO",
-  "CREATININA",
-  "UREA",
-  "ORINA COMPLETA",
-  "UROCULTIVO",
-  "GRUPO Y RH",
-  "TP/INR",
-  "TTPK",
-  "ECG DE REPOSO",
-];
-
-/**
  * Normaliza una lista vinda del backend (IA) para el PDF.
  * Acepta array de strings o de objetos { nombre } y devuelve
- * solo strings no vacíos, SIN volver a filtrar por catálogo.
+ * solo strings no vacíos.
  *
  * La idea es: lo que venga en `examenesIA` ya está validado en preopIA.js,
- * aquí solo lo formateamos.
+ * aquí solo lo formateamos para mostrarlo.
  */
 function normalizarListaDesdeIA(lista) {
-  if (!Array.isArray(lista)) return null;
+  if (!Array.isArray(lista)) return [];
   const out = [];
   for (const it of lista) {
     const raw = typeof it === "string" ? it : (it && it.nombre) || "";
     const name = String(raw).trim();
     if (name) out.push(name);
   }
-  return out.length ? out : null;
+  return out;
 }
 
 export function generarOrdenPreopLab(doc, datos = {}) {
@@ -57,7 +36,7 @@ export function generarOrdenPreopLab(doc, datos = {}) {
     lado,
     nota,
     tipoCirugia, // <-- puede venir del flujo nuevo
-    examenesIA,  // <-- lista devuelta por IA (opcional)
+    examenesIA,  // <-- lista devuelta por IA
   } = datos || {};
 
   // —— ENCABEZADO ——
@@ -88,7 +67,6 @@ export function generarOrdenPreopLab(doc, datos = {}) {
   doc.moveDown(0.5);
   doc.text(`RUT: ${rut ?? ""}`);
   doc.moveDown(0.5);
-  // Se explicita el contexto de cirugía si está disponible
   if (tipoCirugia) {
     doc.text(`Tipo de cirugía: ${tipoCirugia}`);
     doc.moveDown(0.5);
@@ -96,16 +74,18 @@ export function generarOrdenPreopLab(doc, datos = {}) {
   doc.text(`Descripción de síntomas: ${sintomas || "—"}`);
   doc.moveDown(2);
 
-  // —— EXÁMENES (IA o fallback) ——
-  // 🟢 AHORA: lo que venga en examenesIA se usa tal cual (normalizado a string),
-  // sin recortar con un catálogo más chico.
-  const listaExamenes =
-    normalizarListaDesdeIA(examenesIA) || EXAMENES_FIJOS;
+  // —— EXÁMENES (solo IA) ——
+  const listaExamenes = normalizarListaDesdeIA(examenesIA);
 
   doc.font("Helvetica-Bold").text("Solicito los siguientes exámenes:");
   doc.moveDown(0.5);
   doc.font("Helvetica").fontSize(12);
-  listaExamenes.forEach((e) => doc.text(`• ${e}`));
+
+  if (listaExamenes.length === 0) {
+    doc.text("• (Sin exámenes registrados en este flujo)");
+  } else {
+    listaExamenes.forEach((e) => doc.text(`• ${e}`));
+  }
 
   doc.moveDown(3);
 
