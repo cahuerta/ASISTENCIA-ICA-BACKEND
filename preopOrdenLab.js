@@ -1,4 +1,4 @@
-// preopOrdenLab.js (ESM) — VERSIÓN DEBUG COMPLETA
+// preopOrdenLab.js (ESM) — VERSIÓN DEBUG COMPLETA CORREGIDA
 import PDFDocument from "pdfkit";
 import fs from "fs";
 import path from "path";
@@ -40,6 +40,16 @@ export function generarOrdenPreopLab(doc, datos = {}) {
     idPago,
   } = datos || {};
 
+  /* ================= LEER MEMORIA UNA VEZ ================= */
+  let memPreop = null;
+  try {
+    if (idPago && memoria && typeof memoria.get === "function") {
+      memPreop = memoria.get(`preop:${idPago}`) || null;
+    }
+  } catch (e) {
+    console.error("ERROR_LECTURA_MEM_PREOP", { idPago, error: e?.message });
+  }
+
   /* ================= ENCABEZADO ================= */
   try {
     const logoPath = path.join(__dirname, "assets", "ica.jpg");
@@ -76,7 +86,13 @@ export function generarOrdenPreopLab(doc, datos = {}) {
   doc.moveDown(2);
 
   /* ================= EXÁMENES ================= */
-  const listaExamenes = normalizarListaDesdeIA(examenesIA);
+  // 1º intento: lo que llega desde index (front)
+  // 2º intento: lo que está en memoria preop:idPago
+  const listaExamenes = normalizarListaDesdeIA(
+    Array.isArray(examenesIA) && examenesIA.length > 0
+      ? examenesIA
+      : memPreop?.examenesIA || []
+  );
 
   doc.font("Helvetica-Bold").text("Solicito los siguientes exámenes:");
   doc.moveDown(0.5);
@@ -157,12 +173,6 @@ export function generarOrdenPreopLab(doc, datos = {}) {
      ========= DEBUG FOOTER PÁGINA 1 (RESUMIDO) ============
      ====================================================== */
   try {
-    // Lo que está realmente en memoria preop:idPago
-    let memPreop = null;
-    if (idPago && memoria && typeof memoria.get === "function") {
-      memPreop = memoria.get(`preop:${idPago}`) || null;
-    }
-
     const exFront = (examenesIA || []).join(" | ");
     const exMem = (memPreop?.examenesIA || []).join(" | ");
 
@@ -181,7 +191,6 @@ export function generarOrdenPreopLab(doc, datos = {}) {
     );
     doc.fillColor("black");
   } catch {}
-
 
   /* ======================================================
      ================ PÁGINA 2: DEBUG COMPLETO =============
@@ -213,10 +222,7 @@ export function generarOrdenPreopLab(doc, datos = {}) {
     doc.text(safeJson(debugPayloadFront));
 
     // 2) Lo que hay realmente en memoria preop:idPago
-    let snapPreop = null;
-    if (idPago && memoria?.get) {
-      snapPreop = memoria.get(`preop:${idPago}`) || null;
-    }
+    const snapPreop = memPreop || null;
 
     doc.moveDown(0.8);
     doc.font("Helvetica-Bold").text(
@@ -226,9 +232,15 @@ export function generarOrdenPreopLab(doc, datos = {}) {
     doc.font("Helvetica").text(safeJson(snapPreop));
 
     // 3) IA (si existe debugIA)
-    const snapIA =
-      (snapPreop && snapPreop.debugIA) ||
-      (memoria.get(`ia:${idPago}`) || null);
+    let snapIA = null;
+    try {
+      snapIA =
+        (snapPreop && snapPreop.debugIA) ||
+        (idPago && memoria?.get && memoria.get(`ia:${idPago}`)) ||
+        null;
+    } catch {
+      snapIA = null;
+    }
 
     doc.moveDown(0.8);
     doc.font("Helvetica-Bold").text("3) DEBUG IA (respuesta bruta + exámenes):");
