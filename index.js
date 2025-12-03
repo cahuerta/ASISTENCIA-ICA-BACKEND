@@ -759,7 +759,7 @@ app.get("/pdf/:idPago", async (req, res) => {
 app.post("/guardar-datos-preop", (req, res) => {
   const {
     idPago,
-    datosPaciente,
+    datosPaciente = {},
     comorbilidades,
     tipoCirugia,
     examenesIA,
@@ -774,22 +774,55 @@ app.post("/guardar-datos-preop", (req, res) => {
   }
 
   const prev = memoria.get(ns("preop", idPago)) || {};
-  const next = {
-    ...prev,
-    ...datosPaciente,
-    comorbilidades: comorbilidades ?? prev.comorbilidades,
-    tipoCirugia: tipoCirugia ?? prev.tipoCirugia,
-    examenesIA: Array.isArray(examenesIA)
-      ? examenesIA
-      : prev.examenesIA || undefined,
-    informeIA: typeof informeIA === "string" ? informeIA : prev.informeIA,
-    nota: typeof nota === "string" ? nota : prev.nota,
-    pagoConfirmado: true,
+  const next = { ...prev };
+
+  // ==== merge NO destructivo ====
+  const mergeField = (key, value) => {
+    if (value === undefined || value === null) return;
+    if (Array.isArray(value) && value.length === 0) return;
+    if (typeof value === "string" && value.trim() === "") return;
+    if (
+      typeof value === "object" &&
+      !Array.isArray(value) &&
+      Object.keys(value).length === 0
+    )
+      return;
+    next[key] = value;
   };
+
+  // datos del paciente
+  Object.entries(datosPaciente).forEach(([k, v]) => mergeField(k, v));
+
+  // comorbilidades
+  if (typeof comorbilidades === "object") {
+    next.comorbilidades = { ...(next.comorbilidades || {}), ...comorbilidades };
+  }
+
+  // tipo de cirugía
+  mergeField("tipoCirugia", tipoCirugia);
+
+  // **EXAMENES → SIEMPRE COMPLEMENTAR — NUNCA REEMPLAZAR**
+  if (Array.isArray(examenesIA) && examenesIA.length > 0) {
+    const prevList = Array.isArray(next.examenesIA) ? next.examenesIA : [];
+    next.examenesIA = [...new Set([...prevList, ...examenesIA])];
+  }
+
+  // informe IA
+  if (typeof informeIA === "string" && informeIA.trim()) {
+    next.informeIA = informeIA.trim();
+  }
+
+  // nota
+  if (typeof nota === "string" && nota.trim()) {
+    next.nota = nota.trim();
+  }
+
+  next.pagoConfirmado = true;
 
   memoria.set(ns("preop", idPago), next);
   return res.json({ ok: true });
 });
+
 
 app.get("/obtener-datos-preop/:idPago", (req, res) => {
   const d = memoria.get(ns("preop", req.params.idPago));
