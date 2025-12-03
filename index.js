@@ -843,35 +843,62 @@ app.post("/ia-generales", cors(corsOptions), generalesIAHandler(memoria));
 app.post("/guardar-datos-generales", (req, res) => {
   const {
     idPago,
-    datosPaciente, // { nombre, rut, edad, genero, ... }
-    comorbilidades, // opcional
-    examenesIA, // opcional (array)
-    informeIA, // opcional (string)
-    nota, // opcional (string)
+    datosPaciente = {},
+    comorbilidades,
+    examenesIA,
+    informeIA,
+    nota,
   } = req.body || {};
 
-  if (!idPago || !datosPaciente)
+  if (!idPago || !datosPaciente) {
     return res
       .status(400)
       .json({ ok: false, error: "Faltan idPago o datosPaciente" });
+  }
 
   const prev = memoria.get(ns("generales", idPago)) || {};
-  const next = {
-    ...prev,
-    ...datosPaciente,
-    comorbilidades:
-      typeof comorbilidades === "object" ? comorbilidades : prev.comorbilidades,
-    examenesIA: Array.isArray(examenesIA)
-      ? examenesIA
-      : prev.examenesIA || undefined,
-    informeIA:
-      typeof informeIA === "string" ? informeIA : prev.informeIA || undefined,
-    nota: typeof nota === "string" ? nota : prev.nota || undefined,
-    pagoConfirmado: true,
+  const next = { ...prev };
+
+  // ===== merge NO destructivo =====
+  const mergeField = (key, value) => {
+    if (value === undefined || value === null) return;
+    if (Array.isArray(value) && value.length === 0) return;
+    if (typeof value === "string" && value.trim() === "") return;
+    if (
+      typeof value === "object" &&
+      !Array.isArray(value) &&
+      Object.keys(value).length === 0
+    )
+      return;
+    next[key] = value;
   };
 
+  // merge datos paciente
+  Object.entries(datosPaciente).forEach(([k, v]) => mergeField(k, v));
+
+  // merge comorbilidades
+  if (typeof comorbilidades === "object") {
+    next.comorbilidades = { ...(next.comorbilidades || {}), ...comorbilidades };
+  }
+
+  // merge examenes IA (SIEMPRE complementa)
+  if (Array.isArray(examenesIA) && examenesIA.length > 0) {
+    const prevList = Array.isArray(next.examenesIA) ? next.examenesIA : [];
+    next.examenesIA = [...new Set([...prevList, ...examenesIA])];
+  }
+
+  // informe y nota
+  if (typeof informeIA === "string" && informeIA.trim()) {
+    next.informeIA = informeIA.trim();
+  }
+  if (typeof nota === "string" && nota.trim()) {
+    next.nota = nota.trim();
+  }
+
+  next.pagoConfirmado = true;
+
   memoria.set(ns("generales", idPago), next);
-  res.json({ ok: true });
+  return res.json({ ok: true });
 });
 
 app.get("/obtener-datos-generales/:idPago", (req, res) => {
