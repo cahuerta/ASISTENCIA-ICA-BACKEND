@@ -1,4 +1,4 @@
-// generalesOrden.js  (ESM) — VERSIÓN LIMPIA QUE SOLO USA LO QUE LE ENTREGAN
+// generalesOrden.js  (ESM) — VERSIÓN LIMPIA QUE SOLO USA LO QUE LE ENTREGAN + MEMORIA
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -103,10 +103,21 @@ function dibujarFirmaTimbre(doc) {
  * - NO genera base de exámenes
  * - NO usa PREOP_BASE
  * - NO inventa exámenes según género
- * - SOLO imprime examenesIA tal como vienen desde el backend
+ * - Usa examenesIA del payload o, si viene vacío,
+ *   examenesIA desde memoria generales:idPago.
  */
 export function generarOrdenGenerales(doc, datos = {}) {
   const { nombre, edad, rut, genero, examenesIA, informeIA, idPago } = datos;
+
+  /* ====== LEER MEMORIA GENERALES:idPago UNA SOLA VEZ ====== */
+  let memGen = null;
+  try {
+    if (idPago && memoria?.get) {
+      memGen = memoria.get(`generales:${idPago}`) || null;
+    }
+  } catch (e) {
+    console.error("ERROR_LECTURA_MEM_GENERALES", { idPago, error: e?.message });
+  }
 
   /* ================= ENCABEZADO ================= */
   try {
@@ -129,14 +140,30 @@ export function generarOrdenGenerales(doc, datos = {}) {
   doc.text(`Edad: ${edad ?? ''}`);     doc.moveDown(0.6);
   doc.text(`Género: ${genero ?? ''}`); doc.moveDown(1.6);
 
-  /* ========= LISTA DE EXÁMENES (SOLO LOS RECIBIDOS) ========= */
-  const lista = Array.isArray(examenesIA) ? examenesIA.filter(Boolean) : [];
+  /* ========= LISTA DE EXÁMENES =========
+     1) Primero examenesIA del payload
+     2) Si viene vacío, usar memGen.examenesIA
+  */
+  const listaBruta =
+    (Array.isArray(examenesIA) && examenesIA.length > 0)
+      ? examenesIA
+      : (Array.isArray(memGen?.examenesIA) ? memGen.examenesIA : []);
+
+  const lista = listaBruta
+    .map((it) => (typeof it === 'string' ? it : it?.nombre || ''))
+    .map((s) => String(s).trim())
+    .filter(Boolean);
 
   const W = doc.page.width - doc.page.margins.left - doc.page.margins.right;
 
   doc.font('Helvetica-Bold').fontSize(14).text('Exámenes solicitados:');
   doc.moveDown(0.8);
-  drawBulletList(doc, lista, { width: W, fontSize: 13 });
+
+  if (lista.length === 0) {
+    doc.font('Helvetica').fontSize(12).text('• (Sin exámenes registrados en este flujo)');
+  } else {
+    drawBulletList(doc, lista, { width: W, fontSize: 13 });
+  }
 
   doc.moveDown(1.6);
 
@@ -147,11 +174,6 @@ export function generarOrdenGenerales(doc, datos = {}) {
      =============== DEBUG FOOTER PÁGINA 1 =================
      ====================================================== */
   try {
-    let memGen = null;
-    if (idPago && memoria?.get) {
-      memGen = memoria.get(`generales:${idPago}`) || null;
-    }
-
     const exFront = (examenesIA || []).join(" | ");
     const exMem = (memGen?.examenesIA || []).join(" | ");
 
@@ -193,8 +215,7 @@ export function generarOrdenGenerales(doc, datos = {}) {
     doc.text(safeJson(debugFront));
 
     /* 2) MEMORIA generales:idPago */
-    let snapGen = null;
-    if (idPago && memoria?.get) snapGen = memoria.get(`generales:${idPago}`) || null;
+    const snapGen = memGen;
 
     doc.moveDown(0.8);
     doc.font("Helvetica-Bold").text("2) MEMORIA generales:idPago:");
@@ -202,9 +223,15 @@ export function generarOrdenGenerales(doc, datos = {}) {
     doc.font("Helvetica").text(safeJson(snapGen));
 
     /* 3) IA debug */
-    const snapIA =
-      (snapGen && snapGen.debugIA) ||
-      (memoria.get(`ia:${idPago}`) || null);
+    let snapIA = null;
+    try {
+      snapIA =
+        (snapGen && snapGen.debugIA) ||
+        (idPago && memoria?.get && memoria.get(`ia:${idPago}`)) ||
+        null;
+    } catch {
+      snapIA = null;
+    }
 
     doc.moveDown(0.8);
     doc.font("Helvetica-Bold").text("3) DEBUG IA:");
