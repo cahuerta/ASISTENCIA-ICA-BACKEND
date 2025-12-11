@@ -12,6 +12,8 @@ import iaPreopHandler from "./preopIA.js"; // ← PREOP IA
 import generalesIAHandler from "./generalesIA.js"; // ← GENERALES IA
 import traumaIAHandler from "./traumaIA.js"; // ← TRAUMA IA
 import fallbackTrauma from "./fallbackTrauma.js"; // ← Fallback TRAUMA
+import { enviarOrdenPorCorreo } from "./emailOrden.js";
+
 
 // ===== Flow client (NUEVO)
 import { crearPagoFlowBackend } from "./flowClient.js";
