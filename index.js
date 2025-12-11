@@ -5,6 +5,8 @@ import bodyParser from "body-parser";
 import PDFDocument from "pdfkit";
 import path from "path";
 import { fileURLToPath } from "url";
+import fs from "fs";
+
 
 // ===== Módulos
 import chatRouter from "./nuevoModuloChat.js";
