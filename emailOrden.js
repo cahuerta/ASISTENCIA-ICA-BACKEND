@@ -1,171 +1,138 @@
-// emailOrden.js — Helper para enviar la ORDEN por correo (ESM)
-
-import fs from "fs";
-import path from "path";
+// emailOrden.js — ENVÍO DE ORDEN POR EMAIL (ESM)
 import nodemailer from "nodemailer";
+import { memoria } from "./index.js"; 
+import PDFDocument from "pdfkit";
+import path from "path";
 import { fileURLToPath } from "url";
-import { memoria } from "./index.js"; // ← aquí tienes todos los datos por idPago
 
+// Para rutas internas
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 /* ============================================================
-   Helper: crear transporter SMTP desde variables de entorno
+   SMTP transporter desde variables de entorno
    ============================================================ */
 function crearTransporter() {
-  const {
-    SMTP_HOST,
-    SMTP_PORT,
-    SMTP_USER,
-    SMTP_PASS,
-  } = process.env;
+  const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS } = process.env;
 
   if (!SMTP_HOST || !SMTP_PORT || !SMTP_USER || !SMTP_PASS) {
-    console.error("❌ Faltan variables SMTP en process.env (SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASS)");
+    console.error("❌ Faltan variables SMTP");
     return null;
   }
 
   return nodemailer.createTransport({
     host: SMTP_HOST,
-    port: Number(SMTP_PORT || 587),
-    secure: false, // STARTTLS
-    auth: {
-      user: SMTP_USER,
-      pass: SMTP_PASS,
-    },
+    port: Number(SMTP_PORT),
+    secure: false,
+    auth: { user: SMTP_USER, pass: SMTP_PASS },
   });
 }
 
 /* ============================================================
-   Helper: intenta extraer el email del objeto guardado en memoria
-   Estructuras posibles:
-   - memoria[idPago].datos.emailPaciente
-   - memoria[idPago].datos.email
-   - memoria[idPago].emailPaciente
+   Detectar módulo por idPago
    ============================================================ */
-function extraerEmail(mem) {
-  if (!mem || typeof mem !== "object") return null;
-
-  // Caso típico: { datos: { ..., emailPaciente: "x@y.cl" } }
-  if (mem.datos && typeof mem.datos === "object") {
-    if (mem.datos.emailPaciente) return String(mem.datos.emailPaciente).trim();
-    if (mem.datos.email) return String(mem.datos.email).trim();
-  }
-
-  // Alternativas directas
-  if (mem.emailPaciente) return String(mem.emailPaciente).trim();
-  if (mem.email) return String(mem.email).trim();
-
+function detectarModulo(id) {
+  if (id.startsWith("trauma_")) return "trauma";
+  if (id.startsWith("preop_")) return "preop";
+  if (id.startsWith("generales_")) return "generales";
+  if (id.startsWith("ia_")) return "ia";
   return null;
 }
 
 /* ============================================================
-   Helper: validación simple de email
+   Extraer email desde memoria
    ============================================================ */
-function emailValido(email) {
-  if (!email) return false;
-  const s = String(email).trim();
-  // Regex simple, suficiente para validación básica
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
+function extraerEmail(d) {
+  if (!d) return null;
+  if (d.emailPaciente) return d.emailPaciente.trim();
+  if (d.email) return d.email.trim();
+  if (d.datos && d.datos.emailPaciente) return d.datos.emailPaciente.trim();
+  return null;
+}
+
+function emailValido(e) {
+  if (!e) return false;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e.trim());
 }
 
 /* ============================================================
-   FUNCIÓN PRINCIPAL
-   - Lee memoria[idPago]
-   - Valida idPago, email y existencia del PDF
-   - Envía correo con el PDF adjunto
+   Generar PDF en memoria (buffer)
    ============================================================ */
+async function generarPDFBuffer(modulo, datos, generador) {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ size: "A4", margin: 50 });
 
-/**
- * Envía la orden PDF al correo del paciente asociado al idPago.
- *
- * @param {Object} params
- * @param {string} params.idPago  - ID del pago/orden (ej: "trauma_...", "preop_...", "generales_...", "ia_...")
- * @param {string} params.pdfPath - Ruta al PDF generado (absoluta o relativa)
- * @returns {Promise<boolean>} true si se envió, false si hubo error o faltan datos
- */
-export async function enviarOrdenPorCorreo({ idPago, pdfPath }) {
+    const chunks = [];
+    doc.on("data", (c) => chunks.push(c));
+    doc.on("end", () => resolve(Buffer.concat(chunks)));
+    doc.on("error", reject);
+
+    generador(doc, datos);
+    doc.end();
+  });
+}
+
+/* ============================================================
+   ENVIAR ORDEN POR CORREO
+   ============================================================ */
+export async function enviarOrdenPorCorreo({ idPago, generadorPDF }) {
   try {
-    if (!idPago || typeof idPago !== "string") {
-      console.error("❌ enviarOrdenPorCorreo: idPago inválido:", idPago);
+    const modulo = detectarModulo(idPago);
+    if (!modulo) {
+      console.error("❌ idPago sin prefijo válido:", idPago);
       return false;
     }
 
-    // Opcional: validar prefijo del idPago (puedes ajustar según tus módulos)
-    const prefijosValidos = ["trauma_", "preop_", "generales_", "ia_"];
-    const tienePrefijoValido = prefijosValidos.some((p) => idPago.startsWith(p));
-    if (!tienePrefijoValido) {
-      console.warn(`⚠️ enviarOrdenPorCorreo: idPago sin prefijo reconocido (${idPago}). Se continúa igual.`);
-    }
-
-    const mem = memoria[idPago];
-
-    if (!mem) {
-      console.error(`❌ enviarOrdenPorCorreo: no se encontró memoria para idPago=${idPago}`);
+    // leer memoria
+    const key = `${modulo}:${idPago}`;
+    const datos = memoria.get(key);
+    if (!datos) {
+      console.error("❌ No se encontraron datos en memoria:", key);
       return false;
     }
 
-    const email = extraerEmail(mem);
-
+    // email
+    const email = extraerEmail(datos);
     if (!emailValido(email)) {
-      console.error(
-        `❌ enviarOrdenPorCorreo: email inválido o ausente para idPago=${idPago}. valor=`,
-        email
-      );
+      console.error("❌ Email inválido:", email);
       return false;
     }
 
-    // Normalizar ruta al PDF
-    const pdfAbsoluto = path.isAbsolute(pdfPath)
-      ? pdfPath
-      : path.join(__dirname, pdfPath);
+    // generar PDF en buffer
+    const bufferPDF = await generarPDFBuffer(modulo, datos, generadorPDF);
 
-    if (!fs.existsSync(pdfAbsoluto)) {
-      console.error(`❌ enviarOrdenPorCorreo: PDF no existe en ruta=${pdfAbsoluto}`);
-      return false;
-    }
-
+    // transporter SMTP
     const transporter = crearTransporter();
-    if (!transporter) {
-      console.error("❌ enviarOrdenPorCorreo: no se pudo crear transporter SMTP.");
-      return false;
-    }
+    if (!transporter) return false;
 
-    // Asunto según prefijo
-    let modulo = "Orden médica";
-    if (idPago.startsWith("trauma_")) modulo = "Orden de exámenes TRAUMA";
-    else if (idPago.startsWith("preop_")) modulo = "Orden de exámenes PREOPERATORIOS";
-    else if (idPago.startsWith("generales_")) modulo = "Orden de exámenes GENERALES";
-    else if (idPago.startsWith("ia_")) modulo = "Informe IA / Orden de exámenes";
+    const asunto =
+      modulo === "trauma"
+        ? "Orden de imagenología – ICA"
+        : modulo === "preop"
+        ? "Orden preoperatoria – ICA"
+        : modulo === "generales"
+        ? "Orden de exámenes generales – ICA"
+        : "Orden IA – ICA";
 
-    const subject = `Su ${modulo} – Instituto de Cirugía Articular`;
-    const text = [
-      "Estimado(a),",
-      "",
-      "Adjuntamos su orden médica generada por Asistencia ICA.",
-      "",
-      "Saludos cordiales,",
-      "Instituto de Cirugía Articular",
-    ].join("\n");
-
-    const info = await transporter.sendMail({
+    await transporter.sendMail({
       from: `"Asistencia ICA" <${process.env.SMTP_USER}>`,
       to: email,
-      subject,
-      text,
+      subject: asunto,
+      text:
+        "Estimado(a),\n\nAdjuntamos su orden médica generada por Asistencia ICA.\n\nSaludos cordiales,\nInstituto de Cirugía Articular",
       attachments: [
         {
           filename: "orden_medica.pdf",
-          path: pdfAbsoluto,
+          content: bufferPDF,
           contentType: "application/pdf",
         },
       ],
     });
 
-    console.log(`📧 Correo enviado correctamente a ${email}. messageId=${info.messageId}`);
+    console.log("📧 Email enviado a", email);
     return true;
-  } catch (err) {
-    console.error("❌ Error en enviarOrdenPorCorreo:", err);
+  } catch (e) {
+    console.error("❌ Error enviarOrdenPorCorreo:", e);
     return false;
   }
 }
