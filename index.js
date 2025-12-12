@@ -759,52 +759,6 @@ app.get("/pdf/:idPago", async (req, res) => {
     res.sendStatus(500);
   }
 });
-// ===== ENVÍO DE PDF POR CORREO (TRAUMA) — SIN RESPONSE STREAM
-app.post("/enviar-pdf/:idPago", async (req, res) => {
-  try {
-    const idPago = req.params.idPago;
-
-    // Validar autorización
-    const meta = memoria.get(ns("meta", idPago));
-    if (!meta || meta.moduloAutorizado !== "trauma") {
-      return res.sendStatus(402);
-    }
-
-    // Leer SOLO trauma
-    const d = memoria.get(ns("trauma", idPago));
-    if (!d) return res.sendStatus(404);
-
-    const generar = await loadOrdenImagenologia();
-
-    const examen = buildExamenTextoStrict(d);
-    const nota = buildNotaStrict(d);
-
-    const datos = { ...d, examen, nota, idPago };
-
-    // PDF temporal (NO response)
-    const tempPath = path.join(__dirname, `orden_${idPago}.pdf`);
-    const doc = new PDFDocument({ size: "A4", margin: 50 });
-    const ws = fs.createWriteStream(tempPath);
-
-    doc.pipe(ws);
-    generar(doc, datos);
-    doc.end();
-
-    ws.on("finish", async () => {
-      await enviarOrdenPorCorreo({
-        idPago,
-        pdfPath: tempPath,
-      });
-
-      fs.unlink(tempPath, () => {});
-      return res.json({ ok: true });
-    });
-  } catch (e) {
-    console.error("enviar-pdf error:", e);
-    return res.status(500).json({ ok: false });
-  }
-});
-
 
 // =====================================================
 // ===============   PREOP (PDF 2 PÁGINAS)  ============
