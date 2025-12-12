@@ -1483,6 +1483,63 @@ app.post("/ia/trauma", cors(corsOptions), traumaIAWithFallback(_traumaIA)); // a
 // =====================================================
 // ============   CHAT GPT (nuevo módulo)  =============
 // =====================================================
+// =====================================================
+// ============   ENVIAR ORDEN POR CORREO  =============
+// =====================================================
+app.post("/enviar-pdf/:idPago", async (req, res) => {
+  try {
+    const { idPago } = req.params;
+    if (!idPago) {
+      return res.status(400).json({ ok: false, error: "Falta idPago" });
+    }
+
+    // Busca datos en cualquier módulo
+    const { data } = pickFromSpaces(memoria, idPago);
+    if (!data) {
+      return res.status(404).json({ ok: false, error: "No hay datos para ese idPago" });
+    }
+
+    if (!data.email) {
+      return res.status(400).json({
+        ok: false,
+        error: "El paciente no tiene email",
+      });
+    }
+
+    // Generar PDF de TRAUMA (imagenología)
+    const generar = await loadOrdenImagenologia();
+    const examen = buildExamenTextoStrict(data);
+    const nota = buildNotaStrict(data);
+
+    const tmpPath = path.join(
+      __dirname,
+      `orden_${idPago}_${Date.now()}.pdf`
+    );
+
+    const doc = new PDFDocument({ size: "A4", margin: 50 });
+    const stream = fs.createWriteStream(tmpPath);
+    doc.pipe(stream);
+
+    generar(doc, { ...data, examen, nota, idPago });
+    doc.end();
+
+    await new Promise((resolve) => stream.on("finish", resolve));
+
+    // 👉 ENVÍO REAL DE CORREO
+    await enviarOrdenPorCorreo({
+      to: data.email,
+      nombre: data.nombre,
+      archivo: tmpPath,
+    });
+
+    fs.unlink(tmpPath, () => {});
+
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error("enviar-pdf error:", e);
+    return res.status(500).json({ ok: false, error: "No se pudo enviar el correo" });
+  }
+});
 
 app.use("/api", chatRouter);
 
