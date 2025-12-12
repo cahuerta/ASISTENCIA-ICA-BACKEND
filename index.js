@@ -1483,6 +1483,9 @@ app.post("/ia/trauma", cors(corsOptions), traumaIAWithFallback(_traumaIA)); // a
 // =====================================================
 // ============   CHAT GPT (nuevo módulo)  =============
 // =====================================================
+
+app.use("/api", chatRouter);
+
 // =====================================================
 // ============   ENVIAR ORDEN POR CORREO  =============
 // =====================================================
@@ -1541,7 +1544,6 @@ app.post("/enviar-pdf/:idPago", async (req, res) => {
   }
 });
 
-app.use("/api", chatRouter);
 
 // ===== 404 handler explícito
 app.use((req, res) => {
