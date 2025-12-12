@@ -752,25 +752,7 @@ app.get("/pdf/:idPago", async (req, res) => {
     doc.pipe(res);
     generar(doc, datos);
     doc.end();
-    doc.end();
 
-// 🔥 Enviar copia por correo (TRAUMA)
-try {
-  const tempPath = path.join(__dirname, `temp_${req.params.idPago}.pdf`);
-  const writeStream = fs.createWriteStream(tempPath);
-
-  const doc2 = new PDFDocument({ size: "A4", margin: 50 });
-  generar(doc2, datos);
-  doc2.pipe(writeStream);
-  doc2.end();
-
-  writeStream.on("finish", async () => {
-    await enviarOrdenPorCorreo({ idPago: req.params.idPago, pdfPath: tempPath });
-    fs.unlink(tempPath, () => {});
-  });
-} catch (err) {
-  console.error("❌ Error al intentar enviar correo TRAUMA:", err);
-}
 
   } catch (e) {
     console.error("pdf/:idPago error:", e);
