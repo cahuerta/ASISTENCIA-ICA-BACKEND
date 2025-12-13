@@ -99,9 +99,8 @@ const FLOW_AMOUNT = Number(process.env.FLOW_AMOUNT || KHIPU_AMOUNT || 1000);
 const FLOW_SUBJECT =
   process.env.FLOW_SUBJECT || KHIPU_SUBJECT || "Orden médica ICA";
 
-const memoria = new Map();
+import { memoria } from "./memoria.js";
 app.set("memoria", memoria);
-export { memoria };
 
 const ns = (s, id) => `${s}:${id}`;
 const sanitize = (t) => String(t || "").replace(/[^a-zA-Z0-9_-]+/g, "_");
