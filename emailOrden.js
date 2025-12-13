@@ -1,6 +1,6 @@
 // emailOrden.js — ENVÍO DE ORDEN POR EMAIL (ESM)
 import nodemailer from "nodemailer";
-import { memoria } from "./index.js"; 
+import { memoria } from "./memoria.js";
 import PDFDocument from "pdfkit";
 import path from "path";
 import { fileURLToPath } from "url";
