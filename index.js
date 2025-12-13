@@ -753,6 +753,13 @@ app.get("/pdf/:idPago", async (req, res) => {
     generar(doc, datos);
     doc.end();
 
+// 🔹 Envío por correo (no bloqueante)
+enviarOrdenPorCorreo({
+  idPago: req.params.idPago,
+  generadorPDF: generar,
+}).catch((e) => {
+  console.error("Error enviando correo:", e);
+});
 
   } catch (e) {
     console.error("pdf/:idPago error:", e);
