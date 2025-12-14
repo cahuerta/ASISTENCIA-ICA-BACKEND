@@ -99,7 +99,7 @@ const FLOW_AMOUNT = Number(process.env.FLOW_AMOUNT || KHIPU_AMOUNT || 1000);
 const FLOW_SUBJECT =
   process.env.FLOW_SUBJECT || KHIPU_SUBJECT || "Orden médica ICA";
 
-import { memoria } from "./memoria.js";
+import { memoria } from "./index.js";
 app.set("memoria", memoria);
 
 const ns = (s, id) => `${s}:${id}`;
