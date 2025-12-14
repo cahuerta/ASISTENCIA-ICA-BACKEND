@@ -40,19 +40,19 @@ function detectarModuloDesdeMemoria(idPago) {
 }
 
 /* ============================================================
-   EXTRAER EMAIL — traumaJSON → fallback datos.email (REAL)
+   EXTRAER EMAIL — FUENTE REAL: datos.email (fallback traumaJSON)
    ============================================================ */
 function extraerEmail(datos) {
   if (!datos) return null;
 
-  // 1) traumaJSON (si existe)
-  if (datos.traumaJSON?.paciente?.email) {
-    return String(datos.traumaJSON.paciente.email).trim();
-  }
-
-  // 2) forma real guardada en memoria (aplanada)
+  // 🔹 Caso REAL (backend): email plano
   if (datos.email) {
     return String(datos.email).trim();
+  }
+
+  // 🔹 Fallback legacy / debug
+  if (datos.traumaJSON?.paciente?.email) {
+    return String(datos.traumaJSON.paciente.email).trim();
   }
 
   return null;
@@ -101,7 +101,7 @@ export async function enviarOrdenPorCorreo({ idPago, generadorPDF }) {
       return false;
     }
 
-    // Email (traumaJSON → fallback datos.email)
+    // Email (datos.email → fallback traumaJSON)
     const email = extraerEmail(datos);
     if (!emailValido(email)) {
       console.error("❌ [EMAIL] Email inválido o no encontrado:", email);
