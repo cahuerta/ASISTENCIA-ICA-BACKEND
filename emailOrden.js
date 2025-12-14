@@ -29,31 +29,25 @@ function crearTransporter() {
 }
 
 /* ============================================================
-   Detectar módulo por idPago
+   Detectar módulo DESDE memoria (NO por prefijo idPago)
    ============================================================ */
-function detectarModulo(id) {
-  if (id.startsWith("trauma_")) return "trauma";
-  if (id.startsWith("preop_")) return "preop";
-  if (id.startsWith("generales_")) return "generales";
-  if (id.startsWith("ia_")) return "ia";
+function detectarModuloDesdeMemoria(idPago) {
+  const spaces = ["trauma", "preop", "generales", "ia"];
+  for (const s of spaces) {
+    if (memoria.has(`${s}:${idPago}`)) return s;
+  }
   return null;
 }
 
 /* ============================================================
-   EXTRAER EMAIL DESDE traumaJSON (frontend)
+   EXTRAER EMAIL — ÚNICA FUENTE: traumaJSON.paciente.email
    ============================================================ */
 function extraerEmail(datos) {
   if (!datos) return null;
 
-  // Caso principal: traumaJSON completo
   if (datos.traumaJSON?.paciente?.email) {
-    return datos.traumaJSON.paciente.email.trim();
+    return String(datos.traumaJSON.paciente.email).trim();
   }
-
-  // Fallbacks directos
-  if (datos.paciente?.email) return datos.paciente.email.trim();
-  if (datos.email) return datos.email.trim();
-  if (datos.emailPaciente) return datos.emailPaciente.trim();
 
   return null;
 }
@@ -85,13 +79,13 @@ async function generarPDFBuffer(modulo, datos, generador) {
    ============================================================ */
 export async function enviarOrdenPorCorreo({ idPago, generadorPDF }) {
   try {
-    const modulo = detectarModulo(idPago);
+    const modulo = detectarModuloDesdeMemoria(idPago);
     if (!modulo) {
-      console.error("❌ idPago sin prefijo válido:", idPago);
+      console.error("❌ No se pudo detectar módulo en memoria:", idPago);
       return false;
     }
 
-    // Leer memoria (lo que guarda /guardar-datos)
+    // Leer memoria (exactamente lo mismo que usa el PDF)
     const key = `${modulo}:${idPago}`;
     const datos = memoria.get(key);
     if (!datos) {
@@ -99,7 +93,7 @@ export async function enviarOrdenPorCorreo({ idPago, generadorPDF }) {
       return false;
     }
 
-    // Email DESDE traumaJSON
+    // Email SOLO desde traumaJSON
     const email = extraerEmail(datos);
     if (!emailValido(email)) {
       console.error("❌ Email inválido o no encontrado:", email);
