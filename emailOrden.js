@@ -16,14 +16,14 @@ function crearTransporter() {
   const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS } = process.env;
 
   if (!SMTP_HOST || !SMTP_PORT || !SMTP_USER || !SMTP_PASS) {
-    console.error("❌ Faltan variables SMTP");
+    console.error("❌ [EMAIL] Faltan variables SMTP");
     return null;
   }
 
   return nodemailer.createTransport({
     host: SMTP_HOST,
     port: Number(SMTP_PORT),
-    secure: false,
+    secure: false, // 587 STARTTLS
     auth: { user: SMTP_USER, pass: SMTP_PASS },
   });
 }
@@ -79,9 +79,11 @@ async function generarPDFBuffer(modulo, datos, generador) {
    ============================================================ */
 export async function enviarOrdenPorCorreo({ idPago, generadorPDF }) {
   try {
+    console.log("📨 [EMAIL] Iniciando envío. idPago:", idPago);
+
     const modulo = detectarModuloDesdeMemoria(idPago);
     if (!modulo) {
-      console.error("❌ No se pudo detectar módulo en memoria:", idPago);
+      console.error("❌ [EMAIL] No se pudo detectar módulo en memoria:", idPago);
       return false;
     }
 
@@ -89,23 +91,29 @@ export async function enviarOrdenPorCorreo({ idPago, generadorPDF }) {
     const key = `${modulo}:${idPago}`;
     const datos = memoria.get(key);
     if (!datos) {
-      console.error("❌ No se encontraron datos en memoria:", key);
+      console.error("❌ [EMAIL] No se encontraron datos en memoria:", key);
       return false;
     }
 
     // Email SOLO desde traumaJSON
     const email = extraerEmail(datos);
     if (!emailValido(email)) {
-      console.error("❌ Email inválido o no encontrado:", email);
+      console.error("❌ [EMAIL] Email inválido o no encontrado:", email);
       return false;
     }
+
+    console.log("📨 [EMAIL] Destinatario:", email);
+    console.log("📨 [EMAIL] SMTP_USER:", process.env.SMTP_USER);
 
     // Generar PDF en buffer
     const bufferPDF = await generarPDFBuffer(modulo, datos, generadorPDF);
 
     // Transporter SMTP
     const transporter = crearTransporter();
-    if (!transporter) return false;
+    if (!transporter) {
+      console.error("❌ [EMAIL] Transporter SMTP no creado");
+      throw new Error("SMTP transporter no creado");
+    }
 
     const asunto =
       modulo === "trauma"
@@ -116,7 +124,9 @@ export async function enviarOrdenPorCorreo({ idPago, generadorPDF }) {
         ? "Orden de exámenes generales – ICA"
         : "Orden IA – ICA";
 
-    await transporter.sendMail({
+    console.log("📨 [EMAIL] Enviando correo…");
+
+    const info = await transporter.sendMail({
       from: `"Asistencia ICA" <${process.env.SMTP_USER}>`,
       to: email,
       subject: asunto,
@@ -131,10 +141,13 @@ export async function enviarOrdenPorCorreo({ idPago, generadorPDF }) {
       ],
     });
 
-    console.log("📧 Email enviado a", email);
+    console.log("📧 [EMAIL] Envío OK:", info?.messageId);
     return true;
   } catch (e) {
-    console.error("❌ Error enviarOrdenPorCorreo:", e);
+    console.error("❌ [EMAIL] Error enviarOrdenPorCorreo");
+    console.error("mensaje:", e?.message);
+    console.error("respuesta:", e?.response);
+    console.error(e);
     return false;
   }
 }
