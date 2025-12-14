@@ -10,7 +10,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 /* ============================================================
-   SMTP transporter desde variables de entorno
+   SMTP transporter desde variables de entorno (465 SSL)
    ============================================================ */
 function crearTransporter() {
   const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS } = process.env;
@@ -22,8 +22,8 @@ function crearTransporter() {
 
   return nodemailer.createTransport({
     host: SMTP_HOST,
-    port: Number(SMTP_PORT),
-    secure: false, // 587 STARTTLS
+    port: 465,           // 🔒 SSL directo
+    secure: true,        // 🔒 SSL
     auth: {
       user: SMTP_USER,
       pass: SMTP_PASS,
@@ -31,7 +31,7 @@ function crearTransporter() {
     tls: {
       rejectUnauthorized: false,
     },
-    connectionTimeout: 10000, // 10s
+    connectionTimeout: 10000,
     greetingTimeout: 10000,
     socketTimeout: 10000,
   });
