@@ -2,8 +2,8 @@
 import nodemailer from "nodemailer";
 import { memoria } from "./index.js";
 import PDFDocument from "pdfkit";
-import path from "path";
 import { fileURLToPath } from "url";
+import path from "path";
 
 // Para rutas internas
 const __filename = fileURLToPath(import.meta.url);
@@ -40,13 +40,21 @@ function detectarModulo(id) {
 }
 
 /* ============================================================
-   Extraer email desde memoria
+   EXTRAER EMAIL DESDE traumaJSON (frontend)
    ============================================================ */
-function extraerEmail(d) {
-  if (!d) return null;
-  if (d.emailPaciente) return d.emailPaciente.trim();
-  if (d.email) return d.email.trim();
-  if (d.datos && d.datos.emailPaciente) return d.datos.emailPaciente.trim();
+function extraerEmail(datos) {
+  if (!datos) return null;
+
+  // Caso principal: traumaJSON completo
+  if (datos.traumaJSON?.paciente?.email) {
+    return datos.traumaJSON.paciente.email.trim();
+  }
+
+  // Fallbacks directos
+  if (datos.paciente?.email) return datos.paciente.email.trim();
+  if (datos.email) return datos.email.trim();
+  if (datos.emailPaciente) return datos.emailPaciente.trim();
+
   return null;
 }
 
@@ -83,7 +91,7 @@ export async function enviarOrdenPorCorreo({ idPago, generadorPDF }) {
       return false;
     }
 
-    // leer memoria
+    // Leer memoria (lo que guarda /guardar-datos)
     const key = `${modulo}:${idPago}`;
     const datos = memoria.get(key);
     if (!datos) {
@@ -91,17 +99,17 @@ export async function enviarOrdenPorCorreo({ idPago, generadorPDF }) {
       return false;
     }
 
-    // email
+    // Email DESDE traumaJSON
     const email = extraerEmail(datos);
     if (!emailValido(email)) {
-      console.error("❌ Email inválido:", email);
+      console.error("❌ Email inválido o no encontrado:", email);
       return false;
     }
 
-    // generar PDF en buffer
+    // Generar PDF en buffer
     const bufferPDF = await generarPDFBuffer(modulo, datos, generadorPDF);
 
-    // transporter SMTP
+    // Transporter SMTP
     const transporter = crearTransporter();
     if (!transporter) return false;
 
