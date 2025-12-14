@@ -24,7 +24,16 @@ function crearTransporter() {
     host: SMTP_HOST,
     port: Number(SMTP_PORT),
     secure: false, // 587 STARTTLS
-    auth: { user: SMTP_USER, pass: SMTP_PASS },
+    auth: {
+      user: SMTP_USER,
+      pass: SMTP_PASS,
+    },
+    tls: {
+      rejectUnauthorized: false,
+    },
+    connectionTimeout: 10000, // 10s
+    greetingTimeout: 10000,
+    socketTimeout: 10000,
   });
 }
 
