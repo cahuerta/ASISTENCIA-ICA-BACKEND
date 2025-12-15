@@ -247,6 +247,25 @@ app.get("/health", (_req, res) =>
     frontend: FRONTEND_BASE,
   })
 );
+// =====================================================
+// ============   ZOHO OAUTH CALLBACK  =================
+// =====================================================
+app.get("/zoho/callback", async (req, res) => {
+  const { code } = req.query;
+
+  if (!code) {
+    return res.status(400).json({ ok: false, error: "Falta code" });
+  }
+
+  // POR AHORA solo lo mostramos para copiarlo
+  console.log("✅ ZOHO AUTH CODE:", code);
+
+  return res.json({
+    ok: true,
+    message: "Zoho authorization code recibido",
+    code,
+  });
+});
 
 // =====================================================
 // ===============   PREVIEW (solo lectura)  ===========
