@@ -156,6 +156,125 @@ export function generarOrdenImagenologia(doc, datos) {
     width: pageW - marginL - marginR,
   });
 
-  
+  // --------- DEBUG FOOTER RÁPIDO EN PÁGINA CLÍNICA ---------
+  try {
+    // Lo que llega desde index (buildExamenTextoStrict)
+    const examPreview = (examen || "").slice(0, 80);
 
-   
+    // Lo que está REALMENTE guardado en memoria para ese idPago
+    let examenMem = "";
+    let rawMem = null;
+
+    if (idPago && memoria && typeof memoria.get === "function") {
+      rawMem = memoria.get(`trauma:${idPago}`);
+      if (rawMem) {
+        if (Array.isArray(rawMem.examenes) && rawMem.examenes.length > 0) {
+          examenMem = rawMem.examenes.join(" | ");
+        } else if (Array.isArray(rawMem.examenesIA) && rawMem.examenesIA.length > 0) {
+          examenMem = rawMem.examenesIA.join(" | ");
+        } else if (typeof rawMem.examen === "string") {
+          examenMem = rawMem.examen;
+        }
+      }
+    }
+
+    // Log a consola para comparar en backend
+    console.log("DEBUG_PDF_TRAUMA", {
+      idPago,
+      rut,
+      examenFromIndex: examen,
+      examenFromMem: examenMem,
+      rawMem,
+    });
+
+    doc.moveDown(1.5);
+    doc
+      .fontSize(8)
+      .fillColor("#666")
+      .text(
+        `DEBUG(1/2): id=${idPago || "-"} | rut=${rut || "-"} | examenIDX=${examPreview}`
+      )
+      .text(`DEBUG_MEM_EXAMEN: ${(examenMem || "").slice(0, 80)}`);
+    doc.fillColor("black");
+  } catch {}
+
+  // --------- PÁGINA 2: DEBUG COMPLETO (FRONT + MEMORIA + IA) ---------
+  try {
+    const tieneMemoria =
+      idPago && memoria && typeof memoria.get === "function";
+
+    let snapIA = null;
+    let snapTrauma = null;
+
+    if (tieneMemoria) {
+      snapIA = memoria.get(`ia:${idPago}`) || null;
+      snapTrauma = memoria.get(`trauma:${idPago}`) || null;
+    }
+
+    const debugPayloadFront = {
+      idPago,
+      desdeIndex: {
+        nombre,
+        rut,
+        edad,
+        dolor,
+        lado,
+        examenIndex: examen,
+        notaIndex: nota ?? null,
+      },
+    };
+
+    const debugIA = snapTrauma?.debugIA || snapIA?.debugIA || null;
+
+    // Nueva página para no ensuciar la orden clínica
+    doc.addPage();
+    doc.font("Helvetica-Bold").fontSize(14).text("DEBUG ORDEN TRAUMA / IA", {
+      align: "left",
+    });
+    doc.moveDown(0.5);
+    doc.font("Helvetica").fontSize(9);
+
+    doc.text("1) PAYLOAD DESDE INDEX (datos que recibe generarOrdenImagenologia):");
+    doc.moveDown(0.2);
+    doc.text(safeJson(debugPayloadFront), {
+      align: "left",
+      width: doc.page.width - doc.page.margins.left - doc.page.margins.right,
+    });
+
+    doc.moveDown(0.8);
+    doc.font("Helvetica-Bold").text("2) MEMORIA ia:idPago (memoria.get('ia:idPago')):");
+    doc.moveDown(0.2);
+    doc.font("Helvetica").text(safeJson(snapIA), {
+      align: "left",
+      width: doc.page.width - doc.page.margins.left - doc.page.margins.right,
+    });
+
+    doc.moveDown(0.8);
+    doc.font("Helvetica-Bold").text("3) MEMORIA trauma:idPago (memoria.get('trauma:idPago')):");
+    doc.moveDown(0.2);
+    doc.font("Helvetica").text(safeJson(snapTrauma), {
+      align: "left",
+      width: doc.page.width - doc.page.margins.left - doc.page.margins.right,
+    });
+
+    doc.moveDown(0.8);
+    doc.font("Helvetica-Bold").text("4) DEBUG IA (texto bruto, Dx y examen normalizado):");
+    doc.moveDown(0.2);
+    doc.font("Helvetica").text(
+      safeJson(
+        debugIA || {
+          info: "No se encontró debugIA en memoria. Revisa traumaIA.js.",
+        }
+      ),
+      {
+        align: "left",
+        width: doc.page.width - doc.page.margins.left - doc.page.margins.right,
+      }
+    );
+  } catch (e) {
+    console.error("ERROR_DEBUG_PDF_TRAUMA", {
+      idPago,
+      error: e?.message,
+    });
+  }
+}
