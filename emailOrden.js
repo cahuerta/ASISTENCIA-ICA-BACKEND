@@ -1,5 +1,4 @@
-// emailOrden.js — ENVÍO DE ORDEN POR EMAIL (Zoho Mail API, ESM)
-
+// emailOrden.js — ENVÍO DE ORDEN POR EMAIL (Zoho Mail API, NO BLOQUEANTE)
 import { memoria } from "./index.js";
 import PDFDocument from "pdfkit";
 
@@ -44,32 +43,39 @@ async function generarPDFBuffer(datos, generador) {
 }
 
 /* ============================================================
-   Zoho helpers
+   Zoho config
    ============================================================ */
 const ZOHO_API = process.env.ZOHO_MAIL_API_DOMAIN;
-const ACCESS_TOKEN = process.env.ZOHO_MAIL_ACCESS_TOKEN;
-const REFRESH_TOKEN = process.env.ZOHO_MAIL_REFRESH_TOKEN;
 const CLIENT_ID = process.env.ZOHO_CLIENT_ID;
 const CLIENT_SECRET = process.env.ZOHO_CLIENT_SECRET;
+const REFRESH_TOKEN = process.env.ZOHO_MAIL_REFRESH_TOKEN;
 
+/* ============================================================
+   Token refresh (interno, silencioso)
+   ============================================================ */
 async function refreshZohoToken() {
-  const url =
-    `https://accounts.zoho.com/oauth/v2/token` +
-    `?grant_type=refresh_token` +
-    `&client_id=${CLIENT_ID}` +
-    `&client_secret=${CLIENT_SECRET}` +
-    `&refresh_token=${REFRESH_TOKEN}`;
+  try {
+    const url =
+      `https://accounts.zoho.com/oauth/v2/token` +
+      `?grant_type=refresh_token` +
+      `&client_id=${CLIENT_ID}` +
+      `&client_secret=${CLIENT_SECRET}` +
+      `&refresh_token=${REFRESH_TOKEN}`;
 
-  const r = await fetch(url, { method: "POST" });
-  const j = await r.json();
+    const r = await fetch(url, { method: "POST" });
+    const j = await r.json();
 
-  if (!j.access_token) {
-    console.error("❌ [ZOHO] Error refrescando token:", j);
+    if (!j.access_token) {
+      console.error("❌ [ZOHO] No se pudo refrescar token:", j);
+      return null;
+    }
+
+    process.env.ZOHO_MAIL_ACCESS_TOKEN = j.access_token;
+    return j.access_token;
+  } catch (e) {
+    console.error("❌ [ZOHO] Error refresh token:", e?.message);
     return null;
   }
-
-  process.env.ZOHO_MAIL_ACCESS_TOKEN = j.access_token;
-  return j.access_token;
 }
 
 async function zohoFetch(url, options = {}) {
@@ -85,7 +91,6 @@ async function zohoFetch(url, options = {}) {
 
   if (r.status !== 401) return r;
 
-  // token expirado → refresh
   token = await refreshZohoToken();
   if (!token) return r;
 
@@ -99,33 +104,32 @@ async function zohoFetch(url, options = {}) {
 }
 
 /* ============================================================
-   ENVIAR ORDEN POR CORREO (Zoho Mail API)
+   ENVÍO DE CORREO — NUNCA BLOQUEANTE
    ============================================================ */
 export async function enviarOrdenPorCorreo({ idPago, generadorPDF }) {
   try {
-    console.log("📨 [ZOHO] Envío iniciado. idPago:", idPago);
+    console.log("📨 [ZOHO] Intento envío email. idPago:", idPago);
 
     const modulo = detectarModuloDesdeMemoria(idPago);
     if (!modulo) {
-      console.error("❌ [ZOHO] No se detecta módulo");
-      return false;
+      console.warn("⚠️ [ZOHO] Módulo no detectado, se omite email");
+      return;
     }
 
-    const key = `${modulo}:${idPago}`;
-    const datos = memoria.get(key);
+    const datos = memoria.get(`${modulo}:${idPago}`);
     if (!datos) {
-      console.error("❌ [ZOHO] No hay datos en memoria");
-      return false;
+      console.warn("⚠️ [ZOHO] Datos no encontrados, se omite email");
+      return;
     }
 
     const email = extraerEmail(datos);
     if (!emailValido(email)) {
-      console.error("❌ [ZOHO] Email inválido:", email);
-      return false;
+      console.warn("⚠️ [ZOHO] Email inválido, se omite:", email);
+      return;
     }
 
-    const bufferPDF = await generarPDFBuffer(datos, generadorPDF);
-    const base64PDF = bufferPDF.toString("base64");
+    const pdfBuffer = await generarPDFBuffer(datos, generadorPDF);
+    const pdfBase64 = pdfBuffer.toString("base64");
 
     // Obtener accountId
     const accResp = await zohoFetch(`${ZOHO_API}/mail/v1/accounts`);
@@ -134,7 +138,7 @@ export async function enviarOrdenPorCorreo({ idPago, generadorPDF }) {
     const accountId = accJson?.data?.[0]?.accountId;
     if (!accountId) {
       console.error("❌ [ZOHO] accountId no encontrado", accJson);
-      return false;
+      return;
     }
 
     const asunto =
@@ -155,7 +159,7 @@ export async function enviarOrdenPorCorreo({ idPago, generadorPDF }) {
       attachments: [
         {
           fileName: "orden_medica.pdf",
-          content: base64PDF,
+          content: pdfBase64,
         },
       ],
     };
@@ -173,13 +177,12 @@ export async function enviarOrdenPorCorreo({ idPago, generadorPDF }) {
 
     if (!sendResp.ok) {
       console.error("❌ [ZOHO] Error envío:", sendJson);
-      return false;
+      return;
     }
 
-    console.log("📧 [ZOHO] Email enviado OK:", email);
-    return true;
+    console.log("📧 [ZOHO] Email enviado OK a:", email);
   } catch (e) {
-    console.error("❌ [ZOHO] Error fatal:", e);
-    return false;
+    // 🔴 JAMÁS romper flujo PDF
+    console.error("❌ [ZOHO] Error email (IGNORADO):", e?.message);
   }
 }
