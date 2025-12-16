@@ -297,7 +297,7 @@ app.get("/debug/zoho/accounts", async (req, res) => {
       });
     }
 
-    const r = await fetch(`${apiDomain}/mail/v1/accounts`, {
+    const r = await fetch(`https://mail.zoho.com/api/accounts`, {
       headers: {
         Authorization: `Bearer ${token}`,
       },
