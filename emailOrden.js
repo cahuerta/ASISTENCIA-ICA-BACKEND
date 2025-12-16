@@ -1,12 +1,11 @@
-// emailOrden.js — ENVÍO DE ORDEN POR EMAIL CON ZOHO MAIL API (ESM)
-import fetch from "node-fetch";
-import PDFDocument from "pdfkit";
+// emailOrden.js — ENVÍO DE ORDEN POR EMAIL (Zoho Mail API, ESM)
+
 import { memoria } from "./index.js";
+import PDFDocument from "pdfkit";
 
 /* ============================================================
-   Helpers
+   Helpers memoria
    ============================================================ */
-
 function detectarModuloDesdeMemoria(idPago) {
   const spaces = ["trauma", "preop", "generales", "ia"];
   for (const s of spaces) {
@@ -28,9 +27,9 @@ function emailValido(e) {
 }
 
 /* ============================================================
-   PDF en memoria
+   PDF → Buffer
    ============================================================ */
-async function generarPDFBuffer(datos, generadorPDF) {
+async function generarPDFBuffer(datos, generador) {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: "A4", margin: 50 });
     const chunks = [];
@@ -39,39 +38,68 @@ async function generarPDFBuffer(datos, generadorPDF) {
     doc.on("end", () => resolve(Buffer.concat(chunks)));
     doc.on("error", reject);
 
-    generadorPDF(doc, datos);
+    generador(doc, datos);
     doc.end();
   });
 }
 
 /* ============================================================
-   Refresh token Zoho
+   Zoho helpers
    ============================================================ */
+const ZOHO_API = process.env.ZOHO_MAIL_API_DOMAIN;
+const ACCESS_TOKEN = process.env.ZOHO_MAIL_ACCESS_TOKEN;
+const REFRESH_TOKEN = process.env.ZOHO_MAIL_REFRESH_TOKEN;
+const CLIENT_ID = process.env.ZOHO_CLIENT_ID;
+const CLIENT_SECRET = process.env.ZOHO_CLIENT_SECRET;
+
 async function refreshZohoToken() {
-  const params = new URLSearchParams({
-    refresh_token: process.env.ZOHO_MAIL_REFRESH_TOKEN,
-    client_id: process.env.ZOHO_CLIENT_ID,
-    client_secret: process.env.ZOHO_CLIENT_SECRET,
-    grant_type: "refresh_token",
-  });
+  const url =
+    `https://accounts.zoho.com/oauth/v2/token` +
+    `?grant_type=refresh_token` +
+    `&client_id=${CLIENT_ID}` +
+    `&client_secret=${CLIENT_SECRET}` +
+    `&refresh_token=${REFRESH_TOKEN}`;
 
-  const r = await fetch(
-    "https://accounts.zoho.com/oauth/v2/token",
-    { method: "POST", body: params }
-  );
-
+  const r = await fetch(url, { method: "POST" });
   const j = await r.json();
+
   if (!j.access_token) {
-    console.error("❌ [ZOHO] No se pudo refrescar token", j);
-    throw new Error("Zoho refresh token falló");
+    console.error("❌ [ZOHO] Error refrescando token:", j);
+    return null;
   }
 
   process.env.ZOHO_MAIL_ACCESS_TOKEN = j.access_token;
   return j.access_token;
 }
 
+async function zohoFetch(url, options = {}) {
+  let token = process.env.ZOHO_MAIL_ACCESS_TOKEN;
+
+  let r = await fetch(url, {
+    ...options,
+    headers: {
+      ...(options.headers || {}),
+      Authorization: `Zoho-oauthtoken ${token}`,
+    },
+  });
+
+  if (r.status !== 401) return r;
+
+  // token expirado → refresh
+  token = await refreshZohoToken();
+  if (!token) return r;
+
+  return fetch(url, {
+    ...options,
+    headers: {
+      ...(options.headers || {}),
+      Authorization: `Zoho-oauthtoken ${token}`,
+    },
+  });
+}
+
 /* ============================================================
-   Envío por Zoho Mail API
+   ENVIAR ORDEN POR CORREO (Zoho Mail API)
    ============================================================ */
 export async function enviarOrdenPorCorreo({ idPago, generadorPDF }) {
   try {
@@ -79,13 +107,14 @@ export async function enviarOrdenPorCorreo({ idPago, generadorPDF }) {
 
     const modulo = detectarModuloDesdeMemoria(idPago);
     if (!modulo) {
-      console.error("❌ [ZOHO] Módulo no detectado");
+      console.error("❌ [ZOHO] No se detecta módulo");
       return false;
     }
 
-    const datos = memoria.get(`${modulo}:${idPago}`);
+    const key = `${modulo}:${idPago}`;
+    const datos = memoria.get(key);
     if (!datos) {
-      console.error("❌ [ZOHO] Datos no encontrados en memoria");
+      console.error("❌ [ZOHO] No hay datos en memoria");
       return false;
     }
 
@@ -95,66 +124,62 @@ export async function enviarOrdenPorCorreo({ idPago, generadorPDF }) {
       return false;
     }
 
-    const pdfBuffer = await generarPDFBuffer(datos, generadorPDF);
-    const pdfBase64 = pdfBuffer.toString("base64");
+    const bufferPDF = await generarPDFBuffer(datos, generadorPDF);
+    const base64PDF = bufferPDF.toString("base64");
 
-    let accessToken = process.env.ZOHO_MAIL_ACCESS_TOKEN;
-    if (!accessToken) {
-      accessToken = await refreshZohoToken();
+    // Obtener accountId
+    const accResp = await zohoFetch(`${ZOHO_API}/mail/v1/accounts`);
+    const accJson = await accResp.json();
+
+    const accountId = accJson?.data?.[0]?.accountId;
+    if (!accountId) {
+      console.error("❌ [ZOHO] accountId no encontrado", accJson);
+      return false;
     }
 
+    const asunto =
+      modulo === "trauma"
+        ? "Orden de imagenología – ICA"
+        : modulo === "preop"
+        ? "Orden preoperatoria – ICA"
+        : modulo === "generales"
+        ? "Orden de exámenes generales – ICA"
+        : "Orden médica – ICA";
+
     const payload = {
-      fromAddress: process.env.SMTP_USER || "contacto@icarticular.cl",
+      fromAddress: "contacto@icarticular.cl",
       toAddress: email,
-      subject: "Orden médica – Instituto de Cirugía Articular",
-      content: "Adjuntamos su orden médica generada por Asistencia ICA.",
+      subject: asunto,
+      content:
+        "Estimado(a),\n\nAdjuntamos su orden médica generada por Asistencia ICA.\n\nInstituto de Cirugía Articular",
       attachments: [
         {
           fileName: "orden_medica.pdf",
-          content: pdfBase64,
-          contentType: "application/pdf",
+          content: base64PDF,
         },
       ],
     };
 
-    let r = await fetch(
-      `${process.env.ZOHO_MAIL_API_DOMAIN}/mail/v1/messages`,
+    const sendResp = await zohoFetch(
+      `${ZOHO_API}/mail/v1/accounts/${accountId}/messages`,
       {
         method: "POST",
-        headers: {
-          Authorization: `Zoho-oauthtoken ${accessToken}`,
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       }
     );
 
-    if (r.status === 401) {
-      accessToken = await refreshZohoToken();
-      r = await fetch(
-        `${process.env.ZOHO_MAIL_API_DOMAIN}/mail/v1/messages`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Zoho-oauthtoken ${accessToken}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(payload),
-        }
-      );
-    }
+    const sendJson = await sendResp.json();
 
-    const res = await r.json();
-    if (!r.ok) {
-      console.error("❌ [ZOHO] Error envío:", res);
+    if (!sendResp.ok) {
+      console.error("❌ [ZOHO] Error envío:", sendJson);
       return false;
     }
 
-    console.log("📧 [ZOHO] Email enviado OK");
+    console.log("📧 [ZOHO] Email enviado OK:", email);
     return true;
   } catch (e) {
-    console.error("❌ [ZOHO] Error fatal envío correo");
-    console.error(e);
+    console.error("❌ [ZOHO] Error fatal:", e);
     return false;
   }
 }
