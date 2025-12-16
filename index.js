@@ -72,6 +72,43 @@ app.use(cors(corsOptions));
 app.options("*", cors(corsOptions));
 
 app.use(bodyParser.json());
+// ================== ZOHO OAUTH CALLBACK ==================
+app.get("/zoho/callback", async (req, res) => {
+  try {
+    const { code } = req.query;
+
+    if (!code) {
+      return res.status(400).json({ ok: false, error: "Falta code" });
+    }
+
+    const params = new URLSearchParams({
+      grant_type: "authorization_code",
+      client_id: process.env.ZOHO_CLIENT_ID,
+      client_secret: process.env.ZOHO_CLIENT_SECRET,
+      redirect_uri: "https://asistencia-ica-backend.onrender.com/zoho/callback",
+      code,
+    });
+
+    const r = await fetch(
+      "https://accounts.zoho.com/oauth/v2/token",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: params.toString(),
+      }
+    );
+
+    const data = await r.json();
+
+    return res.json({
+      ok: true,
+      zoho: data,
+    });
+  } catch (e) {
+    console.error("Zoho callback error:", e);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
 
 // ===== Puertos / bases
 const PORT = process.env.PORT || 3001;
