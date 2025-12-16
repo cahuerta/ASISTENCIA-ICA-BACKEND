@@ -1,44 +1,25 @@
-// emailOrden.js — ENVÍO DE ORDEN POR EMAIL (ESM)
-import nodemailer from "nodemailer";
+// emailOrden.js — ENVÍO DE ORDEN POR EMAIL CON ZOHO MAIL API (ESM)
 import { memoria } from "./index.js";
 import PDFDocument from "pdfkit";
-import { fileURLToPath } from "url";
-import path from "path";
-
-// Para rutas internas
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 /* ============================================================
-   SMTP transporter desde variables de entorno (465 SSL)
+   CONFIG ZOHO
    ============================================================ */
-function crearTransporter() {
-  const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS } = process.env;
+const {
+  ZOHO_ACCESS_TOKEN,
+  ZOHO_REFRESH_TOKEN,
+  ZOHO_CLIENT_ID,
+  ZOHO_CLIENT_SECRET,
+  ZOHO_ACCOUNT_ID,
+  ZOHO_FROM_EMAIL,
+} = process.env;
 
-  if (!SMTP_HOST || !SMTP_PORT || !SMTP_USER || !SMTP_PASS) {
-    console.error("❌ [EMAIL] Faltan variables SMTP");
-    return null;
-  }
-
-  return nodemailer.createTransport({
-    host: SMTP_HOST,
-    port: 465,           // 🔒 SSL directo
-    secure: true,        // 🔒 SSL
-    auth: {
-      user: SMTP_USER,
-      pass: SMTP_PASS,
-    },
-    tls: {
-      rejectUnauthorized: false,
-    },
-    connectionTimeout: 10000,
-    greetingTimeout: 10000,
-    socketTimeout: 10000,
-  });
+if (!ZOHO_ACCESS_TOKEN || !ZOHO_ACCOUNT_ID || !ZOHO_FROM_EMAIL) {
+  console.warn("⚠️ [EMAIL] Variables Zoho incompletas");
 }
 
 /* ============================================================
-   Detectar módulo DESDE memoria (NO por prefijo idPago)
+   Detectar módulo DESDE memoria
    ============================================================ */
 function detectarModuloDesdeMemoria(idPago) {
   const spaces = ["trauma", "preop", "generales", "ia"];
@@ -49,37 +30,30 @@ function detectarModuloDesdeMemoria(idPago) {
 }
 
 /* ============================================================
-   EXTRAER EMAIL — FUENTE REAL: datos.email (fallback traumaJSON)
+   EXTRAER EMAIL
    ============================================================ */
 function extraerEmail(datos) {
   if (!datos) return null;
 
-  // 🔹 Caso REAL (backend): email plano
-  if (datos.email) {
-    return String(datos.email).trim();
-  }
-
-  // 🔹 Fallback legacy / debug
-  if (datos.traumaJSON?.paciente?.email) {
+  if (datos.email) return String(datos.email).trim();
+  if (datos.traumaJSON?.paciente?.email)
     return String(datos.traumaJSON.paciente.email).trim();
-  }
 
   return null;
 }
 
 function emailValido(e) {
-  if (!e) return false;
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e.trim());
+  return !!e && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
 }
 
 /* ============================================================
-   Generar PDF en memoria (buffer)
+   Generar PDF en memoria
    ============================================================ */
-async function generarPDFBuffer(modulo, datos, generador) {
+async function generarPDFBuffer(datos, generador) {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: "A4", margin: 50 });
-
     const chunks = [];
+
     doc.on("data", (c) => chunks.push(c));
     doc.on("end", () => resolve(Buffer.concat(chunks)));
     doc.on("error", reject);
@@ -90,79 +64,93 @@ async function generarPDFBuffer(modulo, datos, generador) {
 }
 
 /* ============================================================
-   ENVIAR ORDEN POR CORREO
+   Enviar correo vía ZOHO MAIL API
+   ============================================================ */
+async function enviarZohoMail({ to, subject, text, pdfBuffer }) {
+  const url = `https://mail.zoho.com/api/accounts/${ZOHO_ACCOUNT_ID}/messages`;
+
+  const payload = {
+    fromAddress: ZOHO_FROM_EMAIL,
+    toAddress: to,
+    subject,
+    content: text,
+    askReceipt: "no",
+    attachments: [
+      {
+        fileName: "orden_medica.pdf",
+        content: pdfBuffer.toString("base64"),
+        mimeType: "application/pdf",
+      },
+    ],
+  };
+
+  const r = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Zoho-oauthtoken ${ZOHO_ACCESS_TOKEN}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const j = await r.json().catch(() => ({}));
+
+  if (!r.ok) {
+    console.error("❌ [ZOHO] Error envío:", j);
+    throw new Error("Zoho Mail API error");
+  }
+
+  return j;
+}
+
+/* ============================================================
+   FUNCIÓN PRINCIPAL
    ============================================================ */
 export async function enviarOrdenPorCorreo({ idPago, generadorPDF }) {
   try {
-    console.log("📨 [EMAIL] Iniciando envío. idPago:", idPago);
+    console.log("📨 [EMAIL] Envío Zoho iniciado:", idPago);
 
     const modulo = detectarModuloDesdeMemoria(idPago);
     if (!modulo) {
-      console.error("❌ [EMAIL] No se pudo detectar módulo en memoria:", idPago);
+      console.error("❌ [EMAIL] Módulo no encontrado");
       return false;
     }
 
-    // Leer memoria (exactamente lo mismo que usa el PDF)
-    const key = `${modulo}:${idPago}`;
-    const datos = memoria.get(key);
+    const datos = memoria.get(`${modulo}:${idPago}`);
     if (!datos) {
-      console.error("❌ [EMAIL] No se encontraron datos en memoria:", key);
+      console.error("❌ [EMAIL] Datos no encontrados");
       return false;
     }
 
-    // Email (datos.email → fallback traumaJSON)
     const email = extraerEmail(datos);
     if (!emailValido(email)) {
-      console.error("❌ [EMAIL] Email inválido o no encontrado:", email);
+      console.error("❌ [EMAIL] Email inválido:", email);
       return false;
     }
 
-    console.log("📨 [EMAIL] Destinatario:", email);
-    console.log("📨 [EMAIL] SMTP_USER:", process.env.SMTP_USER);
+    const bufferPDF = await generarPDFBuffer(datos, generadorPDF);
 
-    // Generar PDF en buffer
-    const bufferPDF = await generarPDFBuffer(modulo, datos, generadorPDF);
-
-    // Transporter SMTP
-    const transporter = crearTransporter();
-    if (!transporter) {
-      console.error("❌ [EMAIL] Transporter SMTP no creado");
-      throw new Error("SMTP transporter no creado");
-    }
-
-    const asunto =
+    const subject =
       modulo === "trauma"
         ? "Orden de imagenología – ICA"
         : modulo === "preop"
         ? "Orden preoperatoria – ICA"
         : modulo === "generales"
         ? "Orden de exámenes generales – ICA"
-        : "Orden IA – ICA";
+        : "Orden médica – ICA";
 
-    console.log("📨 [EMAIL] Enviando correo…");
-
-    const info = await transporter.sendMail({
-      from: `"Asistencia ICA" <${process.env.SMTP_USER}>`,
+    await enviarZohoMail({
       to: email,
-      subject: asunto,
+      subject,
       text:
         "Estimado(a),\n\nAdjuntamos su orden médica generada por Asistencia ICA.\n\nSaludos cordiales,\nInstituto de Cirugía Articular",
-      attachments: [
-        {
-          filename: "orden_medica.pdf",
-          content: bufferPDF,
-          contentType: "application/pdf",
-        },
-      ],
+      pdfBuffer: bufferPDF,
     });
 
-    console.log("📧 [EMAIL] Envío OK:", info?.messageId);
+    console.log("📧 [EMAIL] Envío Zoho OK");
     return true;
   } catch (e) {
-    console.error("❌ [EMAIL] Error enviarOrdenPorCorreo");
-    console.error("mensaje:", e?.message);
-    console.error("respuesta:", e?.response);
-    console.error(e);
+    console.error("❌ [EMAIL] Error Zoho:", e.message);
     return false;
   }
 }
