@@ -284,6 +284,36 @@ app.get("/health", (_req, res) =>
     frontend: FRONTEND_BASE,
   })
 );
+// ===== DEBUG ZOHO: obtener accountId (TEMPORAL)
+app.get("/debug/zoho/accounts", async (req, res) => {
+  try {
+    const token = process.env.ZOHO_MAIL_ACCESS_TOKEN;
+    const apiDomain = process.env.ZOHO_MAIL_API_DOMAIN || "https://www.zohoapis.com";
+
+    if (!token) {
+      return res.status(500).json({
+        ok: false,
+        error: "Falta ZOHO_MAIL_ACCESS_TOKEN en variables de entorno",
+      });
+    }
+
+    const r = await fetch(`${apiDomain}/mail/v1/accounts`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    const text = await r.text();
+
+    return res.status(r.status).send(text);
+  } catch (e) {
+    return res.status(500).json({
+      ok: false,
+      error: e.message,
+    });
+  }
+});
+
 // =====================================================
 // ============   ZOHO OAUTH CALLBACK  =================
 // =====================================================
