@@ -245,11 +245,7 @@ function buildExamenTextoStrict(rec = {}) {
       .join("\n");
   }
 
-  // 3) String plano
-  if (typeof rec.examen === "string" && rec.examen.trim()) {
-    return rec.examen.trim();
-  }
-
+  
   return ""; // sin fallback
 }
 
