@@ -98,14 +98,6 @@ function dibujarFirmaTimbre(doc) {
    ==================== ORDEN GENERALES =================
    ====================================================== */
 
-/**
- * ⚠️ ESTA VERSIÓN:
- * - NO genera base de exámenes
- * - NO usa PREOP_BASE
- * - NO inventa exámenes según género
- * - Usa examenesIA del payload o, si viene vacío,
- *   examenesIA desde memoria generales:idPago.
- */
 export function generarOrdenGenerales(doc, datos = {}) {
   const { nombre, edad, rut, genero, examenesIA, informeIA, idPago } = datos;
 
@@ -140,10 +132,7 @@ export function generarOrdenGenerales(doc, datos = {}) {
   doc.text(`Edad: ${edad ?? ''}`);     doc.moveDown(0.6);
   doc.text(`Género: ${genero ?? ''}`); doc.moveDown(1.6);
 
-  /* ========= LISTA DE EXÁMENES =========
-     1) Primero examenesIA del payload
-     2) Si viene vacío, usar memGen.examenesIA
-  */
+  /* ========= LISTA DE EXÁMENES ========= */
   const listaBruta =
     (Array.isArray(examenesIA) && examenesIA.length > 0)
       ? examenesIA
@@ -167,79 +156,6 @@ export function generarOrdenGenerales(doc, datos = {}) {
 
   doc.moveDown(1.6);
 
-  /* ========= PIE PÁGINA 1 ========= */
+  /* ========= PIE PÁGINA ========= */
   dibujarFirmaTimbre(doc);
-
-  /* ======================================================
-     =============== DEBUG FOOTER PÁGINA 1 =================
-     ====================================================== */
-  try {
-    const exFront = (examenesIA || []).join(" | ");
-    const exMem = (memGen?.examenesIA || []).join(" | ");
-
-    console.log("DEBUG_PDF_GENERALES", {
-      idPago,
-      examenesFront: examenesIA,
-      examenesMem: memGen?.examenesIA,
-      memoria: memGen
-    });
-
-    doc.moveDown(1.5);
-    doc.fontSize(8).fillColor("#666");
-    doc.text(`DEBUG(1/2): id=${idPago || "-"} | front=[${exFront}]`);
-    doc.text(`DEBUG_MEM: ${String(exMem || "").slice(0,150)}`);
-    doc.fillColor("black");
-  } catch {}
-
-  /* ======================================================
-     ===================== PÁGINA 2 DEBUG ==================
-     ====================================================== */
-  try {
-    doc.addPage();
-
-    doc.font("Helvetica-Bold").fontSize(14)
-      .text("DEBUG ORDEN GENERALES / IA", { align: "left" });
-
-    doc.moveDown(0.8);
-    doc.font("Helvetica").fontSize(10);
-
-    /* 1) Payload front */
-    const debugFront = {
-      idPago,
-      nombre, edad, rut, genero,
-      examenesIA, informeIA
-    };
-
-    doc.text("1) PAYLOAD DESDE INDEX:");
-    doc.moveDown(0.2);
-    doc.text(safeJson(debugFront));
-
-    /* 2) MEMORIA generales:idPago */
-    const snapGen = memGen;
-
-    doc.moveDown(0.8);
-    doc.font("Helvetica-Bold").text("2) MEMORIA generales:idPago:");
-    doc.moveDown(0.2);
-    doc.font("Helvetica").text(safeJson(snapGen));
-
-    /* 3) IA debug */
-    let snapIA = null;
-    try {
-      snapIA =
-        (snapGen && snapGen.debugIA) ||
-        (idPago && memoria?.get && memoria.get(`ia:${idPago}`)) ||
-        null;
-    } catch {
-      snapIA = null;
-    }
-
-    doc.moveDown(0.8);
-    doc.font("Helvetica-Bold").text("3) DEBUG IA:");
-    doc.moveDown(0.2);
-    doc.font("Helvetica").text(
-      safeJson(
-        snapIA || { info: "No se encontró debugIA. Revisa generalesIA.js." }
-      )
-    );
-  } catch {}
 }
