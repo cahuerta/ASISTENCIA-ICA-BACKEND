@@ -245,10 +245,26 @@ function buildExamenTextoStrict(rec = {}) {
       .join("\n");
   }
 
-  // 3) String plano
-  if (typeof rec.examen === "string" && rec.examen.trim()) {
-    return rec.examen.trim();
+ function buildExamenTextoStrict(rec = {}) {
+  // 1) TRAUMA + IA: usamos "examenes" (array)
+  if (Array.isArray(rec.examenes) && rec.examenes.length > 0) {
+    return rec.examenes
+      .map((x) => String(x || "").trim())
+      .filter(Boolean)
+      .join("\n");
   }
+
+  // 2) Compatibilidad: PREOP / GENERALES
+  if (Array.isArray(rec.examenesIA) && rec.examenesIA.length > 0) {
+    return rec.examenesIA
+      .map((x) => String(x || "").trim())
+      .filter(Boolean)
+      .join("\n");
+  }
+
+  return "";
+}
+
 
   return ""; // sin fallback
 }
