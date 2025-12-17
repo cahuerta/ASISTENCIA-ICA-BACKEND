@@ -1179,10 +1179,7 @@ app.post("/api/guardar-datos-ia", (req, res) => {
       }
     }
 
-    if (typeof examen === "string" && examen.trim()) {
-      mergeField("examen", examen.trim());
-    }
-
+   
     if (marcadores && typeof marcadores === "object") {
       next.marcadores = { ...(next.marcadores || {}), ...marcadores };
       mergeField("rodillaMarcadores", marcadores.rodilla);
