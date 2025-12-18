@@ -15,6 +15,7 @@ import generalesIAHandler from "./generalesIA.js"; // ← GENERALES IA
 import traumaIAHandler from "./traumaIA.js"; // ← TRAUMA IA
 import fallbackTrauma from "./fallbackTrauma.js"; // ← Fallback TRAUMA
 import { enviarOrdenPorCorreo } from "./emailOrden.js";
+import { generarInformeIA } from "./informeIA.js";
 
 
 // ===== Flow client (NUEVO)
@@ -1255,6 +1256,48 @@ app.get("/api/pdf-ia-orden/:idPago", async (req, res) => {
     doc.end();
   } catch (e) {
     console.error("api/pdf-ia-orden error:", e);
+    res.sendStatus(500);
+  }
+});
+
+// =====================================================
+// ============   INFORME IA (PDF)  ====================
+// =====================================================
+app.get("/api/pdf-ia/:idPago", async (req, res) => {
+  try {
+    const id = req.params.idPago;
+
+    // 🔐 Validar que el flujo sea IA
+    const meta = memoria.get(ns("meta", id));
+    if (!meta || meta.moduloAutorizado !== "ia") {
+      return res.sendStatus(402);
+    }
+
+    const d = memoria.get(ns("ia", id));
+    if (!d) return res.sendStatus(404);
+
+    // 🔓 PERMITIR guest Y pago normal
+    // (si llegaste acá, ya vienes con pago=ok)
+    // NO BLOQUEAR POR pagoConfirmado
+
+    const filename = `informeIA_${sanitize(d.nombre || "paciente")}.pdf`;
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+
+    const doc = new PDFDocument({ size: "A4", margin: 50 });
+    doc.pipe(res);
+
+    generarInformeIA(doc, {
+      nombre: d.nombre,
+      edad: d.edad,
+      rut: d.rut,
+      consulta: d.consulta || "",
+      respuesta: d.informeIA || d.iaJSON?.informeIA || "",
+    });
+
+    doc.end();
+  } catch (e) {
+    console.error("api/pdf-ia error:", e);
     res.sendStatus(500);
   }
 });
