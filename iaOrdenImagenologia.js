@@ -35,7 +35,7 @@ export function generarOrdenImagenologiaIA(doc, datos) {
     lado,
     examen, // ← string final normalizado por index (IA)
     nota,   // ← nota final construida en index
-    idPago, // opcional, para debug
+    idPago, // opcional
   } = datos || {};
 
   // --------- ENCABEZADO ---------
@@ -77,7 +77,7 @@ export function generarOrdenImagenologiaIA(doc, datos) {
   // **ESTE ES EXACTAMENTE EL TEXTO QUE ENVÍA EL INDEX PARA IA**
   doc.font("Helvetica-Bold")
     .fontSize(18)
-    .text(examen || ""); // ← SIN FALLBACK
+    .text(examen || "");
 
   doc.moveDown(5);
 
@@ -156,118 +156,8 @@ export function generarOrdenImagenologiaIA(doc, datos) {
     align: "center",
     width: pageW - marginL - marginR,
   });
-  doc.text("INSTITUTO DE CIRUGIA ARTICULAR", {
+  doc.text("INSTITUTO DE CIRUGÍA ARTICULAR", {
     align: "center",
     width: pageW - marginL - marginR,
   });
-
-  // --------- DEBUG FOOTER RÁPIDO (IA) ---------
-  try {
-    const examPreview = (examen || "").slice(0, 80);
-
-    // Lo que está REALMENTE guardado en memoria para ese idPago (ESPACIO IA)
-    let examenMem = "";
-    let rawMemIA = null;
-
-    if (idPago && memoria && typeof memoria.get === "function") {
-      rawMemIA = memoria.get(`ia:${idPago}`);
-      if (rawMemIA) {
-        if (Array.isArray(rawMemIA.examenes) && rawMemIA.examenes.length > 0) {
-          examenMem = rawMemIA.examenes.join(" | ");
-        } else if (
-          Array.isArray(rawMemIA.examenesIA) &&
-          rawMemIA.examenesIA.length > 0
-        ) {
-          examenMem = rawMemIA.examenesIA.join(" | ");
-        } else if (typeof rawMemIA.examen === "string") {
-          examenMem = rawMemIA.examen;
-        }
-      }
-    }
-
-    console.log("DEBUG_PDF_IA_ORDEN", {
-      idPago,
-      rut,
-      examenFromIndex: examen,
-      examenFromMemIA: examenMem,
-      rawMemIA,
-    });
-
-    doc.moveDown(1.5);
-    doc
-      .fontSize(8)
-      .fillColor("#666")
-      .text(
-        `DEBUG IA(1/2): id=${idPago || "-"} | rut=${rut || "-"} | examenIDX=${examPreview}`
-      )
-      .text(`DEBUG_MEM_IA_EXAMEN: ${(examenMem || "").slice(0, 80)}`);
-    doc.fillColor("black");
-  } catch {}
-
-  // --------- PÁGINA 2: DEBUG COMPLETO (IA) ---------
-  try {
-    const tieneMemoria = idPago && memoria && typeof memoria.get === "function";
-
-    let snapIA = null;
-    if (tieneMemoria) {
-      snapIA = memoria.get(`ia:${idPago}`) || null;
-    }
-
-    const debugPayloadFront = {
-      idPago,
-      desdeIndex: {
-        nombre,
-        rut,
-        edad,
-        dolor,
-        lado,
-        examenIndex: examen,
-        notaIndex: nota ?? null,
-      },
-    };
-
-    const debugIA = snapIA?.debugIA || null;
-
-    doc.addPage();
-    doc.font("Helvetica-Bold").fontSize(14).text("DEBUG ORDEN IA", {
-      align: "left",
-    });
-    doc.moveDown(0.5);
-    doc.font("Helvetica").fontSize(9);
-
-    doc.text("1) PAYLOAD DESDE INDEX (datos que recibe generarOrdenImagenologiaIA):");
-    doc.moveDown(0.2);
-    doc.text(safeJson(debugPayloadFront), {
-      align: "left",
-      width: doc.page.width - doc.page.margins.left - doc.page.margins.right,
-    });
-
-    doc.moveDown(0.8);
-    doc.font("Helvetica-Bold").text("2) MEMORIA ia:idPago (memoria.get('ia:idPago')):");
-    doc.moveDown(0.2);
-    doc.font("Helvetica").text(safeJson(snapIA), {
-      align: "left",
-      width: doc.page.width - doc.page.margins.left - doc.page.margins.right,
-    });
-
-    doc.moveDown(0.8);
-    doc.font("Helvetica-Bold").text("3) DEBUG IA (texto bruto, Dx y examen normalizado):");
-    doc.moveDown(0.2);
-    doc.font("Helvetica").text(
-      safeJson(
-        debugIA || {
-          info: "No se encontró debugIA en memoria. Revisa traumaIA.js / IAModulo.",
-        }
-      ),
-      {
-        align: "left",
-        width: doc.page.width - doc.page.margins.left - doc.page.margins.right,
-      }
-    );
-  } catch (e) {
-    console.error("ERROR_DEBUG_PDF_IA_ORDEN", {
-      idPago,
-      error: e?.message,
-    });
-  }
 }
