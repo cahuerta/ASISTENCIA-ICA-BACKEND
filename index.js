@@ -975,6 +975,7 @@ app.get("/pdf-preop/:idPago", async (req, res) => {
     _genPreopOdonto(doc, d);
 
     doc.end();
+    
  // 🔹 Envío por correo (NO bloqueante)
 enviarOrdenPorCorreo({
   idPago: req.params.idPago,
@@ -983,8 +984,10 @@ enviarOrdenPorCorreo({
     doc.addPage();
     _genPreopOdonto(doc, datos);
   },
-}).catch((e) => {
-  console.error("Error enviando correo PREOP:", e);
+ } catch (e) {
+    console.error("pdf-preop/:idPago error:", e);
+    res.sendStatus(500);
+  }
 });
 
 // ← PREOP IA (y alias de compatibilidad) + preflight explícito
