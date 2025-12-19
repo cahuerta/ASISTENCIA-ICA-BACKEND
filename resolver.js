@@ -7,7 +7,7 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// 👉 ÚNICO CAMBIO: directorio real de derivación
+// Directorio real de derivación
 const DERIVACION_DIR = path.join(__dirname, "derivacion");
 
 // Bases de datos de derivación (solo lectura)
@@ -23,20 +23,7 @@ function loadJSON(file) {
 const sedesGeo = loadJSON("sedes.geo.json");
 const medicosDB = loadJSON("medicos.json");
 
-/**
- * Resolver de derivaciones
- * - Carga y cachea derivacion.config.json
- * - Permite recarga manual
- * - Infiere segmento por datos.segmento o keywords en dolor/examen
- * - Prioriza derivación explícita (si llega desde el front)
- * - Integra geolocalización (sede)
- * - Médicos SIEMPRE como array
- * - Nota SIEMPRE:
- *   "Derivar con equipo de <segmento>, con el examen realizado."
- *   + "Recomendamos al Dr. <nombre>." SOLO si hay doctor
- */
-
-// Config histórica (se mantiene)
+// Config histórica
 const CONFIG_PATH = path.join(DERIVACION_DIR, "derivacion.config.json");
 
 let __CACHE = { cfg: null, mtimeMs: 0 };
@@ -45,11 +32,11 @@ let __CACHE = { cfg: null, mtimeMs: 0 };
    CONFIG BASE (legacy)
    ============================================================ */
 function leerConfig() {
-  const exists = fs.existsSync(CONFIG_PATH);
-  if (!exists)
+  if (!fs.existsSync(CONFIG_PATH)) {
     throw new Error(
       `No se encontró derivacion.config.json en: ${CONFIG_PATH}`
     );
+  }
 
   const stat = fs.statSync(CONFIG_PATH);
   if (__CACHE.cfg && __CACHE.mtimeMs === stat.mtimeMs) {
@@ -61,15 +48,6 @@ function leerConfig() {
 
   if (!cfg.segmentos || typeof cfg.segmentos !== "object") {
     throw new Error("derivacion.config.json inválido: falta 'segmentos'.");
-  }
-
-  if (!cfg.notaDefault) {
-    cfg.notaDefault =
-      "Se recomienda coordinar evaluación con la especialidad correspondiente, presentándose con el estudio realizado.";
-  }
-
-  if (!cfg.doctorDefault) {
-    cfg.doctorDefault = null;
   }
 
   __CACHE = { cfg, mtimeMs: stat.mtimeMs };
@@ -144,25 +122,25 @@ function obtenerDoctoresPorSedeYSegmento(sedeId, segmento) {
   return medicosDB?.[sedeId]?.[segmento] || [];
 }
 
-/** Construcción de nota clínica */
-function buildNota(segmento, doctor) {
-  const segTxt =
-    segmento === "cadera"
-      ? "cadera"
-      : segmento === "rodilla"
-      ? "rodilla"
-      : "la especialidad correspondiente";
+/** Construcción de NOTA CLÍNICA COMPLETA */
+function buildNotaCompleta({ segmento, sede, doctor }) {
+  const partes = [];
 
-  let nota = `Derivar con equipo de ${segTxt}, con el examen realizado.`;
-
-  if (doctor && (doctor.nombre || doctor.id)) {
-    const nombre = doctor.nombre || "";
-    if (nombre.trim()) {
-      nota += ` Recomendamos al Dr. ${nombre}.`;
-    }
+  if (sede?.nombre) {
+    partes.push(`Sugerimos realizar el examen en ${sede.nombre}.`);
   }
 
-  return nota;
+  if (segmento) {
+    partes.push(`Posterior evaluación con especialista en ${segmento}.`);
+  } else {
+    partes.push("Posterior evaluación con especialista correspondiente.");
+  }
+
+  if (doctor?.nombre) {
+    partes.push(`Se recomienda consulta con Dr. ${doctor.nombre}.`);
+  }
+
+  return partes.join(" ");
 }
 
 /* ============================================================
@@ -173,15 +151,19 @@ function buildNota(segmento, doctor) {
  * @param {Object|null} geo  -> { country, region, city }
  */
 export function resolverDerivacion(datos = {}, geo = null) {
-  // Si no me pasan geo explícita, la leo desde memoria GEO
   if (!geo) {
     geo = getGeo();
   }
 
-  leerConfig(); // mantiene compatibilidad y validación legacy
+  leerConfig();
+
+  // Normalizar examen (IA / guest)
+  if (!datos.examen && typeof datos.examenTexto === "string") {
+    datos.examen = datos.examenTexto;
+  }
 
   /* ----------------------------------------------------------
-     1) Derivación explícita (prioridad absoluta)
+     1) Derivación explícita
      ---------------------------------------------------------- */
   if (datos.derivacion?.doctor || datos.derivacion?.doctorId) {
     const d = datos.derivacion;
@@ -199,13 +181,18 @@ export function resolverDerivacion(datos = {}, geo = null) {
         : null);
 
     const segmento = normaliza(datos.segmento) || inferirSegmento(datos);
-    const nota = buildNota(segmento, doctor);
+
+    const nota = buildNotaCompleta({
+      segmento,
+      sede: null,
+      doctor,
+    });
 
     return {
       segmento,
       sede: null,
       doctores: doctor ? [doctor] : [],
-      doctor: doctor || null, // backward compatibility
+      doctor: doctor || null,
       nota,
       source: "explicit",
     };
@@ -222,7 +209,7 @@ export function resolverDerivacion(datos = {}, geo = null) {
   const sede = geo ? resolverSedePorGeo(geo) : null;
 
   /* ----------------------------------------------------------
-     4) Médicos por sede + segmento (ARRAY)
+     4) Médicos por sede + segmento
      ---------------------------------------------------------- */
   const doctores = sede
     ? obtenerDoctoresPorSedeYSegmento(sede.sedeId, segmento)
@@ -231,15 +218,19 @@ export function resolverDerivacion(datos = {}, geo = null) {
   const doctorPrincipal = doctores[0] || null;
 
   /* ----------------------------------------------------------
-     5) Nota clínica
+     5) Nota clínica COMPLETA
      ---------------------------------------------------------- */
-  const nota = buildNota(segmento, doctorPrincipal);
+  const nota = buildNotaCompleta({
+    segmento,
+    sede,
+    doctor: doctorPrincipal,
+  });
 
   return {
     segmento,
     sede,
     doctores,
-    doctor: doctorPrincipal, // legacy (PDFs / emails)
+    doctor: doctorPrincipal,
     nota,
     source: geo ? "geo+segmento" : "segmento",
   };
