@@ -817,7 +817,6 @@ app.delete("/reset/:idPago", (req, res) => {
   const { idPago } = req.params || {};
   if (!idPago)
     return res.status(400).json({ ok: false, error: "Falta idPago" });
-  });
 
   // sanity: aceptar solo id alfanumérico con _ y -
 // ... RESTO DEL ARCHIVO SIGUE IGUAL ...
