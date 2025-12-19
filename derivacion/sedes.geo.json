@@ -1,0 +1,21 @@
+{
+  "CL": {
+    "maule": {
+      "sedeId": "ica_curico",
+      "nombre": "Instituto de Cirugía Articular – Curicó"
+    },
+    "ohiggins": {
+      "sedeId": "ica_rancagua",
+      "nombre": "Instituto de Cirugía Articular – Rancagua"
+    },
+    "metropolitana": {
+      "sedeId": "red_santiago",
+      "nombre": "Red de Derivación – Santiago"
+    }
+  },
+
+  "DEFAULT": {
+    "sedeId": "internacional",
+    "nombre": "Derivación Internacional"
+  }
+}
