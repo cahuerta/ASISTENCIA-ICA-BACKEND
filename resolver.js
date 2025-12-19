@@ -5,8 +5,14 @@ import { fileURLToPath } from "url";
 
 // Bases de datos de derivación (solo lectura)
 import { getGeo } from "./geo.js";
-import sedesGeo from "./sedes.geo.json" assert { type: "json" };
-import medicosDB from "./medicos.json" assert { type: "json" };
+function loadJSON(file) {
+  return JSON.parse(
+    fs.readFileSync(path.join(__dirname, file), "utf8")
+  );
+}
+
+const sedesGeo = loadJSON("sedes.geo.json");
+const medicosDB = loadJSON("medicos.json");
 
 /**
  * Resolver de derivaciones
