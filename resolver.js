@@ -4,6 +4,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 
 // Bases de datos de derivación (solo lectura)
+import { getGeo } from "./geo.js";
 import sedesGeo from "./sedes.geo.json" assert { type: "json" };
 import medicosDB from "./medicos.json" assert { type: "json" };
 
@@ -142,6 +143,11 @@ function buildNota(segmento, doctor) {
  * @param {Object|null} geo  -> { country, region, city }
  */
 export function resolverDerivacion(datos = {}, geo = null) {
+  // Si no me pasan geo explícita, la leo desde memoria GEO
+  if (!geo) {
+    geo = getGeo();
+  }
+
   leerConfig(); // mantiene compatibilidad y validación legacy
 
   /* ----------------------------------------------------------
