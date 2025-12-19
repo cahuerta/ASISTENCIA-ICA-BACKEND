@@ -295,7 +295,7 @@ app.get("/health", (_req, res) =>
 //   • calcular GEO en background
 app.get("/geo-ping", async (req, res) => {
   try {
-    const geoInfo = await detectarGeoYDerivacion(req);
+    const geoInfo = await detectarGeo(req);
 
     // Cache infraestructural (opcional, no clínica)
     app.set("geo_last", geoInfo);
