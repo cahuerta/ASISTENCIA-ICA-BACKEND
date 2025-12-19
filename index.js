@@ -8,7 +8,7 @@ import { fileURLToPath } from "url";
 import fs from "fs";
 
 // ===== GEO (infraestructura)
-import { detectarGeoYDerivacion } from "./geo.js";
+import { detectarGeo } from "./geo.js";
 
 // ===== Módulos
 import chatRouter from "./nuevoModuloChat.js";
@@ -862,19 +862,23 @@ app.get("/pdf/:idPago", async (req, res) => {
     generar(doc, datos);
     doc.end();
 
-// 🔹 Envío por correo (no bloqueante)
+// 🔹 Envío por correo (NO bloqueante)
 enviarOrdenPorCorreo({
   idPago: req.params.idPago,
-  generadorPDF: generar,
+  generadorPDF: (doc, datos) => {
+    _genPreopLab(doc, datos);
+    doc.addPage();
+    _genPreopOdonto(doc, datos);
+  },
 }).catch((e) => {
-  console.error("Error enviando correo:", e);
+  console.error("Error enviando correo PREOP:", e);
 });
-
   } catch (e) {
-    console.error("pdf/:idPago error:", e);
+    console.error("pdf-preop/:idPago error:", e);
     res.sendStatus(500);
   }
 });
+
 
 // =====================================================
 // ===============   PREOP (PDF 2 PÁGINAS)  ============
