@@ -1,15 +1,13 @@
 // geo.js
 // Infraestructura pura: IP + geolocalización
-// NO contiene lógica clínica ni reglas de negocio
+// NO contiene lógica clínica
+// NO decide derivaciones
+// Guarda GEO en memoria temporal para uso posterior por resolver.js
 
+/* ============================================================
+   MEMORIA INFRAESTRUCTURAL (TEMPORAL)
+   ============================================================ */
 let GEO_CACHE = null;
-export function setGeo(geo) {
-  GEO_CACHE = geo;
-}
-
-export function getGeo() {
-  return GEO_CACHE;
-}
 
 /* ============================================================
    IP REAL (proxy-safe, compatible Render / Vercel / Nginx)
@@ -68,14 +66,28 @@ export async function geoFromIP(ip) {
 }
 
 /* ============================================================
+   SET / GET DE GEO (MEMORIA TEMPORAL)
+   ============================================================ */
+export function setGeo(geo) {
+  GEO_CACHE = geo;
+}
+
+export function getGeo() {
+  return GEO_CACHE;
+}
+
+/* ============================================================
    FUNCIÓN PRINCIPAL
-   (única que debe llamar index.js)
+   - Se llama UNA VEZ al inicio (ping)
+   - Calcula GEO
+   - La guarda en memoria
+   - NO decide nada
    ============================================================ */
 export async function detectarGeo(req) {
   const ip = getClientIP(req);
   const geo = await geoFromIP(ip);
 
-  setGeo(geo); // ← 🔑 queda guardado en memoria infra
+  setGeo(geo); // ← queda disponible para resolver.js
 
   return geo;
 }
