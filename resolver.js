@@ -7,13 +7,16 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// 👉 ÚNICO CAMBIO: directorio real de derivación
+const DERIVACION_DIR = path.join(__dirname, "..", "derivacion");
+
 // Bases de datos de derivación (solo lectura)
 import { getGeo } from "./geo.js";
 
 // Loader JSON compatible Node 18 / Render
 function loadJSON(file) {
   return JSON.parse(
-    fs.readFileSync(path.join(__dirname, file), "utf8")
+    fs.readFileSync(path.join(DERIVACION_DIR, file), "utf8")
   );
 }
 
@@ -34,7 +37,7 @@ const medicosDB = loadJSON("medicos.json");
  */
 
 // Config histórica (se mantiene)
-const CONFIG_PATH = path.join(__dirname, "derivacion.config.json");
+const CONFIG_PATH = path.join(DERIVACION_DIR, "derivacion.config.json");
 
 let __CACHE = { cfg: null, mtimeMs: 0 };
 
