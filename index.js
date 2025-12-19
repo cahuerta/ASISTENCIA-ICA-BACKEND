@@ -950,10 +950,16 @@ app.get("/pdf-preop/:idPago", async (req, res) => {
     _genPreopOdonto(doc, d);
 
     doc.end();
-  } catch (e) {
-    console.error("pdf-preop/:idPago error:", e);
-    res.sendStatus(500);
-  }
+ // 🔹 Envío por correo (NO bloqueante)
+enviarOrdenPorCorreo({
+  idPago: req.params.idPago,
+  generadorPDF: (doc, datos) => {
+    _genPreopLab(doc, datos);
+    doc.addPage();
+    _genPreopOdonto(doc, datos);
+  },
+}).catch((e) => {
+  console.error("Error enviando correo PREOP:", e);
 });
 
 // ← PREOP IA (y alias de compatibilidad) + preflight explícito
@@ -1057,11 +1063,14 @@ app.get("/pdf-generales/:idPago", async (req, res) => {
     doc.pipe(res);
     generar(doc, d);
     doc.end();
-  } catch (e) {
-    console.error("pdf-generales/:idPago error:", e);
-    res.sendStatus(500);
-  }
+ // 🔹 Envío por correo (NO bloqueante)
+enviarOrdenPorCorreo({
+  idPago: req.params.idPago,
+  generadorPDF: generar,
+}).catch((e) => {
+  console.error("Error enviando correo GENERALES:", e);
 });
+
 
 // =====================================================
 // ============   IA MÓDULO PRINCIPAL  =================
@@ -1254,11 +1263,14 @@ app.get("/api/pdf-ia-orden/:idPago", async (req, res) => {
     doc.pipe(res);
     generar(doc, datosParaOrden);
     doc.end();
-  } catch (e) {
-    console.error("api/pdf-ia-orden error:", e);
-    res.sendStatus(500);
-  }
+ // 🔹 Envío por correo (NO bloqueante)
+enviarOrdenPorCorreo({
+  idPago: id,
+  generadorPDF: generar,
+}).catch((e) => {
+  console.error("Error enviando correo IA:", e);
 });
+
 
 // =====================================================
 // ============   INFORME IA (PDF)  ====================
