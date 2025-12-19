@@ -841,16 +841,14 @@ app.get("/pdf/:idPago", async (req, res) => {
     const meta = memoria.get(ns("meta", req.params.idPago));
     if (!meta || meta.moduloAutorizado !== "trauma") return res.sendStatus(402);
 
-    // *** leer SOLO desde trauma ***
     const d = memoria.get(ns("trauma", req.params.idPago));
     if (!d) return res.sendStatus(404);
 
     const generar = await loadOrdenImagenologia();
 
-    const examen = buildExamenTextoStrict(d); // solo lo guardado
-    const nota = buildNotaStrict(d); // solo lo guardado
+    const examen = buildExamenTextoStrict(d);
+    const nota = buildNotaStrict(d);
 
-    // incluir idPago para debug en PDF
     const datos = { ...d, examen, nota, idPago: req.params.idPago };
 
     const filename = `orden_${sanitize(d.nombre || "paciente")}.pdf`;
@@ -862,21 +860,18 @@ app.get("/pdf/:idPago", async (req, res) => {
     generar(doc, datos);
     doc.end();
 
-// 🔹 Envío por correo (NO bloqueante)
-enviarOrdenPorCorreo({
-  idPago: req.params.idPago,
-  generadorPDF: (doc, datos) => {
-    _genPreopLab(doc, datos);
-    doc.addPage();
-    _genPreopOdonto(doc, datos);
-  },
-}).catch((e) => {
-  console.error("Error enviando correo PREOP:", e);
-});
-} catch (e) {
-  console.error("pdf-preop/:idPago error:", e);
-  res.sendStatus(500);
-}
+    // 🔹 Envío por correo (NO bloqueante)
+    enviarOrdenPorCorreo({
+      idPago: req.params.idPago,
+      generadorPDF: generar,
+    }).catch((e) => {
+      console.error("Error enviando correo TRAUMA:", e);
+    });
+
+  } catch (e) {
+    console.error("pdf/:idPago error:", e);
+    res.sendStatus(500);
+  }
 });
 
 
