@@ -8,7 +8,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // 👉 ÚNICO CAMBIO: directorio real de derivación
-const DERIVACION_DIR = path.join(__dirname, "..", "derivacion");
+const DERIVACION_DIR = path.join(__dirname, "derivacion");
 
 // Bases de datos de derivación (solo lectura)
 import { getGeo } from "./geo.js";
