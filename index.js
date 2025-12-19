@@ -7,6 +7,8 @@ import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
 
+// ===== GEO (infraestructura)
+import { detectarGeoYDerivacion } from "./geo.js";
 
 // ===== Módulos
 import chatRouter from "./nuevoModuloChat.js";
@@ -281,6 +283,29 @@ app.get("/health", (_req, res) =>
     frontend: FRONTEND_BASE,
   })
 );
+// =====================================================
+// ===============   GEO PING (PASIVO)  ================
+// =====================================================
+// - NO usa idPago
+// - NO decide clínica
+// - NO rompe UX
+// - Sirve para:
+//   • despertar Render
+//   • capturar IP real
+//   • calcular GEO en background
+app.get("/geo-ping", async (req, res) => {
+  try {
+    const geoInfo = await detectarGeoYDerivacion(req);
+
+    // Cache infraestructural (opcional, no clínica)
+    app.set("geo_last", geoInfo);
+
+    return res.json({ ok: true });
+  } catch (e) {
+    return res.json({ ok: false });
+  }
+});
+
 // ===== DEBUG ZOHO: obtener accountId (TEMPORAL)
 app.get("/debug/zoho/accounts", async (req, res) => {
   try {
