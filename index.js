@@ -873,10 +873,10 @@ enviarOrdenPorCorreo({
 }).catch((e) => {
   console.error("Error enviando correo PREOP:", e);
 });
-  } catch (e) {
-    console.error("pdf-preop/:idPago error:", e);
-    res.sendStatus(500);
-  }
+} catch (e) {
+  console.error("pdf-preop/:idPago error:", e);
+  res.sendStatus(500);
+}
 });
 
 
