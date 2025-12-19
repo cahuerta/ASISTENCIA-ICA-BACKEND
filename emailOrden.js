@@ -1,6 +1,7 @@
 // emailOrden.js — ENVÍO DE ORDEN POR EMAIL (Zoho Mail API, NO BLOQUEANTE)
 import { memoria } from "./index.js";
 import PDFDocument from "pdfkit";
+import fetch from "node-fetch";
 
 /* ============================================================
    Helpers memoria
