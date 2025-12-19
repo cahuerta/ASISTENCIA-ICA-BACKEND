@@ -2,7 +2,14 @@
 // Infraestructura pura: IP + geolocalización
 // NO contiene lógica clínica ni reglas de negocio
 
-import { resolverDerivacionGenerica } from "./derivacion/derivacionEngine.js";
+let GEO_CACHE = null;
+export function setGeo(geo) {
+  GEO_CACHE = geo;
+}
+
+export function getGeo() {
+  return GEO_CACHE;
+}
 
 /* ============================================================
    IP REAL (proxy-safe, compatible Render / Vercel / Nginx)
@@ -64,14 +71,11 @@ export async function geoFromIP(ip) {
    FUNCIÓN PRINCIPAL
    (única que debe llamar index.js)
    ============================================================ */
-export async function detectarGeoYDerivacion(req) {
+export async function detectarGeo(req) {
   const ip = getClientIP(req);
   const geo = await geoFromIP(ip);
-  const derivacion = resolverDerivacionGenerica(geo);
 
-  return {
-    ip,
-    geo,
-    derivacion,
-  };
+  setGeo(geo); // ← 🔑 queda guardado en memoria infra
+
+  return geo;
 }
