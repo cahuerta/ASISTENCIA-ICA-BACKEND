@@ -100,7 +100,8 @@ async function zohoFetch(url, options = {}) {
     ...options,
     headers: {
       ...(options.headers || {}),
-      Authorization: `Zoho-oauthtoken ${token}`,
+      Authorization: `Bearer ${token}`,
+
     },
   });
 }
