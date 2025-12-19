@@ -1303,10 +1303,16 @@ app.get("/api/pdf-ia-orden/:idPago", async (req, res) => {
     doc.end();
  // 🔹 Envío por correo (NO bloqueante)
 enviarOrdenPorCorreo({
-  idPago: id,
-  generadorPDF: generar,
-}).catch((e) => {
-  console.error("Error enviando correo IA:", e);
+      idPago: id,
+      generadorPDF: generar,
+    }).catch((e) => {
+      console.error("Error enviando correo IA:", e);
+    });
+
+  } catch (e) {
+    console.error("api/pdf-ia-orden error:", e);
+    res.sendStatus(500);
+  }
 });
 
 
