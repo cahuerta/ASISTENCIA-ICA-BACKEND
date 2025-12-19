@@ -46,7 +46,7 @@ async function generarPDFBuffer(datos, generador) {
 /* ============================================================
    Zoho config
    ============================================================ */
-const ZOHO_API = process.env.ZOHO_MAIL_API_DOMAIN;
+const ZOHO_API = process.env.ZOHO_MAIL_API_DOMAIN; // https://www.zohoapis.com
 const CLIENT_ID = process.env.ZOHO_CLIENT_ID;
 const CLIENT_SECRET = process.env.ZOHO_CLIENT_SECRET;
 const REFRESH_TOKEN = process.env.ZOHO_MAIL_REFRESH_TOKEN;
@@ -79,6 +79,9 @@ async function refreshZohoToken() {
   }
 }
 
+/* ============================================================
+   Fetch Zoho (Bearer SIEMPRE)
+   ============================================================ */
 async function zohoFetch(url, options = {}) {
   let token = process.env.ZOHO_MAIL_ACCESS_TOKEN;
 
@@ -90,9 +93,9 @@ async function zohoFetch(url, options = {}) {
     },
   });
 
-
   if (r.status !== 401) return r;
 
+  // Token expirado → refrescar
   token = await refreshZohoToken();
   if (!token) return r;
 
@@ -101,7 +104,6 @@ async function zohoFetch(url, options = {}) {
     headers: {
       ...(options.headers || {}),
       Authorization: `Bearer ${token}`,
-
     },
   });
 }
@@ -131,12 +133,24 @@ export async function enviarOrdenPorCorreo({ idPago, generadorPDF }) {
       return;
     }
 
+    // ===== Generar PDF en memoria
     const pdfBuffer = await generarPDFBuffer(datos, generadorPDF);
     const pdfBase64 = pdfBuffer.toString("base64");
 
-    // Obtener accountId
+    // ===== Obtener accountId
     const accResp = await zohoFetch(`${ZOHO_API}/mail/v1/accounts`);
-    const accJson = await accResp.json();
+    const accText = await accResp.text();
+
+    let accJson;
+    try {
+      accJson = JSON.parse(accText);
+    } catch {
+      console.error(
+        "❌ [ZOHO] Accounts NO JSON:",
+        accText.slice(0, 300)
+      );
+      return;
+    }
 
     const accountId = accJson?.data?.[0]?.accountId;
     if (!accountId) {
@@ -176,7 +190,17 @@ export async function enviarOrdenPorCorreo({ idPago, generadorPDF }) {
       }
     );
 
-    const sendJson = await sendResp.json();
+    const sendText = await sendResp.text();
+    let sendJson = null;
+    try {
+      sendJson = JSON.parse(sendText);
+    } catch {
+      console.error(
+        "❌ [ZOHO] Envío NO JSON:",
+        sendText.slice(0, 300)
+      );
+      return;
+    }
 
     if (!sendResp.ok) {
       console.error("❌ [ZOHO] Error envío:", sendJson);
