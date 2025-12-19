@@ -3,8 +3,14 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 
+// __dirname para ES Modules (DEBE ir antes de usarse)
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 // Bases de datos de derivación (solo lectura)
 import { getGeo } from "./geo.js";
+
+// Loader JSON compatible Node 18 / Render
 function loadJSON(file) {
   return JSON.parse(
     fs.readFileSync(path.join(__dirname, file), "utf8")
@@ -27,9 +33,6 @@ const medicosDB = loadJSON("medicos.json");
  *   + "Recomendamos al Dr. <nombre>." SOLO si hay doctor
  */
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
 // Config histórica (se mantiene)
 const CONFIG_PATH = path.join(__dirname, "derivacion.config.json");
 
@@ -40,7 +43,10 @@ let __CACHE = { cfg: null, mtimeMs: 0 };
    ============================================================ */
 function leerConfig() {
   const exists = fs.existsSync(CONFIG_PATH);
-  if (!exists) throw new Error(`No se encontró derivacion.config.json en: ${CONFIG_PATH}`);
+  if (!exists)
+    throw new Error(
+      `No se encontró derivacion.config.json en: ${CONFIG_PATH}`
+    );
 
   const stat = fs.statSync(CONFIG_PATH);
   if (__CACHE.cfg && __CACHE.mtimeMs === stat.mtimeMs) {
@@ -87,8 +93,23 @@ function inferirSegmento(datos = {}) {
   const examen = normaliza(datos.examen);
   const dolor = normaliza(datos.dolor);
 
-  const kCadera = ["cadera", "inguinal", "acetabular", "fémur proximal", "femur proximal"];
-  const kRodilla = ["rodilla", "rótula", "rotula", "patelar", "menisco", "ligamento cruzado", "lca", "lcp"];
+  const kCadera = [
+    "cadera",
+    "inguinal",
+    "acetabular",
+    "fémur proximal",
+    "femur proximal",
+  ];
+  const kRodilla = [
+    "rodilla",
+    "rótula",
+    "rotula",
+    "patelar",
+    "menisco",
+    "ligamento cruzado",
+    "lca",
+    "lcp",
+  ];
 
   const textos = [examen, dolor].filter(Boolean);
 
