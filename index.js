@@ -983,11 +983,16 @@ enviarOrdenPorCorreo({
     doc.addPage();
     _genPreopOdonto(doc, datos);
   },
- } catch (e) {
+}).catch((e) => {
+  console.error("Error enviando correo PREOP:", e);
+});
+
+  } catch (e) {
     console.error("pdf-preop/:idPago error:", e);
     res.sendStatus(500);
   }
 });
+
 
 // ← PREOP IA (y alias de compatibilidad) + preflight explícito
 app.options("/ia-preop", cors(corsOptions));
@@ -1097,6 +1102,12 @@ enviarOrdenPorCorreo({
 }).catch((e) => {
   console.error("Error enviando correo GENERALES:", e);
 });
+      } catch (e) {
+    console.error("pdf-generales/:idPago error:", e);
+    res.sendStatus(500);
+  }
+});
+
 
 
 // =====================================================
