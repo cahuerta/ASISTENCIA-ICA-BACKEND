@@ -1,0 +1,66 @@
+{
+  "ica_curico": {
+    "rodilla": {
+      "id": "jaime_espinoza",
+      "nombre": "Dr. Jaime Espinoza",
+      "especialidad": "Traumatología de Rodilla",
+      "agenda": "Clínica San Martín, Curicó",
+      "contactoWeb": "https://www.icarticular.cl"
+    },
+    "cadera": {
+      "id": "cristobal_huerta",
+      "nombre": "Dr. Cristóbal Huerta Cortés",
+      "especialidad": "Traumatología de Cadera",
+      "agenda": "Instituto de Cirugía Articular, Curicó",
+      "contactoWeb": "https://www.icarticular.cl"
+    }
+  },
+
+  "ica_rancagua": {
+    "rodilla": {
+      "id": "jaime_espinoza",
+      "nombre": "Dr. Jaime Espinoza",
+      "especialidad": "Traumatología de Rodilla",
+      "agenda": "Clínica Clever Salud, Rancagua",
+      "contactoWeb": "https://www.icarticular.cl"
+    },
+    "cadera": {
+      "id": "cristobal_huerta",
+      "nombre": "Dr. Cristóbal Huerta Cortés",
+      "especialidad": "Traumatología de Cadera",
+      "agenda": "Clínica Clever Salud, Rancagua",
+      "contactoWeb": "https://www.icarticular.cl"
+    }
+  },
+
+  "red_santiago": {
+    "rodilla": {
+      "id": "marcelo_hernandez",
+      "nombre": "Dr. Marcelo Hernández",
+      "especialidad": "Traumatología de Rodilla",
+      "agenda": "Red Salud, Santiago",
+      "contactoWeb": "https://www.icarticular.cl"
+    },
+    "cadera": [
+      {
+        "id": "javier_gatica",
+        "nombre": "Dr. Javier Gatica",
+        "especialidad": "Traumatología de Cadera",
+        "agenda": "Red Salud, Santiago",
+        "contactoWeb": "https://www.icarticular.cl"
+      },
+      {
+        "id": "gilberto_mardones",
+        "nombre": "Dr. Gilberto Mardones",
+        "especialidad": "Traumatología de Cadera",
+        "agenda": "Red Salud, Santiago",
+        "contactoWeb": "https://www.icarticular.cl"
+      }
+    ]
+  },
+
+  "internacional": {
+    "rodilla": null,
+    "cadera": null
+  }
+}
