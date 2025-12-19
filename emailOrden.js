@@ -86,9 +86,10 @@ async function zohoFetch(url, options = {}) {
     ...options,
     headers: {
       ...(options.headers || {}),
-      Authorization: `Zoho-oauthtoken ${token}`,
+      Authorization: `Bearer ${token}`,
     },
   });
+
 
   if (r.status !== 401) return r;
 
