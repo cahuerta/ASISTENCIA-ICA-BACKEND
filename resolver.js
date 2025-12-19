@@ -3,65 +3,76 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 
+// Bases de datos de derivación (solo lectura)
+import sedesGeo from "./sedes.geo.json" assert { type: "json" };
+import medicosDB from "./medicos.json" assert { type: "json" };
+
 /**
  * Resolver de derivaciones
  * - Carga y cachea derivacion.config.json
  * - Permite recarga manual
- * - Infere segmento por datos.segmento o keywords en dolor/examen
+ * - Infiere segmento por datos.segmento o keywords en dolor/examen
  * - Prioriza derivación explícita (si llega desde el front)
- * - Nota SIEMPRE: "Derivar con equipo de <segmento>, con el examen realizado."
- *   + "Recomendamos al Dr. <nombre>." SOLO si hay doctor.
+ * - Integra geolocalización (sede)
+ * - Médicos SIEMPRE como array
+ * - Nota SIEMPRE:
+ *   "Derivar con equipo de <segmento>, con el examen realizado."
+ *   + "Recomendamos al Dr. <nombre>." SOLO si hay doctor
  */
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Ajusta si tu JSON vive en otra ruta:
+// Config histórica (se mantiene)
 const CONFIG_PATH = path.join(__dirname, "derivacion.config.json");
 
 let __CACHE = { cfg: null, mtimeMs: 0 };
 
+/* ============================================================
+   CONFIG BASE (legacy)
+   ============================================================ */
 function leerConfig() {
   const exists = fs.existsSync(CONFIG_PATH);
   if (!exists) throw new Error(`No se encontró derivacion.config.json en: ${CONFIG_PATH}`);
 
   const stat = fs.statSync(CONFIG_PATH);
   if (__CACHE.cfg && __CACHE.mtimeMs === stat.mtimeMs) {
-    return __CACHE.cfg; // cache válida
+    return __CACHE.cfg;
   }
 
   const raw = fs.readFileSync(CONFIG_PATH, "utf8");
   const cfg = JSON.parse(raw);
 
-  // Validación mínima
   if (!cfg.segmentos || typeof cfg.segmentos !== "object") {
     throw new Error("derivacion.config.json inválido: falta 'segmentos'.");
   }
 
-  // Defaults (por si los quieres usar en otros contextos)
   if (!cfg.notaDefault) {
     cfg.notaDefault =
       "Se recomienda coordinar evaluación con la especialidad correspondiente, presentándose con el estudio realizado.";
   }
+
   if (!cfg.doctorDefault) {
-    cfg.doctorDefault = null; // <- preferimos NO recomendar a nadie por defecto
+    cfg.doctorDefault = null;
   }
 
   __CACHE = { cfg, mtimeMs: stat.mtimeMs };
   return cfg;
 }
 
-/** Fuerza recarga desde disco (por si editas el JSON sin reiniciar el server) */
 export function recargarDerivacionConfig() {
   __CACHE = { cfg: null, mtimeMs: 0 };
   return leerConfig();
 }
 
+/* ============================================================
+   HELPERS
+   ============================================================ */
 function normaliza(s) {
   return (s || "").toLowerCase();
 }
 
-/** Heurística simple por palabras clave si no llega 'segmento' */
+/** Heurística simple por palabras clave */
 function inferirSegmento(datos = {}) {
   const seg = normaliza(datos.segmento);
   if (seg === "cadera" || seg === "rodilla") return seg;
@@ -77,12 +88,33 @@ function inferirSegmento(datos = {}) {
   if (textos.some((t) => kCadera.some((k) => t.includes(k)))) return "cadera";
   if (textos.some((t) => kRodilla.some((k) => t.includes(k)))) return "rodilla";
 
-  return ""; // desconocido
+  return "";
 }
 
-/** Crea la nota final según el segmento y el doctor (si existe) */
+/** Resolver sede según geolocalización */
+function resolverSedePorGeo(geo = {}) {
+  const country = geo.country;
+  const region = normaliza(geo.region);
+
+  if (country && sedesGeo[country]) {
+    for (const key of Object.keys(sedesGeo[country])) {
+      if (region.includes(key)) {
+        return sedesGeo[country][key];
+      }
+    }
+  }
+
+  return sedesGeo.DEFAULT || null;
+}
+
+/** Obtiene médicos (SIEMPRE array) */
+function obtenerDoctoresPorSedeYSegmento(sedeId, segmento) {
+  if (!sedeId || !segmento) return [];
+  return medicosDB?.[sedeId]?.[segmento] || [];
+}
+
+/** Construcción de nota clínica */
 function buildNota(segmento, doctor) {
-  // Texto fijo por segmento
   const segTxt =
     segmento === "cadera"
       ? "cadera"
@@ -90,10 +122,8 @@ function buildNota(segmento, doctor) {
       ? "rodilla"
       : "la especialidad correspondiente";
 
-  // Siempre inicia así:
   let nota = `Derivar con equipo de ${segTxt}, con el examen realizado.`;
 
-  // Si hay doctor, agrega recomendación
   if (doctor && (doctor.nombre || doctor.id)) {
     const nombre = doctor.nombre || "";
     if (nombre.trim()) {
@@ -104,24 +134,32 @@ function buildNota(segmento, doctor) {
   return nota;
 }
 
+/* ============================================================
+   RESOLVER PRINCIPAL
+   ============================================================ */
 /**
- * Resolver principal
- * @param {Object} datos - puede incluir:
- *   - segmento: "rodilla" | "cadera" | ...
- *   - dolor, examen: strings (para inferir)
- *   - derivacion: opcional, si ya viene decidida desde el front (doctor, etc.)
- * @returns {Object} { segmento, doctor, nota, source }
+ * @param {Object} datos
+ * @param {Object|null} geo  -> { country, region, city }
  */
-export function resolverDerivacion(datos = {}) {
-  const cfg = leerConfig();
+export function resolverDerivacion(datos = {}, geo = null) {
+  leerConfig(); // mantiene compatibilidad y validación legacy
 
-  // 1) Prioridad: derivación explícita desde el front
+  /* ----------------------------------------------------------
+     1) Derivación explícita (prioridad absoluta)
+     ---------------------------------------------------------- */
   if (datos.derivacion?.doctor || datos.derivacion?.doctorId) {
     const d = datos.derivacion;
+
     const doctor =
       d.doctor ||
       (d.doctorId
-        ? { id: d.doctorId, nombre: d.nombre || "", especialidad: d.especialidad || "", agenda: d.agenda || "", contactoWeb: d.contactoWeb || "" }
+        ? {
+            id: d.doctorId,
+            nombre: d.nombre || "",
+            especialidad: d.especialidad || "",
+            agenda: d.agenda || "",
+            contactoWeb: d.contactoWeb || "",
+          }
         : null);
 
     const segmento = normaliza(datos.segmento) || inferirSegmento(datos);
@@ -129,39 +167,51 @@ export function resolverDerivacion(datos = {}) {
 
     return {
       segmento,
-      doctor: doctor || null,
+      sede: null,
+      doctores: doctor ? [doctor] : [],
+      doctor: doctor || null, // backward compatibility
       nota,
       source: "explicit",
     };
   }
 
-  // 2) Segmento por dato directo o inferido
+  /* ----------------------------------------------------------
+     2) Segmento
+     ---------------------------------------------------------- */
   const segmento = inferirSegmento(datos);
-  const entry = cfg.segmentos[segmento];
 
-  if (entry) {
-    const doctor = entry.doctor || null; // si no hay doctor, no recomendamos a nadie
-    const nota = buildNota(segmento, doctor);
-    return {
-      segmento,
-      doctor,
-      nota,
-      source: "segment",
-    };
-  }
+  /* ----------------------------------------------------------
+     3) Sede por geolocalización
+     ---------------------------------------------------------- */
+  const sede = geo ? resolverSedePorGeo(geo) : null;
 
-  // 3) Fallback: segmento desconocido → no recomendar a nadie
-  const doctor = null;
-  const nota = buildNota("", doctor);
+  /* ----------------------------------------------------------
+     4) Médicos por sede + segmento (ARRAY)
+     ---------------------------------------------------------- */
+  const doctores = sede
+    ? obtenerDoctoresPorSedeYSegmento(sede.sedeId, segmento)
+    : [];
+
+  const doctorPrincipal = doctores[0] || null;
+
+  /* ----------------------------------------------------------
+     5) Nota clínica
+     ---------------------------------------------------------- */
+  const nota = buildNota(segmento, doctorPrincipal);
+
   return {
-    segmento: "",
-    doctor,
+    segmento,
+    sede,
+    doctores,
+    doctor: doctorPrincipal, // legacy (PDFs / emails)
     nota,
-    source: "fallback",
+    source: geo ? "geo+segmento" : "segmento",
   };
 }
 
-/** Utilidad opcional para obtener la config actual (p.ej. logs o healthcheck) */
+/* ============================================================
+   UTILIDAD
+   ============================================================ */
 export function obtenerDerivacionConfig() {
   return leerConfig();
 }
