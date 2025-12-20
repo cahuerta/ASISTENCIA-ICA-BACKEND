@@ -62,27 +62,27 @@ function obtenerDoctor(sede, especialidad) {
   return Array.isArray(lista) && lista.length ? lista[0] : null;
 }
 
-/* ===================== NOTA MÉDICA ===================== */
-function buildNota({ dolor, lado, sede, doctor }) {
+/* ===================== NOTA MÉDICA (VERSIÓN FINAL) ===================== */
+function buildNota({ dolor, sede, doctor }) {
   const partes = [];
 
-  if (sede?.nombre) {
-    partes.push(`Sugerimos realizar el examen en ${sede.nombre}.`);
-  } else {
-    partes.push(
-      "Sugerimos realizar el examen en un centro de imagenología."
-    );
+  const especialidad = dolor
+    ? dolor.toLowerCase()
+    : "la especialidad correspondiente";
+
+  // 1) Evaluación
+  partes.push(
+    `Sugerimos evaluación por especialista en ${especialidad}.`
+  );
+
+  // 2) Médico (pertenece al centro)
+  if (doctor?.nombre) {
+    partes.push(`Recomendamos al Dr. ${doctor.nombre}.`);
   }
 
-  const zona =
-    dolor && lado ? `${dolor.toLowerCase()} ${lado.toLowerCase()}` :
-    dolor ? dolor.toLowerCase() :
-    "la zona evaluada";
-
-  partes.push(`Posterior evaluación por especialista en ${zona}.`);
-
-  if (doctor?.nombre) {
-    partes.push(`Se recomienda evaluación con Dr. ${doctor.nombre}.`);
+  // 3) Centro según GEO
+  if (sede?.nombre) {
+    partes.push(`Puede solicitar su hora en ${sede.nombre}.`);
   }
 
   return partes.join(" ");
@@ -90,7 +90,7 @@ function buildNota({ dolor, lado, sede, doctor }) {
 
 /* ===================== RESOLVER PRINCIPAL ===================== */
 export function resolverDerivacion(datos = {}, geo = null) {
-  const { dolor, lado } = datos;
+  const { dolor } = datos;
 
   if (!geo) geo = getGeo();
 
@@ -100,14 +100,12 @@ export function resolverDerivacion(datos = {}, geo = null) {
 
   const nota = buildNota({
     dolor,
-    lado,
     sede,
     doctor,
   });
 
   return {
     dolor,
-    lado,
     especialidad,
     sede,
     doctor: doctor || null,
