@@ -306,6 +306,42 @@ app.get("/geo-ping", async (req, res) => {
   }
 });
 
+// =====================================================
+// ===============   GEO PING (GPS)  ===================
+// =====================================================
+app.post("/geo-ping", async (req, res) => {
+  try {
+    const { geo } = req.body || {};
+
+    // Validación mínima
+    if (
+      geo &&
+      geo.source === "gps" &&
+      typeof geo.lat === "number" &&
+      typeof geo.lon === "number"
+    ) {
+      // Guardamos GPS crudo (infraestructura, NO clínica)
+      app.set("geo_last", {
+        source: "gps",
+        lat: geo.lat,
+        lon: geo.lon,
+        accuracy: geo.accuracy || null,
+        timestamp: Date.now(),
+      });
+
+      return res.json({ ok: true, source: "gps" });
+    }
+
+    // Si viene POST sin geo válido → fallback IP
+    const geoInfo = await detectarGeo(req);
+    app.set("geo_last", geoInfo);
+    return res.json({ ok: true, source: "ip" });
+  } catch (e) {
+    return res.json({ ok: false });
+  }
+});
+
+
 // ===== DEBUG ZOHO: obtener accountId (TEMPORAL)
 app.get("/debug/zoho/accounts", async (req, res) => {
   try {
