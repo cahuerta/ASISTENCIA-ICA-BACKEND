@@ -84,10 +84,15 @@ export function getGeo() {
    - NO decide nada
    ============================================================ */
 export async function detectarGeo(req) {
+  // 1️⃣ Si ya hay GEO y viene de GPS, NO recalcular
+  if (GEO_CACHE && GEO_CACHE.source === "gps") {
+    return GEO_CACHE;
+  }
+
+  // 2️⃣ Si no hay GPS, usar IP
   const ip = getClientIP(req);
   const geo = await geoFromIP(ip);
 
-  setGeo(geo); // ← queda disponible para resolver.js
-
+  setGeo(geo);
   return geo;
 }
