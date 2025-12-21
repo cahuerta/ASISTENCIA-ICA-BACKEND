@@ -66,6 +66,46 @@ export async function geoFromIP(ip) {
 }
 
 /* ============================================================
+   GEOLOCALIZACIÓN DESDE GPS (REVERSE GEOCODING)
+   Proveedor: OpenStreetMap / Nominatim
+   ============================================================ */
+async function geoFromGPS(lat, lon) {
+  try {
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&accept-language=es`,
+      {
+        headers: { "User-Agent": "Asistencia-ICA/1.0" },
+      }
+    );
+
+    const data = await res.json();
+    const addr = data.address || {};
+
+    return {
+      country: "CL",
+      country_name: "Chile",
+      region: addr.state || null,
+      city:
+        addr.city ||
+        addr.town ||
+        addr.village ||
+        null,
+      latitude: lat,
+      longitude: lon,
+      source: "gps",
+    };
+  } catch {
+    // Si falla el reverse, devolvemos GPS crudo
+    return {
+      country: "CL",
+      latitude: lat,
+      longitude: lon,
+      source: "gps",
+    };
+  }
+}
+
+/* ============================================================
    SET / GET DE GEO (MEMORIA TEMPORAL)
    ============================================================ */
 export function setGeo(geo) {
@@ -84,12 +124,22 @@ export function getGeo() {
    - NO decide nada
    ============================================================ */
 export async function detectarGeo(req) {
-  // 1️⃣ Si ya hay GEO y viene de GPS, NO recalcular
+  // 1️⃣ Si ya hay GEO desde GPS, no recalcular
   if (GEO_CACHE && GEO_CACHE.source === "gps") {
     return GEO_CACHE;
   }
 
-  // 2️⃣ Si no hay GPS, usar IP
+  // 2️⃣ Si viene GPS explícito desde frontend
+  if (req?.body?.geo?.source === "gps") {
+    const { lat, lon } = req.body.geo || {};
+    if (typeof lat === "number" && typeof lon === "number") {
+      const geoGPS = await geoFromGPS(lat, lon);
+      setGeo(geoGPS);
+      return geoGPS;
+    }
+  }
+
+  // 3️⃣ Fallback IP
   const ip = getClientIP(req);
   const geo = await geoFromIP(ip);
 
