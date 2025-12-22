@@ -1,8 +1,26 @@
 // geo.js
 // Infraestructura pura: IP + geolocalización
 // NO contiene lógica clínica
-// NO decide derivaciones
+// NO decide derivaciones clínicas
 // Guarda GEO en memoria temporal para uso posterior por resolver.js
+
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+
+/* ============================================================
+   __dirname
+   ============================================================ */
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+/* ============================================================
+   CARGA DE SEDES (MISMO JSON QUE USA resolver)
+   ============================================================ */
+const DERIVACION_DIR = path.join(__dirname, "derivacion");
+const sedesGeo = JSON.parse(
+  fs.readFileSync(path.join(DERIVACION_DIR, "sedes.geo.json"), "utf8")
+);
 
 /* ============================================================
    MEMORIA INFRAESTRUCTURAL (TEMPORAL)
@@ -21,11 +39,9 @@ export function getClientIP(req) {
 }
 
 /* ============================================================
-   GEOLOCALIZACIÓN POR IP
-   Proveedor: ipapi.co
+   GEOLOCALIZACIÓN POR IP (SIN CAMBIOS)
    ============================================================ */
 export async function geoFromIP(ip) {
-  // Casos locales / desarrollo
   if (!ip || ip === "127.0.0.1" || ip === "::1") {
     return {
       ip,
@@ -56,7 +72,7 @@ export async function geoFromIP(ip) {
       longitude: data.longitude || null,
       source: "ipapi",
     };
-  } catch (err) {
+  } catch {
     return {
       ip,
       country: null,
@@ -66,47 +82,31 @@ export async function geoFromIP(ip) {
 }
 
 /* ============================================================
-   GEOLOCALIZACIÓN DESDE GPS (REVERSE GEOCODING)
-   Proveedor: OpenStreetMap / Nominatim
+   RESOLVER SEDE POR GPS (BBOX, SIN REVERSE)
    ============================================================ */
-async function geoFromGPS(lat, lon) {
-  try {
-    const res = await fetch(
-      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&accept-language=es`,
-      {
-        headers: { "User-Agent": "Asistencia-ICA/1.0" },
-      }
-    );
+function resolverSedePorGPS(lat, lon) {
+  const cl = sedesGeo.CL || {};
 
-    const data = await res.json();
-    const addr = data.address || {};
+  for (const key of Object.keys(cl)) {
+    const sede = cl[key];
+    const b = sede.bbox;
+    if (!b) continue;
 
-    return {
-      country: "CL",
-      country_name: "Chile",
-      region: addr.state || null,
-      city:
-        addr.city ||
-        addr.town ||
-        addr.village ||
-        null,
-      latitude: lat,
-      longitude: lon,
-      source: "gps",
-    };
-  } catch {
-    // Si falla el reverse, devolvemos GPS crudo
-    return {
-      country: "CL",
-      latitude: lat,
-      longitude: lon,
-      source: "gps",
-    };
+    if (
+      lat >= b.latMin &&
+      lat <= b.latMax &&
+      lon >= b.lonMin &&
+      lon <= b.lonMax
+    ) {
+      return sede;
+    }
   }
+
+  return sedesGeo.DEFAULT || null;
 }
 
 /* ============================================================
-   SET / GET DE GEO (MEMORIA TEMPORAL)
+   SET / GET DE GEO (SIN CAMBIOS)
    ============================================================ */
 export function setGeo(geo) {
   GEO_CACHE = geo;
@@ -118,13 +118,9 @@ export function getGeo() {
 
 /* ============================================================
    FUNCIÓN PRINCIPAL
-   - Se llama UNA VEZ al inicio (ping)
-   - Calcula GEO
-   - La guarda en memoria
-   - NO decide nada
    ============================================================ */
 export async function detectarGeo(req) {
-  // 1️⃣ Si ya hay GEO desde GPS, no recalcular
+  // 1️⃣ Si ya hay GEO por GPS, no recalcular
   if (GEO_CACHE && GEO_CACHE.source === "gps") {
     return GEO_CACHE;
   }
@@ -133,13 +129,22 @@ export async function detectarGeo(req) {
   if (req?.body?.geo?.source === "gps") {
     const { lat, lon } = req.body.geo || {};
     if (typeof lat === "number" && typeof lon === "number") {
-      const geoGPS = await geoFromGPS(lat, lon);
+      const sede = resolverSedePorGPS(lat, lon);
+
+      const geoGPS = {
+        country: "CL",
+        latitude: lat,
+        longitude: lon,
+        sede,
+        source: "gps",
+      };
+
       setGeo(geoGPS);
       return geoGPS;
     }
   }
 
-  // 3️⃣ Fallback IP
+  // 3️⃣ Fallback IP (igual que antes)
   const ip = getClientIP(req);
   const geo = await geoFromIP(ip);
 
