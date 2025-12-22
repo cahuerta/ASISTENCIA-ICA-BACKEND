@@ -100,8 +100,8 @@ function resolverGeoPorGPS(lat, lon) {
     ) {
       return {
         country: "CL",
-        region: regionKey,                 // 👈 CLAVE PARA resolver
-        city: sede.ciudad || sede.nombre, // humano
+        region: regionKey,                 // ← resolver usa ESTO
+        city: sede.ciudad || sede.nombre, // solo informativo
         latitude: lat,
         longitude: lon,
         source: "gps",
@@ -142,14 +142,19 @@ export async function detectarGeo(req) {
   // 2️⃣ Si viene GPS explícito desde frontend
   if (req?.body?.geo?.source === "gps") {
     const { lat, lon } = req.body.geo || {};
-    if (typeof lat === "number" && typeof lon === "number") {
-      const geoGPS = resolverGeoPorGPS(lat, lon);
+
+    // 🔧 ÚNICA CORRECCIÓN REAL
+    const latNum = Number(lat);
+    const lonNum = Number(lon);
+
+    if (Number.isFinite(latNum) && Number.isFinite(lonNum)) {
+      const geoGPS = resolverGeoPorGPS(latNum, lonNum);
       setGeo(geoGPS);
       return geoGPS;
     }
   }
 
-  // 3️⃣ Fallback IP (sin cambios)
+  // 3️⃣ Fallback IP (SIN CAMBIOS)
   const ip = getClientIP(req);
   const geo = await geoFromIP(ip);
   setGeo(geo);
