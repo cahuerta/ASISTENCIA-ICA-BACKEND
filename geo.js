@@ -82,13 +82,13 @@ export async function geoFromIP(ip) {
 }
 
 /* ============================================================
-   RESOLVER SEDE POR GPS (BBOX, SIN REVERSE)
+   RESOLVER GEO POR GPS (BBOX → region + city)
    ============================================================ */
-function resolverSedePorGPS(lat, lon) {
+function resolverGeoPorGPS(lat, lon) {
   const cl = sedesGeo.CL || {};
 
-  for (const key of Object.keys(cl)) {
-    const sede = cl[key];
+  for (const regionKey of Object.keys(cl)) {
+    const sede = cl[regionKey];
     const b = sede.bbox;
     if (!b) continue;
 
@@ -98,11 +98,25 @@ function resolverSedePorGPS(lat, lon) {
       lon >= b.lonMin &&
       lon <= b.lonMax
     ) {
-      return sede;
+      return {
+        country: "CL",
+        region: regionKey,                 // 👈 CLAVE PARA resolver
+        city: sede.ciudad || sede.nombre, // humano
+        latitude: lat,
+        longitude: lon,
+        source: "gps",
+      };
     }
   }
 
-  return sedesGeo.DEFAULT || null;
+  return {
+    country: "CL",
+    region: null,
+    city: null,
+    latitude: lat,
+    longitude: lon,
+    source: "gps-default",
+  };
 }
 
 /* ============================================================
@@ -120,7 +134,7 @@ export function getGeo() {
    FUNCIÓN PRINCIPAL
    ============================================================ */
 export async function detectarGeo(req) {
-  // 1️⃣ Si ya hay GEO por GPS, no recalcular
+  // 1️⃣ Si ya hay GEO válido por GPS, no recalcular
   if (GEO_CACHE && GEO_CACHE.source === "gps") {
     return GEO_CACHE;
   }
@@ -129,25 +143,15 @@ export async function detectarGeo(req) {
   if (req?.body?.geo?.source === "gps") {
     const { lat, lon } = req.body.geo || {};
     if (typeof lat === "number" && typeof lon === "number") {
-      const sede = resolverSedePorGPS(lat, lon);
-
-      const geoGPS = {
-        country: "CL",
-        latitude: lat,
-        longitude: lon,
-        sede,
-        source: "gps",
-      };
-
+      const geoGPS = resolverGeoPorGPS(lat, lon);
       setGeo(geoGPS);
       return geoGPS;
     }
   }
 
-  // 3️⃣ Fallback IP (igual que antes)
+  // 3️⃣ Fallback IP (sin cambios)
   const ip = getClientIP(req);
   const geo = await geoFromIP(ip);
-
   setGeo(geo);
   return geo;
 }
