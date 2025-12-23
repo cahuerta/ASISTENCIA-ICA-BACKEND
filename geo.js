@@ -24,6 +24,7 @@ const sedesGeo = JSON.parse(
 
 /* ============================================================
    MEMORIA INFRAESTRUCTURAL (TEMPORAL)
+   CONTRATO: { country, region }
    ============================================================ */
 let GEO_CACHE = null;
 
@@ -39,19 +40,15 @@ export function getClientIP(req) {
 }
 
 /* ============================================================
-   GEOLOCALIZACIÓN POR IP (SIN CAMBIOS)
+   GEOLOCALIZACIÓN POR IP
+   → NORMALIZA A { country, region }
    ============================================================ */
 export async function geoFromIP(ip) {
+  // desarrollo / local
   if (!ip || ip === "127.0.0.1" || ip === "::1") {
     return {
-      ip,
       country: "CL",
-      country_name: "Chile",
-      region: "DEV",
-      city: "LOCAL",
-      latitude: null,
-      longitude: null,
-      source: "local-dev",
+      region: "DEFAULT",
     };
   }
 
@@ -63,26 +60,22 @@ export async function geoFromIP(ip) {
     const data = await res.json();
 
     return {
-      ip,
-      country: data.country_code || null,
-      country_name: data.country_name || null,
-      region: data.region || null,
-      city: data.city || null,
-      latitude: data.latitude || null,
-      longitude: data.longitude || null,
-      source: "ipapi",
+      country: data.country_code || "CL",
+      region: data.region
+        ? String(data.region).toLowerCase()
+        : "DEFAULT",
     };
   } catch {
     return {
-      ip,
-      country: null,
-      error: "geo_lookup_failed",
+      country: "CL",
+      region: "DEFAULT",
     };
   }
 }
 
 /* ============================================================
-   RESOLVER GEO POR GPS (BBOX → region + city)
+   RESOLVER GEO POR GPS (BBOX)
+   → NORMALIZA A { country, region }
    ============================================================ */
 function resolverGeoPorGPS(lat, lon) {
   const cl = sedesGeo.CL || {};
@@ -100,27 +93,19 @@ function resolverGeoPorGPS(lat, lon) {
     ) {
       return {
         country: "CL",
-        region: regionKey,                 // ← resolver usa ESTO
-        city: sede.ciudad || sede.nombre, // solo informativo
-        latitude: lat,
-        longitude: lon,
-        source: "gps",
+        region: regionKey, // ← EXACTAMENTE lo que resolver necesita
       };
     }
   }
 
   return {
     country: "CL",
-    region: null,
-    city: null,
-    latitude: lat,
-    longitude: lon,
-    source: "gps-default",
+    region: "DEFAULT",
   };
 }
 
 /* ============================================================
-   SET / GET DE GEO (SIN CAMBIOS)
+   SET / GET DE GEO (CONTRATO LIMPIO)
    ============================================================ */
 export function setGeo(geo) {
   GEO_CACHE = geo;
@@ -132,18 +117,19 @@ export function getGeo() {
 
 /* ============================================================
    FUNCIÓN PRINCIPAL
+   - GPS primero
+   - IP si no hay GPS
+   - SIEMPRE devuelve { country, region }
    ============================================================ */
 export async function detectarGeo(req) {
-  // 1️⃣ Si ya hay GEO válido por GPS, no recalcular
-  if (GEO_CACHE && GEO_CACHE.source === "gps") {
+  // 1️⃣ Si ya hay GEO cacheado, usarlo
+  if (GEO_CACHE && GEO_CACHE.country && GEO_CACHE.region) {
     return GEO_CACHE;
   }
 
-  // 2️⃣ Si viene GPS explícito desde frontend
+  // 2️⃣ GPS explícito desde frontend
   if (req?.body?.geo?.source === "gps") {
     const { lat, lon } = req.body.geo || {};
-
-    // 🔧 ÚNICA CORRECCIÓN REAL
     const latNum = Number(lat);
     const lonNum = Number(lon);
 
@@ -154,9 +140,9 @@ export async function detectarGeo(req) {
     }
   }
 
-  // 3️⃣ Fallback IP (SIN CAMBIOS)
+  // 3️⃣ IP
   const ip = getClientIP(req);
-  const geo = await geoFromIP(ip);
-  setGeo(geo);
-  return geo;
+  const geoIP = await geoFromIP(ip);
+  setGeo(geoIP);
+  return geoIP;
 }
