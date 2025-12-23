@@ -1,8 +1,7 @@
 // geo.js
 // Infraestructura pura: IP + geolocalización
-// NO contiene lógica clínica
-// NO decide derivaciones clínicas
-// Guarda GEO en memoria temporal para uso posterior por resolver.js
+// CONTRATO: SIEMPRE devuelve { country, region } válido
+// NUNCA null, NUNCA DEFAULT
 
 import fs from "fs";
 import path from "path";
@@ -15,132 +14,166 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 /* ============================================================
-   CARGA DE SEDES (MISMO JSON QUE USA resolver)
+   CARGA DE SEDES
    ============================================================ */
 const DERIVACION_DIR = path.join(__dirname, "derivacion");
 const sedesGeo = JSON.parse(
   fs.readFileSync(path.join(DERIVACION_DIR, "sedes.geo.json"), "utf8")
 );
 
+const CIUDADES = Object.entries(sedesGeo.CL || {});
+
 /* ============================================================
-   MEMORIA INFRAESTRUCTURAL (TEMPORAL)
-   CONTRATO: { country, region }
+   MEMORIA (SIEMPRE VÁLIDA)
    ============================================================ */
 let GEO_CACHE = null;
 
 /* ============================================================
-   IP REAL (proxy-safe, compatible Render / Vercel / Nginx)
+   LOG HELPER
+   ============================================================ */
+function logGeo(msg, data = {}) {
+  console.log(`🌍 [GEO] ${msg}`, JSON.stringify(data));
+}
+
+/* ============================================================
+   IP REAL
    ============================================================ */
 export function getClientIP(req) {
-  return (
+  const ip =
     req.headers["x-forwarded-for"]?.split(",")[0]?.trim() ||
     req.socket?.remoteAddress ||
-    null
-  );
+    null;
+
+  logGeo("IP detectada", { ip });
+  return ip;
 }
 
 /* ============================================================
-   GEOLOCALIZACIÓN POR IP
-   → NORMALIZA A { country, region }
+   DISTANCIA (KM)
    ============================================================ */
-export async function geoFromIP(ip) {
-  // desarrollo / local
-  if (!ip || ip === "127.0.0.1" || ip === "::1") {
-    return {
-      country: "CL",
-      region: "DEFAULT",
-    };
-  }
+function distanciaKm(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
 
-  try {
-    const res = await fetch(`https://ipapi.co/${ip}/json/`, {
-      headers: { "User-Agent": "Asistencia-ICA/1.0" },
-    });
-
-    const data = await res.json();
-
-    return {
-      country: data.country_code || "CL",
-      region: data.region
-        ? String(data.region).toLowerCase()
-        : "DEFAULT",
-    };
-  } catch {
-    return {
-      country: "CL",
-      region: "DEFAULT",
-    };
-  }
+function centroBBox(b) {
+  return {
+    lat: (b.latMin + b.latMax) / 2,
+    lon: (b.lonMin + b.lonMax) / 2,
+  };
 }
 
 /* ============================================================
-   RESOLVER GEO POR GPS (BBOX)
-   → NORMALIZA A { country, region }
+   GPS → CIUDAD (bbox o proximidad)
    ============================================================ */
 function resolverGeoPorGPS(lat, lon) {
-  const cl = sedesGeo.CL || {};
+  logGeo("Resolviendo por GPS", { lat, lon });
 
-  for (const regionKey of Object.keys(cl)) {
-    const sede = cl[regionKey];
+  // 1️⃣ BBOX directo
+  for (const [region, sede] of CIUDADES) {
     const b = sede.bbox;
-    if (!b) continue;
-
     if (
       lat >= b.latMin &&
       lat <= b.latMax &&
       lon >= b.lonMin &&
       lon <= b.lonMax
     ) {
-      return {
-        country: "CL",
-        region: regionKey, // ← EXACTAMENTE lo que resolver necesita
-      };
+      logGeo("GPS dentro de BBOX", { region });
+      return { country: "CL", region };
     }
   }
 
-  return {
-    country: "CL",
-    region: "DEFAULT",
-  };
+  // 2️⃣ Proximidad (SIEMPRE ciudad real)
+  let mejor = null;
+  let minDist = Infinity;
+
+  for (const [region, sede] of CIUDADES) {
+    const c = centroBBox(sede.bbox);
+    const d = distanciaKm(lat, lon, c.lat, c.lon);
+    if (d < minDist) {
+      minDist = d;
+      mejor = region;
+    }
+  }
+
+  logGeo("GPS fuera de BBOX, ciudad más cercana", {
+    region: mejor,
+    distancia_km: Math.round(minDist),
+  });
+
+  return { country: "CL", region: mejor };
 }
 
 /* ============================================================
-   SET / GET DE GEO (CONTRATO LIMPIO)
+   IP → CIUDAD (usa coords si existen)
+   ============================================================ */
+export async function geoFromIP(ip) {
+  logGeo("Resolviendo por IP", { ip });
+
+  try {
+    const res = await fetch(`https://ipapi.co/${ip}/json/`, {
+      headers: { "User-Agent": "Asistencia-ICA/1.0" },
+    });
+    const data = await res.json();
+
+    if (
+      Number.isFinite(data.latitude) &&
+      Number.isFinite(data.longitude)
+    ) {
+      return resolverGeoPorGPS(data.latitude, data.longitude);
+    }
+  } catch (e) {
+    logGeo("Error IPAPI", { error: String(e) });
+  }
+
+  // Último recurso: centro geográfico de Chile (NO default)
+  logGeo("IP sin coords, usando centro Chile");
+  return resolverGeoPorGPS(-34.5, -71.0);
+}
+
+/* ============================================================
+   SET / GET GEO (NUNCA INVALIDO)
    ============================================================ */
 export function setGeo(geo) {
   GEO_CACHE = geo;
+  logGeo("GEO_CACHE seteado", GEO_CACHE);
 }
 
 export function getGeo() {
+  logGeo("GEO_CACHE leído", GEO_CACHE);
   return GEO_CACHE;
 }
 
 /* ============================================================
    FUNCIÓN PRINCIPAL
-   - GPS primero
-   - IP si no hay GPS
-   - SIEMPRE devuelve { country, region }
    ============================================================ */
 export async function detectarGeo(req) {
-  // 1️⃣ Si ya hay GEO cacheado, usarlo
-  if (GEO_CACHE && GEO_CACHE.country && GEO_CACHE.region) {
+  // Reusar cache solo si existe
+  if (GEO_CACHE) {
+    logGeo("Usando GEO_CACHE existente", GEO_CACHE);
     return GEO_CACHE;
   }
 
-  // 2️⃣ GPS explícito desde frontend
+  // GPS explícito
   if (req?.body?.geo?.source === "gps") {
-    const { lat, lon } = req.body.geo || {};
-    const latNum = Number(lat);
-    const lonNum = Number(lon);
+    const lat = Number(req.body.geo.lat);
+    const lon = Number(req.body.geo.lon);
 
-    if (Number.isFinite(latNum) && Number.isFinite(lonNum)) {
-      const geoGPS = resolverGeoPorGPS(latNum, lonNum);
+    if (Number.isFinite(lat) && Number.isFinite(lon)) {
+      const geoGPS = resolverGeoPorGPS(lat, lon);
       setGeo(geoGPS);
       return geoGPS;
     }
   }
 
-  // 3️⃣ IP
+  // IP
   const ip = getClientIP(req);
   const geoIP = await geoFromIP(ip);
   setGeo(geoIP);
