@@ -1,37 +1,36 @@
 {
   "CL": {
-    "maule": {
-      "sedeId": "ica_curico",
-      "nombre": "Instituto de Cirugía Articular – Curicó",
+    "metropolitana": {
+      "sedeId": "red_santiago",
+      "nombre": "Red de Derivación – Santiago",
       "bbox": {
-        "latMin": -36.50,
-        "latMax": -34.90,
-        "lonMin": -72.30,
-        "lonMax": -70.00
+        "latMin": -34.00,
+        "latMax": -33.00,
+        "lonMin": -71.50,
+        "lonMax": -69.50
       }
     },
     "ohiggins": {
       "sedeId": "clever_rancagua",
       "nombre": "Clever Salud – Rancagua",
       "bbox": {
-        "latMin": -35.50,
-        "latMax": -33.90,
-        "lonMin": -71.80,
+        "latMin": -35.00,
+        "latMax": -34.00,
+        "lonMin": -72.00,
         "lonMax": -70.00
       }
     },
-    "metropolitana": {
-      "sedeId": "red_santiago",
-      "nombre": "Red de Derivación – Santiago",
+    "maule": {
+      "sedeId": "ica_curico",
+      "nombre": "Instituto de Cirugía Articular – Curicó",
       "bbox": {
-        "latMin": -34.30,
-        "latMax": -33.00,
-        "lonMin": -71.20,
-        "lonMax": -69.80
+        "latMin": -36.00,
+        "latMax": -35.00,
+        "lonMin": -72.50,
+        "lonMax": -70.00
       }
     }
   },
-
   "DEFAULT": {
     "sedeId": "centro_local",
     "nombre": "Centro médico de su sector"
