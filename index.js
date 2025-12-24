@@ -9,6 +9,8 @@ import fs from "fs";
 
 // ===== GEO (infraestructura)
 import { detectarGeo } from "./geo.js";
+import session from "express-session";
+
 
 // ===== Módulos
 import chatRouter from "./nuevoModuloChat.js";
@@ -29,6 +31,23 @@ const __dirname = path.dirname(__filename);
 
 // ===== App base
 const app = express();
+
+// =====================================================
+// ===============   SESSION (GEO)  ====================
+// =====================================================
+app.use(
+  session({
+    name: "ica.sid",
+    secret: process.env.SESSION_SECRET || "ica-geo-secret",
+    resave: false,
+    saveUninitialized: true,
+    cookie: {
+      httpOnly: true,
+      sameSite: "lax",
+    },
+  })
+);
+
 
 // CORS: permite tus frontends (Vercel + dominio icarticular.cl)
 const FRONTEND_BASE =
@@ -297,11 +316,14 @@ app.get("/geo-ping", async (req, res) => {
   try {
     const geoInfo = await detectarGeo(req);
 
-    // Cache infraestructural (opcional, no clínica)
-    app.set("geo_last", geoInfo);
+    // 🔒 GEO queda en la SESIÓN
+    req.session.geo = geoInfo;
+
+    console.log("🌍 [GEO][GET] guardado en sesión:", geoInfo);
 
     return res.json({ ok: true });
   } catch (e) {
+    console.error("🌍 [GEO][GET] error:", e);
     return res.json({ ok: false });
   }
 });
@@ -311,32 +333,16 @@ app.get("/geo-ping", async (req, res) => {
 // =====================================================
 app.post("/geo-ping", async (req, res) => {
   try {
-    const { geo } = req.body || {};
-
-    // Validación mínima
-    if (
-      geo &&
-      geo.source === "gps" &&
-      typeof geo.lat === "number" &&
-      typeof geo.lon === "number"
-    ) {
-      // Guardamos GPS crudo (infraestructura, NO clínica)
-      app.set("geo_last", {
-        source: "gps",
-        lat: geo.lat,
-        lon: geo.lon,
-        accuracy: geo.accuracy || null,
-        timestamp: Date.now(),
-      });
-
-      return res.json({ ok: true, source: "gps" });
-    }
-
-    // Si viene POST sin geo válido → fallback IP
     const geoInfo = await detectarGeo(req);
-    app.set("geo_last", geoInfo);
-    return res.json({ ok: true, source: "ip" });
+
+    // 🔒 GEO queda en la SESIÓN
+    req.session.geo = geoInfo;
+
+    console.log("🌍 [GEO][POST] guardado en sesión:", geoInfo);
+
+    return res.json({ ok: true });
   } catch (e) {
+    console.error("🌍 [GEO][POST] error:", e);
     return res.json({ ok: false });
   }
 });
