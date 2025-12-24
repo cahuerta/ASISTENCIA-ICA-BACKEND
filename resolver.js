@@ -75,7 +75,7 @@ function obtenerDoctor(sede, especialidad) {
   return Array.isArray(lista) && lista.length ? lista[0] : null;
 }
 
-/* ===================== NOTA MÉDICA ===================== */
+/* ===================== NOTA MÉDICA (VERSIÓN FINAL) ===================== */
 function buildNota({ dolor, sede, doctor }) {
   const partes = [];
 
@@ -83,21 +83,23 @@ function buildNota({ dolor, sede, doctor }) {
     ? dolor.toLowerCase()
     : "la especialidad correspondiente";
 
+  // 1) Evaluación
   partes.push(
     `Sugerimos evaluación por especialista en ${especialidad}.`
   );
 
+  // 2) Médico (pertenece al centro)
   if (doctor?.nombre) {
     partes.push(`Recomendamos al Dr. ${doctor.nombre}.`);
   }
 
+  // 3) Centro según GEO
   if (sede?.nombre) {
     partes.push(`Puede solicitar su hora en ${sede.nombre}.`);
   }
 
   return partes.join(" ");
 }
-
 /* ===================== RESOLVER PRINCIPAL ===================== */
 /**
  * @param datos  → { dolor }
