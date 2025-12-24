@@ -1,8 +1,12 @@
 // resolver.js
+// Lógica clínica PURA
+// NO detecta GEO
+// NO usa estado
+// SOLO decide con datos recibidos
+
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import { getGeo } from "./geo.js";
 
 /* ===================== __dirname ===================== */
 const __filename = fileURLToPath(import.meta.url);
@@ -42,18 +46,27 @@ function resolverEspecialidad(dolor = "") {
   return MAP_DOLOR_A_ESPECIALIDAD[k] || null;
 }
 
-function resolverSedePorGeo(geo = {}) {
+/**
+ * Resolver sede SOLO si geo es válido
+ * - NO default
+ * - NO inventa
+ */
+function resolverSedePorGeo(geo) {
+  if (!geo || !geo.country || !geo.region) return null;
+
   const country = geo.country;
   const region = norm(geo.region);
 
-  if (country && sedesGeo[country]) {
-    for (const key of Object.keys(sedesGeo[country])) {
-      if (region.includes(key)) {
-        return sedesGeo[country][key];
-      }
+  const countryDB = sedesGeo[country];
+  if (!countryDB) return null;
+
+  for (const key of Object.keys(countryDB)) {
+    if (region.includes(norm(key))) {
+      return countryDB[key];
     }
   }
-  return sedesGeo.DEFAULT || null;
+
+  return null;
 }
 
 function obtenerDoctor(sede, especialidad) {
@@ -62,7 +75,7 @@ function obtenerDoctor(sede, especialidad) {
   return Array.isArray(lista) && lista.length ? lista[0] : null;
 }
 
-/* ===================== NOTA MÉDICA (VERSIÓN FINAL) ===================== */
+/* ===================== NOTA MÉDICA ===================== */
 function buildNota({ dolor, sede, doctor }) {
   const partes = [];
 
@@ -70,17 +83,14 @@ function buildNota({ dolor, sede, doctor }) {
     ? dolor.toLowerCase()
     : "la especialidad correspondiente";
 
-  // 1) Evaluación
   partes.push(
     `Sugerimos evaluación por especialista en ${especialidad}.`
   );
 
-  // 2) Médico (pertenece al centro)
   if (doctor?.nombre) {
     partes.push(`Recomendamos al Dr. ${doctor.nombre}.`);
   }
 
-  // 3) Centro según GEO
   if (sede?.nombre) {
     partes.push(`Puede solicitar su hora en ${sede.nombre}.`);
   }
@@ -89,10 +99,12 @@ function buildNota({ dolor, sede, doctor }) {
 }
 
 /* ===================== RESOLVER PRINCIPAL ===================== */
-export function resolverDerivacion(datos = {}, geo = null) {
+/**
+ * @param datos  → { dolor }
+ * @param geo    → { country, region } (OBLIGATORIO si se quiere sede)
+ */
+export function resolverDerivacion(datos = {}, geo) {
   const { dolor } = datos;
-
-  if (!geo) geo = getGeo();
 
   const especialidad = resolverEspecialidad(dolor);
   const sede = resolverSedePorGeo(geo);
