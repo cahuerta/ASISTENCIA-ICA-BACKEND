@@ -1,7 +1,10 @@
 // geo.js
 // Infraestructura pura: IP + geolocalización
-// CONTRATO: SIEMPRE devuelve { country, region } válido
-// NUNCA null, NUNCA DEFAULT
+// CONTRATO:
+// - SIEMPRE devuelve { country, region }
+// - NUNCA null
+// - NUNCA default
+// - SIN estado global
 
 import fs from "fs";
 import path from "path";
@@ -14,19 +17,15 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 /* ============================================================
-   CARGA DE SEDES
+   CARGA DE SEDES (FUENTE ÚNICA)
    ============================================================ */
 const DERIVACION_DIR = path.join(__dirname, "derivacion");
 const sedesGeo = JSON.parse(
   fs.readFileSync(path.join(DERIVACION_DIR, "sedes.geo.json"), "utf8")
 );
 
+// Chile únicamente (extensible)
 const CIUDADES = Object.entries(sedesGeo.CL || {});
-
-/* ============================================================
-   MEMORIA (SIEMPRE VÁLIDA)
-   ============================================================ */
-let GEO_CACHE = null;
 
 /* ============================================================
    LOG HELPER
@@ -36,30 +35,34 @@ function logGeo(msg, data = {}) {
 }
 
 /* ============================================================
-   IP REAL
+   IP REAL (Render / Proxy safe)
    ============================================================ */
 export function getClientIP(req) {
-  const ip =
+  const raw =
     req.headers["x-forwarded-for"]?.split(",")[0]?.trim() ||
     req.socket?.remoteAddress ||
-    null;
+    "";
+
+  const ip = raw.replace("::ffff:", "");
 
   logGeo("IP detectada", { ip });
   return ip;
 }
 
 /* ============================================================
-   DISTANCIA (KM)
+   DISTANCIA (KM) – Haversine
    ============================================================ */
 function distanciaKm(lat1, lon1, lat2, lon2) {
   const R = 6371;
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
   const dLon = ((lon2 - lon1) * Math.PI) / 180;
+
   const a =
     Math.sin(dLat / 2) ** 2 +
     Math.cos((lat1 * Math.PI) / 180) *
       Math.cos((lat2 * Math.PI) / 180) *
       Math.sin(dLon / 2) ** 2;
+
   return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
@@ -71,12 +74,12 @@ function centroBBox(b) {
 }
 
 /* ============================================================
-   GPS → CIUDAD (bbox o proximidad)
+   GPS → CIUDAD (BBOX o proximidad)
    ============================================================ */
 function resolverGeoPorGPS(lat, lon) {
   logGeo("Resolviendo por GPS", { lat, lon });
 
-  // 1️⃣ BBOX directo
+  // 1️⃣ Dentro de BBOX
   for (const [region, sede] of CIUDADES) {
     const b = sede.bbox;
     if (
@@ -90,7 +93,7 @@ function resolverGeoPorGPS(lat, lon) {
     }
   }
 
-  // 2️⃣ Proximidad (SIEMPRE ciudad real)
+  // 2️⃣ Proximidad real (siempre ciudad válida)
   let mejor = null;
   let minDist = Infinity;
 
@@ -121,6 +124,7 @@ export async function geoFromIP(ip) {
     const res = await fetch(`https://ipapi.co/${ip}/json/`, {
       headers: { "User-Agent": "Asistencia-ICA/1.0" },
     });
+
     const data = await res.json();
 
     if (
@@ -134,48 +138,25 @@ export async function geoFromIP(ip) {
   }
 
   // Último recurso: centro geográfico de Chile (NO default)
-  logGeo("IP sin coords, usando centro Chile");
+  logGeo("IP sin coords, usando centro geográfico de Chile");
   return resolverGeoPorGPS(-34.5, -71.0);
 }
 
 /* ============================================================
-   SET / GET GEO (NUNCA INVALIDO)
-   ============================================================ */
-export function setGeo(geo) {
-  GEO_CACHE = geo;
-  logGeo("GEO_CACHE seteado", GEO_CACHE);
-}
-
-export function getGeo() {
-  logGeo("GEO_CACHE leído", GEO_CACHE);
-  return GEO_CACHE;
-}
-
-/* ============================================================
-   FUNCIÓN PRINCIPAL
+   FUNCIÓN PRINCIPAL (STATELESS)
    ============================================================ */
 export async function detectarGeo(req) {
-  // Reusar cache solo si existe
-  if (GEO_CACHE) {
-    logGeo("Usando GEO_CACHE existente", GEO_CACHE);
-    return GEO_CACHE;
-  }
-
-  // GPS explícito
+  // 1️⃣ GPS explícito desde frontend
   if (req?.body?.geo?.source === "gps") {
     const lat = Number(req.body.geo.lat);
     const lon = Number(req.body.geo.lon);
 
     if (Number.isFinite(lat) && Number.isFinite(lon)) {
-      const geoGPS = resolverGeoPorGPS(lat, lon);
-      setGeo(geoGPS);
-      return geoGPS;
+      return resolverGeoPorGPS(lat, lon);
     }
   }
 
-  // IP
+  // 2️⃣ IP
   const ip = getClientIP(req);
-  const geoIP = await geoFromIP(ip);
-  setGeo(geoIP);
-  return geoIP;
+  return await geoFromIP(ip);
 }
