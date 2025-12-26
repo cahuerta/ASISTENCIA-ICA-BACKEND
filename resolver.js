@@ -106,6 +106,7 @@ function buildNota({ dolor, sede, doctor }) {
  * @param geo    → { country, region } (OBLIGATORIO si se quiere sede)
  */
 export function resolverDerivacion(datos = {}, geo) {
+  console.log("🧭 [RESOLVER] GEO RECIBIDO:", JSON.stringify(geo));
   const { dolor } = datos;
 
   const especialidad = resolverEspecialidad(dolor);
