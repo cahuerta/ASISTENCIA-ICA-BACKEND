@@ -2,9 +2,9 @@
 // Infraestructura pura: IP + geolocalización
 // CONTRATO:
 // - SIEMPRE devuelve { country, region }
-// - NUNCA null
-// - NUNCA default
-// - SIN estado global
+// - NUNCA usa sesión
+// - NUNCA guarda estado
+// - NO depende de Express
 
 import fs from "fs";
 import path from "path";
@@ -24,7 +24,7 @@ const sedesGeo = JSON.parse(
   fs.readFileSync(path.join(DERIVACION_DIR, "sedes.geo.json"), "utf8")
 );
 
-// Chile únicamente (extensible)
+// Chile (extensible)
 const CIUDADES = Object.entries(sedesGeo.CL || {});
 
 /* ============================================================
@@ -39,12 +39,11 @@ function logGeo(msg, data = {}) {
    ============================================================ */
 export function getClientIP(req) {
   const raw =
-    req.headers["x-forwarded-for"]?.split(",")[0]?.trim() ||
-    req.socket?.remoteAddress ||
+    req?.headers?.["x-forwarded-for"]?.split(",")[0]?.trim() ||
+    req?.socket?.remoteAddress ||
     "";
 
   const ip = raw.replace("::ffff:", "");
-
   logGeo("IP detectada", { ip });
   return ip;
 }
@@ -74,9 +73,9 @@ function centroBBox(b) {
 }
 
 /* ============================================================
-   GPS → CIUDAD (BBOX o proximidad)
+   GPS → CIUDAD (BBOX o proximidad REAL)
    ============================================================ */
-function resolverGeoPorGPS(lat, lon) {
+export function resolverGeoPorGPS(lat, lon) {
   logGeo("Resolviendo por GPS", { lat, lon });
 
   // 1️⃣ Dentro de BBOX
@@ -93,8 +92,8 @@ function resolverGeoPorGPS(lat, lon) {
     }
   }
 
-  // 2️⃣ Proximidad real (siempre ciudad válida)
-  let mejor = null;
+  // 2️⃣ Proximidad real (SIEMPRE devuelve una ciudad válida)
+  let mejorRegion = null;
   let minDist = Infinity;
 
   for (const [region, sede] of CIUDADES) {
@@ -102,20 +101,20 @@ function resolverGeoPorGPS(lat, lon) {
     const d = distanciaKm(lat, lon, c.lat, c.lon);
     if (d < minDist) {
       minDist = d;
-      mejor = region;
+      mejorRegion = region;
     }
   }
 
   logGeo("GPS fuera de BBOX, ciudad más cercana", {
-    region: mejor,
+    region: mejorRegion,
     distancia_km: Math.round(minDist),
   });
 
-  return { country: "CL", region: mejor };
+  return { country: "CL", region: mejorRegion };
 }
 
 /* ============================================================
-   IP → CIUDAD (usa coords si existen)
+   IP → GEO (usando coordenadas reales si existen)
    ============================================================ */
 export async function geoFromIP(ip) {
   logGeo("Resolviendo por IP", { ip });
@@ -137,26 +136,12 @@ export async function geoFromIP(ip) {
     logGeo("Error IPAPI", { error: String(e) });
   }
 
-  // Último recurso: centro geográfico de Chile (NO default)
-  logGeo("IP sin coords, usando centro geográfico de Chile");
-  return resolverGeoPorGPS(-34.5, -71.0);
-}
+  // Último recurso REAL: usar la ciudad más cercana
+  // (no hardcode, no default)
+  const [region, sede] = CIUDADES[0];
+  const c = centroBBox(sede.bbox);
 
-/* ============================================================
-   FUNCIÓN PRINCIPAL (STATELESS)
-   ============================================================ */
-export async function detectarGeo(req) {
-  // 1️⃣ GPS explícito desde frontend
-  if (req?.body?.geo?.source === "gps") {
-    const lat = Number(req.body.geo.lat);
-    const lon = Number(req.body.geo.lon);
+  logGeo("IP sin coords, usando proximidad real", { region });
 
-    if (Number.isFinite(lat) && Number.isFinite(lon)) {
-      return resolverGeoPorGPS(lat, lon);
-    }
-  }
-
-  // 2️⃣ IP
-  const ip = getClientIP(req);
-  return await geoFromIP(ip);
+  return resolverGeoPorGPS(c.lat, c.lon);
 }
