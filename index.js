@@ -551,9 +551,14 @@ app.post("/guardar-datos", (req, res) => {
   if (prev.rmObservaciones && !next.rmObservaciones)
     next.rmObservaciones = prev.rmObservaciones;
 
-  next.pagoConfirmado = true;
+// 🔒 CONGELAR GEO EN MEMORIA (NO DEPENDER DE SESSION DESPUÉS)
+if (req.session?.geo && !next.geo) {
+  next.geo = req.session.geo;
+}
 
-  memoria.set(ns("trauma", idPago), next);
+next.pagoConfirmado = true;
+
+memoria.set(ns("trauma", idPago), next);
   // ===============================================
 
   res.json({ ok: true });
