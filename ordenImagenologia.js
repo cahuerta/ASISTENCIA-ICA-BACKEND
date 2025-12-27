@@ -69,24 +69,12 @@ export function generarOrdenImagenologia(doc, datos) {
   doc.moveDown(5);
 
   /* ================= NOTA / DERIVACIÓN ================= */
-  try {
-    const deriv =
-      resolverDerivacion && typeof resolverDerivacion === "function"
-       ? resolverDerivacion({ ...datos, examen, dolor }, datos?.geo) || {}
-
-        : {};
-
-    const notaDeriv =
-      typeof deriv.nota === "string" ? deriv.nota.trim() : "";
-
-    if (notaDeriv) {
-      doc
-        .font("Helvetica")
-        .fontSize(12)
-        .text(`Nota:\n\n${notaDeriv}`, { align: "left" });
-    }
-  } catch {}
-
+  if (typeof nota === "string" && nota.trim()) {
+    doc
+      .font("Helvetica")
+      .fontSize(12)
+      .text(`Nota:\n\n${nota.trim()}`, { align: "left" });
+  }
   /* ================= FIRMA Y TIMBRE ================= */
   const pageW = doc.page.width;
   const pageH = doc.page.height;
