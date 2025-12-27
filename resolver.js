@@ -75,38 +75,36 @@ function obtenerDoctor(sede, especialidad) {
   return Array.isArray(lista) && lista.length ? lista[0] : null;
 }
 
-/* ===================== NOTA MÉDICA (VERSIÓN FINAL) ===================== */
-function buildNota({ dolor, sede, doctor }) {
+/* ===================== NOTA MÉDICA (FINAL) ===================== */
+function buildNota({ especialidad, sede, doctor }) {
   const partes = [];
 
-  const especialidad = dolor
-    ? dolor.toLowerCase()
+  const esp = especialidad
+    ? especialidad.toLowerCase()
     : "la especialidad correspondiente";
 
   // 1) Evaluación
-  partes.push(
-    `Sugerimos evaluación por especialista en ${especialidad}.`
-  );
+  partes.push(`Sugerimos evaluación por especialista en ${esp}.`);
 
-  // 2) Médico (pertenece al centro)
+  // 2) Médico
   if (doctor?.nombre) {
     partes.push(`Recomendamos al Dr. ${doctor.nombre}.`);
   }
 
-  // 3) Centro según GEO
+  // 3) Centro según GEO (solo si existe)
   if (sede?.nombre) {
     partes.push(`Puede solicitar su hora en ${sede.nombre}.`);
   }
 
   return partes.join(" ");
 }
+
 /* ===================== RESOLVER PRINCIPAL ===================== */
 /**
  * @param datos  → { dolor }
- * @param geo    → { country, region } (OBLIGATORIO si se quiere sede)
+ * @param geo    → { country, region } (opcional)
  */
 export function resolverDerivacion(datos = {}, geo) {
-  console.log("🧭 [RESOLVER] GEO RECIBIDO:", JSON.stringify(geo));
   const { dolor } = datos;
 
   const especialidad = resolverEspecialidad(dolor);
@@ -114,7 +112,7 @@ export function resolverDerivacion(datos = {}, geo) {
   const doctor = obtenerDoctor(sede, especialidad);
 
   const nota = buildNota({
-    dolor,
+    especialidad,
     sede,
     doctor,
   });
