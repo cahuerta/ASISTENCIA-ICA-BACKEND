@@ -1571,7 +1571,11 @@ function traumaIAWithFallback(handler) {
       if (ok && (exFromBody || hasFromMem)) {
         if (idPago) {
           const prev = saved || {};
-          const next = { ...prev, ...paciente };
+const next = { ...prev, ...paciente };
+
+// 🔒 PRESERVAR GEO
+if (prev.geo && !next.geo) {
+  next.geo = prev.geo;
 
           // Normalizar exámenes → siempre "examenes" (array)
           if (Array.isArray(exFromBody) && exFromBody.length > 0) {
@@ -1604,13 +1608,14 @@ function traumaIAWithFallback(handler) {
       const prev = idPago ? memoria.get(ns("trauma", idPago)) || {} : {};
 
       if (idPago) {
-        memoria.set(ns("trauma", idPago), {
-          ...prev,
-          ...paciente,
-          examenes: [fb.examen],
-          diagnosticoIA: fb.diagnostico,
-          justificacionIA: fb.justificacion,
-        });
+       memoria.set(ns("trauma", idPago), {
+  ...prev,
+  ...paciente,
+  geo: prev.geo, // 🔒 PRESERVAR GEO
+  examenes: [fb.examen],
+  diagnosticoIA: fb.diagnostico,
+  justificacionIA: fb.justificacion,
+});
       }
 
       res.json = originalJson; // restaurar
