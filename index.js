@@ -425,14 +425,15 @@ app.post("/detectar-resonancia", async (req, res) => {
 // Guardar (como ya lo tenías). Los módulos son los que definen los campos.
 // AHORA soporta también traumaJSON desde el frontend nuevo.
 app.post("/guardar-datos", (req, res) => {
-  const {
-    idPago,
-    datosPaciente,
-    traumaJSON,
-    resonanciaChecklist,
-    resonanciaResumenTexto,
-    ordenAlternativa,
-  } = req.body || {};
+ const {
+  idPago,
+  datosPaciente,
+  traumaJSON,
+  resonanciaChecklist,
+  resonanciaResumenTexto,
+  ordenAlternativa,
+  geo, // ← AQUI
+} = req.body || {};
 
   if (!idPago || (!datosPaciente && !traumaJSON)) {
     return res.status(400).json({
@@ -451,6 +452,7 @@ app.post("/guardar-datos", (req, res) => {
     incoming = {
       ...paciente,
       // IA
+      geo: geo || traumaJSON?.geo || null,
       examenesIA: Array.isArray(ia.examenes) ? ia.examenes : [],
       diagnosticoIA: ia.diagnostico || "",
       justificacionIA: ia.justificacion || "",
