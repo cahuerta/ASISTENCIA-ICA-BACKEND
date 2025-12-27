@@ -1,4 +1,5 @@
 // index.js — ESM (Node >= 18)
+import express from "express";
 import cors from "cors";
 import bodyParser from "body-parser";
 import PDFDocument from "pdfkit";
@@ -8,8 +9,6 @@ import fs from "fs";
 
 // ===== GEO (infraestructura)
 import { detectarGeo } from "./geo.js";
-import session from "express-session";
-
 
 // ===== Módulos
 import chatRouter from "./nuevoModuloChat.js";
@@ -514,12 +513,8 @@ app.post("/guardar-datos", (req, res) => {
   if (prev.rmObservaciones && !next.rmObservaciones)
     next.rmObservaciones = prev.rmObservaciones;
 
-// 🔒 CONGELAR GEO EN MEMORIA (NO DEPENDER DE SESSION DESPUÉS)
-if (req.session?.geo && !next.geo) {
-  next.geo = req.session.geo;
-}
 
-next.pagoConfirmado = true;
+  Next.pagoConfirmado = true;
 
 memoria.set(ns("trauma", idPago), next);
   // ===============================================
