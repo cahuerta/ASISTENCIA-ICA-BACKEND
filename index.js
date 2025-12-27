@@ -6,9 +6,6 @@ import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
 
-// ===== GEO (infraestructura)
-import { detectarGeo } from "./geo.js";
-
 // ===== Módulos
 import chatRouter from "./nuevoModuloChat.js";
 import iaPreopHandler from "./preopIA.js"; // ← PREOP IA
@@ -283,31 +280,6 @@ app.get("/health", (_req, res) =>
     frontend: FRONTEND_BASE,
   })
 );
-// =====================================================
-// ===============   GEO PING (PASIVO)  ================
-// =====================================================
-
-app.get("/geo-ping", async (req, res) => {
-  try {
-    const geo = await detectarGeo(req);
-    return res.json({ geo });
-  } catch (e) {
-    return res.status(500).json({ error: "geo_error" });
-  }
-});
-
-// =====================================================
-// ===============   GEO PING (GPS)  ===================
-// =====================================================
-app.post("/geo-ping", async (req, res) => {
-  try {
-    const geo = await detectarGeo(req);
-    return res.json({ geo });
-  } catch (e) {
-    return res.status(500).json({ error: "geo_error" });
-  }
-});
-
 
 // ===== DEBUG ZOHO: obtener accountId (TEMPORAL)
 app.get("/debug/zoho/accounts", async (req, res) => {
@@ -515,7 +487,7 @@ app.post("/guardar-datos", (req, res) => {
     next.rmObservaciones = prev.rmObservaciones;
 
 
-  Next.pagoConfirmado = true;
+  next.pagoConfirmado = true;
 
 memoria.set(ns("trauma", idPago), next);
   // ===============================================
