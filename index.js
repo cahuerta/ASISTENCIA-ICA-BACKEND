@@ -896,7 +896,7 @@ app.get("/pdf/:idPago", async (req, res) => {
     const examen = buildExamenTextoStrict(d);
     const nota = buildNotaStrict(d);
 
-   const datos = { ...d, examen, nota, idPago: req.params.idPago, geo: req.session.geo };
+   const datos = { ...d, examen, nota, idPago: req.params.idPago, geo: d.geo };
     const filename = `orden_${sanitize(d.nombre || "paciente")}.pdf`;
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
