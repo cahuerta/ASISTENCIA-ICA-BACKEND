@@ -1576,7 +1576,7 @@ const next = { ...prev, ...paciente };
 // 🔒 PRESERVAR GEO
 if (prev.geo && !next.geo) {
   next.geo = prev.geo;
-
+}
           // Normalizar exámenes → siempre "examenes" (array)
           if (Array.isArray(exFromBody) && exFromBody.length > 0) {
             next.examenes = exFromBody;
