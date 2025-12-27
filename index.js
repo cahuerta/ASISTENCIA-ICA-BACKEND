@@ -1,5 +1,4 @@
 // index.js — ESM (Node >= 18)
-import express from "express";
 import cors from "cors";
 import bodyParser from "body-parser";
 import PDFDocument from "pdfkit";
@@ -31,22 +30,6 @@ const __dirname = path.dirname(__filename);
 
 // ===== App base
 const app = express();
-
-// =====================================================
-// ===============   SESSION (GEO)  ====================
-// =====================================================
-app.use(
-  session({
-    name: "ica.sid",
-    secret: process.env.SESSION_SECRET || "ica-geo-secret",
-    resave: false,
-    saveUninitialized: true,
-    cookie: {
-      httpOnly: true,
-      sameSite: "lax",
-    },
-  })
-);
 
 
 // CORS: permite tus frontends (Vercel + dominio icarticular.cl)
@@ -305,26 +288,13 @@ app.get("/health", (_req, res) =>
 // =====================================================
 // ===============   GEO PING (PASIVO)  ================
 // =====================================================
-// - NO usa idPago
-// - NO decide clínica
-// - NO rompe UX
-// - Sirve para:
-//   • despertar Render
-//   • capturar IP real
-//   • calcular GEO en background
+
 app.get("/geo-ping", async (req, res) => {
   try {
-    const geoInfo = await detectarGeo(req);
-
-    // 🔒 GEO queda en la SESIÓN
-    req.session.geo = geoInfo;
-
-    console.log("🌍 [GEO][GET] guardado en sesión:", geoInfo);
-
-    return res.json({ ok: true });
+    const geo = await detectarGeo(req);
+    return res.json({ geo });
   } catch (e) {
-    console.error("🌍 [GEO][GET] error:", e);
-    return res.json({ ok: false });
+    return res.status(500).json({ error: "geo_error" });
   }
 });
 
@@ -333,17 +303,10 @@ app.get("/geo-ping", async (req, res) => {
 // =====================================================
 app.post("/geo-ping", async (req, res) => {
   try {
-    const geoInfo = await detectarGeo(req);
-
-    // 🔒 GEO queda en la SESIÓN
-    req.session.geo = geoInfo;
-
-    console.log("🌍 [GEO][POST] guardado en sesión:", geoInfo);
-
-    return res.json({ ok: true });
+    const geo = await detectarGeo(req);
+    return res.json({ geo });
   } catch (e) {
-    console.error("🌍 [GEO][POST] error:", e);
-    return res.json({ ok: false });
+    return res.status(500).json({ error: "geo_error" });
   }
 });
 
