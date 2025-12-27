@@ -1644,6 +1644,7 @@ if (prev.geo && !next.geo) {
         memoria.set(ns("trauma", idPago), {
           ...prev,
           ...paciente,
+           geo: prev.geo,
           examenes: [fb.examen],
           diagnosticoIA: fb.diagnostico,
           justificacionIA: fb.justificacion,
