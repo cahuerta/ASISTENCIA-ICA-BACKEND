@@ -72,7 +72,8 @@ export function generarOrdenImagenologia(doc, datos) {
   try {
     const deriv =
       resolverDerivacion && typeof resolverDerivacion === "function"
-        ? resolverDerivacion({ ...datos, examen, dolor }) || {}
+       ? resolverDerivacion({ ...datos, examen, dolor }, datos?.geo) || {}
+
         : {};
 
     const notaDeriv =
