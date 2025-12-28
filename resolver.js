@@ -41,9 +41,20 @@ function norm(s) {
   return (s || "").toLowerCase();
 }
 
+/**
+ * Resuelve especialidad por inclusión semántica simple
+ * SIN heurística, SIN IA, SIN default clínico
+ */
 function resolverEspecialidad(dolor = "") {
-  const k = norm(dolor);
-  return MAP_DOLOR_A_ESPECIALIDAD[k] || null;
+  const texto = norm(dolor);
+
+  for (const key of Object.keys(MAP_DOLOR_A_ESPECIALIDAD)) {
+    if (texto.includes(key)) {
+      return MAP_DOLOR_A_ESPECIALIDAD[key];
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -75,23 +86,29 @@ function obtenerDoctor(sede, especialidad) {
   return Array.isArray(lista) && lista.length ? lista[0] : null;
 }
 
-/* ===================== NOTA MÉDICA (FINAL) ===================== */
+/* ===================== NOTA MÉDICA (OBLIGATORIA) ===================== */
+/**
+ * La NOTA:
+ * - SIEMPRE existe
+ * - SIEMPRE es de derivación
+ * - GEO solo agrega precisión
+ */
 function buildNota({ especialidad, sede, doctor }) {
   const partes = [];
 
-  const esp = especialidad
-    ? especialidad.toLowerCase()
+  const espTexto = especialidad
+    ? especialidad.charAt(0).toUpperCase() + especialidad.slice(1)
     : "la especialidad correspondiente";
 
-  // 1) Evaluación
-  partes.push(`Sugerimos evaluación por especialista en ${esp}.`);
+  // 1) Evaluación (SIEMPRE)
+  partes.push(`Sugerimos evaluación por especialista en ${espTexto}.`);
 
-  // 2) Médico
+  // 2) Médico (solo si existe)
   if (doctor?.nombre) {
     partes.push(`Recomendamos al Dr. ${doctor.nombre}.`);
   }
 
-  // 3) Centro según GEO (solo si existe)
+  // 3) Centro (solo si GEO permitió resolver sede)
   if (sede?.nombre) {
     partes.push(`Puede solicitar su hora en ${sede.nombre}.`);
   }
@@ -123,7 +140,7 @@ export function resolverDerivacion(datos = {}, geo) {
     sede,
     doctor: doctor || null,
     doctores: doctor ? [doctor] : [],
-    nota,
+    nota, // 🔒 SIEMPRE presente
     source: "resolver",
   };
 }
