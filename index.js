@@ -5,6 +5,7 @@ import PDFDocument from "pdfkit";
 import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
+import express from "express";
 
 // ===== Módulos
 import chatRouter from "./nuevoModuloChat.js";
