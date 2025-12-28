@@ -73,6 +73,52 @@ app.use(cors(corsOptions));
 app.options("*", cors(corsOptions));
 
 app.use(bodyParser.json());
+// ================= GEO PING =================
+// Contrato:
+// - Frontend puede mandar GPS
+// - Backend decide región (GPS o IP)
+// - Backend responde { geo }
+// - NO guarda estado
+
+import { geoFromIP, resolverGeoPorGPS, getClientIP } from "./geo.js";
+
+app.options("/geo-ping", cors(corsOptions));
+
+app.post("/geo-ping", async (req, res) => {
+  try {
+    const { geo } = req.body || {};
+
+    // 1️⃣ Si viene GPS desde frontend → usarlo
+    if (
+      geo &&
+      Number.isFinite(geo.lat) &&
+      Number.isFinite(geo.lon)
+    ) {
+      const resolved = resolverGeoPorGPS(geo.lat, geo.lon);
+      return res.json({ ok: true, geo: resolved });
+    }
+
+    // 2️⃣ Fallback IP (backend)
+    const ip = getClientIP(req);
+    const resolved = await geoFromIP(ip);
+
+    return res.json({ ok: true, geo: resolved });
+  } catch (e) {
+    console.error("[GEO-PING] error:", e);
+    return res.status(500).json({ ok: false });
+  }
+});
+
+app.get("/geo-ping", async (req, res) => {
+  try {
+    const ip = getClientIP(req);
+    const resolved = await geoFromIP(ip);
+    return res.json({ ok: true, geo: resolved });
+  } catch (e) {
+    console.error("[GEO-PING] error:", e);
+    return res.status(500).json({ ok: false });
+  }
+});
 // ================== ZOHO OAUTH CALLBACK ==================
 app.get("/zoho/callback", async (req, res) => {
   try {
