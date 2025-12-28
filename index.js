@@ -15,7 +15,7 @@ import traumaIAHandler from "./traumaIA.js"; // ← TRAUMA IA
 import fallbackTrauma from "./fallbackTrauma.js"; // ← Fallback TRAUMA
 import { enviarOrdenPorCorreo } from "./emailOrden.js";
 import { generarInformeIA } from "./informeIA.js";
-
+import { resolverDerivacion } from "./resolver.js";
 
 // ===== Flow client (NUEVO)
 import { crearPagoFlowBackend } from "./flowClient.js";
@@ -828,10 +828,24 @@ app.get("/pdf/:idPago", async (req, res) => {
 
     const generar = await loadOrdenImagenologia();
 
-    const examen = buildExamenTextoStrict(d);
-    const nota = buildNotaStrict(d);
+   const examen = buildExamenTextoStrict(d);
 
-   const datos = { ...d, examen, nota, idPago: req.params.idPago, geo: d.geo };
+// 🔴 LA NOTA SIEMPRE VIENE DE RESOLVER (DERIVACIÓN)
+const derivacion = resolverDerivacion(
+  { dolor: d.dolor },
+  d.geo // ← GEO REAL, NUNCA NULL
+);
+
+const nota = derivacion.nota;
+
+const datos = {
+  ...d,
+  examen,
+  nota,
+  idPago: req.params.idPago,
+  geo: d.geo,
+};
+
     const filename = `orden_${sanitize(d.nombre || "paciente")}.pdf`;
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
