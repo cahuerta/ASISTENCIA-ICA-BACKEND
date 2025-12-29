@@ -454,13 +454,7 @@ app.post("/guardar-datos", (req, res) => {
   const prev = memoria.get(ns("trauma", idPago)) || {};
 
 
-  // ================== LOGS GEO (INICIO) ==================
-  console.log("🟥 [GUARDAR-DATOS] idPago =", idPago);
-  console.log("🟥 [GUARDAR-DATOS] geo (req.body.geo) =", geo);
-  console.log(
-    "🟥 [GUARDAR-DATOS] traumaJSON.geo =",
-    traumaJSON?.geo
-  );
+ 
   // =======================================================
 
   if (!idPago || (!datosPaciente && !traumaJSON)) {
