@@ -441,18 +441,25 @@ app.post("/detectar-resonancia", async (req, res) => {
 // ===============   TRAUMA (IMAGENOLOGÍA)  ============
 // =====================================================
 
-// Guardar (como ya lo tenías). Los módulos son los que definen los campos.
-// AHORA soporta también traumaJSON desde el frontend nuevo.
 app.post("/guardar-datos", (req, res) => {
- const {
-  idPago,
-  datosPaciente,
-  traumaJSON,
-  resonanciaChecklist,
-  resonanciaResumenTexto,
-  ordenAlternativa,
-  geo, // ← AQUI
-} = req.body || {};
+  const {
+    idPago,
+    datosPaciente,
+    traumaJSON,
+    resonanciaChecklist,
+    resonanciaResumenTexto,
+    ordenAlternativa,
+    geo,
+  } = req.body || {};
+
+  // ================== LOGS GEO (INICIO) ==================
+  console.log("🟥 [GUARDAR-DATOS] idPago =", idPago);
+  console.log("🟥 [GUARDAR-DATOS] geo (req.body.geo) =", geo);
+  console.log(
+    "🟥 [GUARDAR-DATOS] traumaJSON.geo =",
+    traumaJSON?.geo
+  );
+  // =======================================================
 
   if (!idPago || (!datosPaciente && !traumaJSON)) {
     return res.status(400).json({
@@ -460,6 +467,7 @@ app.post("/guardar-datos", (req, res) => {
       error: "Faltan idPago o datosPaciente/traumaJSON",
     });
   }
+
 
   // ==== Construir "incoming" plano para memoria TRAUMA ====
 let incoming = {
