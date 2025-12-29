@@ -451,6 +451,8 @@ app.post("/guardar-datos", (req, res) => {
     ordenAlternativa,
     geo,
   } = req.body || {};
+  const prev = memoria.get(ns("trauma", idPago)) || {};
+
 
   // ================== LOGS GEO (INICIO) ==================
   console.log("🟥 [GUARDAR-DATOS] idPago =", idPago);
@@ -472,7 +474,7 @@ app.post("/guardar-datos", (req, res) => {
   // ==== Construir "incoming" plano para memoria TRAUMA ====
 let incoming = {
   ...(datosPaciente || {}),
-  geo: geo ?? prev?.geo ?? null,
+  geo: geo ?? prev.geo ?? null,
 };
 
   if (traumaJSON) {
