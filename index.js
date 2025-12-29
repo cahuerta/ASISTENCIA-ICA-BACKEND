@@ -514,8 +514,7 @@ let incoming = {
   }
 
   // ==== MERGE NO DESTRUCTIVO SOLO PARA TRAUMA ====
-  const prev = memoria.get(ns("trauma", idPago)) || {};
-  const next = { ...prev };
+   const next = { ...prev };
 
   for (const [k, v] of Object.entries(incoming)) {
     if (v === undefined) continue; // no pisar con undefined
