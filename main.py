@@ -893,6 +893,17 @@ async def reset(id_pago: str):
     return {"ok": True, "removed": removed}
 
 # ============================================================
+# RESOLVER DERIVACIÓN (usado por BookingCerebro de ICA)
+# ============================================================
+@app.post("/resolver-derivacion")
+async def resolver_deriv(request: Request):
+    body = await request.json()
+    return resolver_derivacion(
+        {"dolor": body.get("dolor") or ""},
+        body.get("geo"),
+    )
+
+# ============================================================
 # 404
 # ============================================================
 @app.exception_handler(404)
