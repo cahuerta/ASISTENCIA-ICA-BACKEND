@@ -24,7 +24,7 @@ from core.geo import get_client_ip, geo_from_ip, resolver_geo_por_gps
 from routers.resolver import resolver_derivacion
 from routers.flow_client import crear_pago_flow_backend
 from routers.rm_pdf_routes import router as rm_router
-from email.email_orden import enviar_orden_por_correo
+from correo.email_orden import enviar_orden_por_correo          # ← correo/ no email/
 
 from ia.trauma_ia import trauma_ia
 from ia.generales_ia import generales_ia
@@ -46,37 +46,37 @@ logger = logging.getLogger("main")
 # ============================================================
 # CONFIG DESDE ENV
 # ============================================================
-FRONTEND_BASE   = os.getenv("FRONTEND_BASE") or os.getenv("RETURN_BASE") or "https://icarticular.cl"
-RETURN_BASE     = os.getenv("RETURN_BASE") or FRONTEND_BASE
-PORT            = int(os.getenv("PORT") or 3001)
+FRONTEND_BASE  = os.getenv("FRONTEND_BASE") or os.getenv("RETURN_BASE") or "https://icarticular.cl"
+RETURN_BASE    = os.getenv("RETURN_BASE") or FRONTEND_BASE
+PORT           = int(os.getenv("PORT") or 3001)
 
-KHIPU_API_KEY   = os.getenv("KHIPU_API_KEY") or ""
-KHIPU_API_BASE  = "https://payment-api.khipu.com"
-KHIPU_AMOUNT    = int(os.getenv("KHIPU_AMOUNT") or 1000)
-KHIPU_SUBJECT   = os.getenv("KHIPU_SUBJECT") or "Orden médica ICA"
-_ENV            = (os.getenv("KHIPU_ENV") or "integration").lower()
-KHIPU_MODE      = "production" if _ENV in ("prod", "production") else \
-                  "guest"      if _ENV == "guest" else "integration"
+KHIPU_API_KEY  = os.getenv("KHIPU_API_KEY") or ""
+KHIPU_API_BASE = "https://payment-api.khipu.com"
+KHIPU_AMOUNT   = int(os.getenv("KHIPU_AMOUNT") or 1000)
+KHIPU_SUBJECT  = os.getenv("KHIPU_SUBJECT") or "Orden médica ICA"
+_ENV           = (os.getenv("KHIPU_ENV") or "integration").lower()
+KHIPU_MODE     = "production" if _ENV in ("prod", "production") else \
+                 "guest"      if _ENV == "guest" else "integration"
 
-FLOW_AMOUNT     = int(os.getenv("FLOW_AMOUNT") or KHIPU_AMOUNT)
-FLOW_SUBJECT    = os.getenv("FLOW_SUBJECT") or KHIPU_SUBJECT
+FLOW_AMOUNT    = int(os.getenv("FLOW_AMOUNT") or KHIPU_AMOUNT)
+FLOW_SUBJECT   = os.getenv("FLOW_SUBJECT") or KHIPU_SUBJECT
 
 CONFIG = {
-    "anthropic_api_key":  os.getenv("ANTHROPIC_API_KEY") or "",
-    "openai_api_key":     os.getenv("OPENAI_API_KEY") or "",
-    "anthropic_model":    os.getenv("ANTHROPIC_MODEL") or "claude-sonnet-4-6",
-    "openai_model":       os.getenv("OPENAI_MODEL") or "gpt-4o-mini",
-    "resend_api_key":     os.getenv("RESEND_API_KEY") or "",
-    "resend_from":        os.getenv("RESEND_FROM") or "contacto@icarticular.cl",
-    "flow_api_key":       os.getenv("FLOW_API_KEY") or "",
-    "flow_secret_key":    os.getenv("FLOW_SECRET_KEY") or "",
-    "flow_env":           os.getenv("FLOW_ENV") or "sandbox",
-    "khipu_api_key":      KHIPU_API_KEY,
-    "khipu_amount":       KHIPU_AMOUNT,
-    "khipu_subject":      KHIPU_SUBJECT,
-    "khipu_env":          _ENV,
-    "return_base":        RETURN_BASE,
-    "frontend_base":      FRONTEND_BASE,
+    "anthropic_api_key": os.getenv("ANTHROPIC_API_KEY") or "",
+    "openai_api_key":    os.getenv("OPENAI_API_KEY") or "",
+    "anthropic_model":   os.getenv("ANTHROPIC_MODEL") or "claude-sonnet-4-6",
+    "openai_model":      os.getenv("OPENAI_MODEL") or "gpt-4o-mini",
+    "resend_api_key":    os.getenv("RESEND_API_KEY") or "",
+    "resend_from":       os.getenv("RESEND_FROM") or "contacto@icarticular.cl",
+    "flow_api_key":      os.getenv("FLOW_API_KEY") or "",
+    "flow_secret_key":   os.getenv("FLOW_SECRET_KEY") or "",
+    "flow_env":          os.getenv("FLOW_ENV") or "sandbox",
+    "khipu_api_key":     KHIPU_API_KEY,
+    "khipu_amount":      KHIPU_AMOUNT,
+    "khipu_subject":     KHIPU_SUBJECT,
+    "khipu_env":         _ENV,
+    "return_base":       RETURN_BASE,
+    "frontend_base":     FRONTEND_BASE,
 }
 
 GUEST_PERFIL = {"nombre": "Guest", "rut": "11.111.111-1"}
@@ -124,9 +124,9 @@ def _norm_rut(s: str) -> str:
 
 def _modulo_desde_id_o_body(idPago: str, modulo: str = "") -> str:
     m = str(modulo or "").lower()
-    if m == "preop"    or str(idPago).startswith("preop_"):    return "preop"
+    if m == "preop"     or str(idPago).startswith("preop_"):     return "preop"
     if m == "generales" or str(idPago).startswith("generales_"): return "generales"
-    if m == "ia"       or str(idPago).startswith("ia_"):       return "ia"
+    if m == "ia"        or str(idPago).startswith("ia_"):        return "ia"
     return "trauma"
 
 def _es_guest(datos: dict) -> bool:
@@ -208,7 +208,7 @@ async def zoho_callback(code: str = ""):
 
 @app.get("/debug/zoho/accounts")
 async def debug_zoho_accounts():
-    token      = os.getenv("ZOHO_MAIL_ACCESS_TOKEN") or ""
+    token = os.getenv("ZOHO_MAIL_ACCESS_TOKEN") or ""
     if not token:
         raise HTTPException(500, detail="Falta ZOHO_MAIL_ACCESS_TOKEN")
     async with httpx.AsyncClient(timeout=10.0) as client:
@@ -236,7 +236,7 @@ async def flow_confirmation(request: Request):
 @app.get("/flow-return")
 @app.post("/flow-return")
 async def flow_return(request: Request, idPago: str = "", modulo: str = "trauma"):
-    params   = urlencode({"pago": "ok", "idPago": idPago, "modulo": modulo})
+    params    = urlencode({"pago": "ok", "idPago": idPago, "modulo": modulo})
     final_url = f"{RETURN_BASE}?{params}"
     return RedirectResponse(url=final_url, status_code=302)
 
@@ -320,24 +320,23 @@ async def crear_pago_flow(body: CrearPagoBody, request: Request):
 # IA — TRAUMA
 # ============================================================
 class TraumaIABody(BaseModel):
-    idPago:      str
-    paciente:    dict | None = None
-    detalles:    dict | None = None
-    traumaJSON:  dict | None = None
+    idPago:     str
+    paciente:   dict | None = None
+    detalles:   dict | None = None
+    traumaJSON: dict | None = None
 
 @app.post("/ia-trauma")
 @app.post("/ia/trauma")
 async def ia_trauma(body: TraumaIABody):
     result = await trauma_ia(body.model_dump(), CONFIG)
     if not result.get("ok"):
-        # fallback heurístico
-        p = body.paciente or (body.traumaJSON or {}).get("paciente") or {}
+        p  = body.paciente or (body.traumaJSON or {}).get("paciente") or {}
         fb = fallback_trauma(p)
         return {"ok": True, "fallback": True,
-                "examenes": [fb["examen"]],
-                "diagnostico": fb["diagnostico"],
+                "examenes":      [fb["examen"]],
+                "diagnostico":   fb["diagnostico"],
                 "justificacion": fb["justificacion"],
-                "informeIA": fb["justificacion"]}
+                "informeIA":     fb["justificacion"]}
     return result
 
 # ============================================================
@@ -372,14 +371,14 @@ async def ia_preop(body: PreopIABody):
 # CHAT — PREVIEW INFORME
 # ============================================================
 class ChatPreviewBody(BaseModel):
-    idPago:    str
-    consulta:  str
-    nombre:    str | None = None
-    edad:      Any = None
-    rut:       str | None = None
-    genero:    str | None = None
-    dolor:     str | None = None
-    lado:      str | None = None
+    idPago:     str
+    consulta:   str
+    nombre:     str | None = None
+    edad:       Any = None
+    rut:        str | None = None
+    genero:     str | None = None
+    dolor:      str | None = None
+    lado:       str | None = None
     marcadores: dict | None = None
 
 @app.post("/api/preview-informe")
@@ -387,10 +386,10 @@ async def api_preview_informe(body: ChatPreviewBody):
     return await preview_informe(body.model_dump(), CONFIG)
 
 # ============================================================
-# PDF — TRAUMA (orden imagenología)
+# PDF — UNIFICADO
 # ============================================================
 @app.post("/pdf")
-async def pdf_trauma(request: Request):
+async def pdf_unificado(request: Request):
     data    = await request.json()
     id_pago = data.get("idPago") or ""
     modulo  = _modulo_desde_id_o_body(id_pago, data.get("modulo") or "")
@@ -400,13 +399,13 @@ async def pdf_trauma(request: Request):
 
     try:
         if modulo == "trauma":
-            deriv    = resolver_derivacion({"dolor": d.get("dolor")}, d.get("geo"))
+            deriv     = resolver_derivacion({"dolor": d.get("dolor")}, d.get("geo"))
             pdf_bytes = generar_orden_imagenologia({**d, "examen": _build_examen_texto(d), "nota": deriv["nota"], "rut": rut})
             filename  = f"orden_{nombre}.pdf"
 
         elif modulo == "preop":
             from pypdf import PdfWriter, PdfReader
-            lab_b  = generar_orden_preop_lab({**d, "rut": rut})
+            lab_b   = generar_orden_preop_lab({**d, "rut": rut})
             odont_b = generar_preop_odonto({**d, "rut": rut})
             writer  = PdfWriter()
             for parte in [lab_b, odont_b]:
@@ -434,12 +433,11 @@ async def pdf_trauma(request: Request):
         logger.error("pdf error: %s", e)
         raise HTTPException(500)
 
-    # Envío email no bloqueante
     asyncio.create_task(
         enviar_orden_por_correo(
             datos={**d, "rut": rut},
             modulo=modulo,
-            generador_pdf=lambda datos: pdf_bytes,
+            generador_pdf=lambda _: pdf_bytes,
             config=CONFIG,
         )
     )
@@ -455,10 +453,10 @@ async def pdf_trauma(request: Request):
 # ============================================================
 @app.post("/pdf-preop")
 async def pdf_preop(request: Request):
-    data   = await request.json()
-    d      = data.get("datos") or data
-    rut    = _norm_rut(d.get("rut") or "")
-    nombre = _sanitize(d.get("nombre") or "paciente")
+    data    = await request.json()
+    d       = data.get("datos") or data
+    rut     = _norm_rut(d.get("rut") or "")
+    nombre  = _sanitize(d.get("nombre") or "paciente")
 
     from pypdf import PdfWriter, PdfReader
     lab_b   = generar_orden_preop_lab({**d, "rut": rut})
@@ -482,9 +480,9 @@ async def pdf_preop(request: Request):
 # ============================================================
 @app.post("/api/pdf-ia")
 async def pdf_ia(request: Request):
-    data    = await request.json()
-    d       = data.get("datos") or data
-    nombre  = _sanitize(d.get("nombre") or "paciente")
+    data      = await request.json()
+    d         = data.get("datos") or data
+    nombre    = _sanitize(d.get("nombre") or "paciente")
     pdf_bytes = generar_informe_ia(d)
     return Response(
         content=pdf_bytes,
@@ -525,33 +523,3 @@ async def detectar_resonancia(body: DetectarRMBody):
     return {"ok": True, "resonancia": _contiene_rm(texto), "texto": texto}
 
 # ============================================================
-# GUARDAR RM (stateless: valida y retorna ok)
-# ============================================================
-class GuardarRMBody(BaseModel):
-    idPago:       str
-    rmForm:       dict | None = None
-    observaciones: str = ""
-
-@app.post("/guardar-rm")
-async def guardar_rm(body: GuardarRMBody):
-    if not body.idPago:
-        raise HTTPException(400, detail="Falta idPago")
-    return {"ok": True}
-
-# ============================================================
-# RESET (stateless: no-op)
-# ============================================================
-@app.delete("/reset/{id_pago}")
-async def reset(id_pago: str):
-    logger.info("Reset solicitado para idPago=%s (stateless: no-op)", id_pago)
-    return {"ok": True, "removed": 0}
-
-# ============================================================
-# 404 handler
-# ============================================================
-@app.exception_handler(404)
-async def not_found(request: Request, exc):
-    return JSONResponse(
-        status_code=404,
-        content={"ok": False, "error": "Ruta no encontrada", "path": str(request.url.path)},
-    )
