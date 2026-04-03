@@ -113,12 +113,7 @@ def _dibujar_firma_timbre(c: rl_canvas.Canvas, doc) -> None:
 # ============================================================
 def generar_orden_preop_lab(datos: dict) -> bytes:
     """
-    datos: {
-        nombre, rut, edad, dolor, lado,
-        tipo_cirugia?: str,
-        examenes_ia:   list[str],
-        nota?:         str,
-    }
+    datos: { nombre, rut, edad, dolor, lado, tipoCirugia?, examenesIA: list[str], nota? }
     Retorna: bytes del PDF generado.
     """
     nombre       = datos.get("nombre") or ""
@@ -126,8 +121,9 @@ def generar_orden_preop_lab(datos: dict) -> bytes:
     edad         = datos.get("edad") or ""
     dolor        = datos.get("dolor") or ""
     lado         = datos.get("lado") or ""
-    tipo_cirugia = datos.get("tipo_cirugia") or ""
-    examenes_ia  = datos.get("examenes_ia") or []
+    # camelCase (sistema) con fallback snake_case
+    tipo_cirugia = datos.get("tipoCirugia") or datos.get("tipo_cirugia") or ""
+    examenes_ia  = datos.get("examenesIA") or datos.get("examenes_ia") or []
     nota         = str(datos.get("nota") or "").strip()
     sintomas     = f"{dolor} {lado}".strip()
 
@@ -151,7 +147,6 @@ def generar_orden_preop_lab(datos: dict) -> bytes:
 
     elementos = []
 
-    # — Encabezado —
     logo_path = _ASSETS / "ica.jpg"
     if logo_path.exists():
         from reportlab.platypus import Image as RLImage
@@ -173,7 +168,6 @@ def generar_orden_preop_lab(datos: dict) -> bytes:
     elementos.append(Paragraph("Orden Preoperatoria – Laboratorio y ECG", subtitulo_s))
     elementos.append(Spacer(1, 8 * mm))
 
-    # — Datos paciente —
     campos = [
         ("Nombre", nombre),
         ("Edad",   str(edad)),
@@ -188,7 +182,6 @@ def generar_orden_preop_lab(datos: dict) -> bytes:
 
     elementos.append(Spacer(1, 8 * mm))
 
-    # — Exámenes —
     elementos.append(Paragraph("Solicito los siguientes exámenes:", seccion_s))
     elementos.append(Spacer(1, 4 * mm))
 
@@ -200,10 +193,10 @@ def generar_orden_preop_lab(datos: dict) -> bytes:
 
     elementos.append(Spacer(1, 10 * mm))
 
-    # — Nota —
     if nota:
         elementos.append(Paragraph(nota, nota_s))
         elementos.append(Spacer(1, 6 * mm))
 
     doc.build(elementos, onFirstPage=on_page, onLaterPages=on_page)
     return buffer.getvalue()
+    
