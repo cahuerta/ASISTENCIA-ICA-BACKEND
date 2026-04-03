@@ -47,7 +47,7 @@ def _estilos():
     )
     examen_val = ParagraphStyle(
         "ExamenVal", parent=styles["Normal"],
-        fontSize=18, fontName="Helvetica-Bold",
+        fontSize=14, fontName="Helvetica-Bold",   # ← reducido de 18 a 14
         alignment=TA_CENTER, spaceAfter=8,
     )
     nota_s = ParagraphStyle(
@@ -67,16 +67,10 @@ def _estilos():
 # FIRMA + TIMBRE ROTADO — callback de canvas
 # ============================================================
 def _dibujar_firma_timbre(c: rl_canvas.Canvas, doc) -> None:
-    """
-    Dibuja firma, timbre rotado 20° y datos del médico.
-    Usa canvas directo (coordenadas desde abajo-izquierda en reportlab).
-    Equivalente exacto al bloque PDFKit original.
-    """
-    base_y  = 55        # pts desde abajo — zona de firma
+    base_y  = 55
     firma_w = 60 * mm
     firma_x = (PAGE_W - firma_w) / 2
 
-    # — Firma imagen —
     firma_path = _ASSETS / "FIRMA.png"
     if firma_path.exists():
         c.drawImage(
@@ -86,23 +80,21 @@ def _dibujar_firma_timbre(c: rl_canvas.Canvas, doc) -> None:
             preserveAspectRatio=True, mask="auto",
         )
 
-    # — Línea y etiqueta —
     c.setFont("Helvetica", 12)
     c.drawCentredString(PAGE_W / 2, base_y + 34, "_________________________")
     c.drawCentredString(PAGE_W / 2, base_y + 20, "Firma y Timbre Médico")
 
-    # — Timbre rotado 20° —
     timbre_path = _ASSETS / "timbre.jpg"
     if timbre_path.exists():
         timbre_w = 28 * mm
-        timbre_x = firma_x + firma_w + 4 * mm   # a la derecha de la firma
+        timbre_x = firma_x + firma_w + 4 * mm
         timbre_y = base_y + 42
         cx = timbre_x + timbre_w / 2
         cy = timbre_y + timbre_w / 2
 
         c.saveState()
         c.translate(cx, cy)
-        c.rotate(20)                             # ← 20° igual que el JS original
+        c.rotate(20)
         c.translate(-cx, -cy)
         c.drawImage(
             str(timbre_path),
@@ -112,7 +104,6 @@ def _dibujar_firma_timbre(c: rl_canvas.Canvas, doc) -> None:
         )
         c.restoreState()
 
-    # — Datos médico —
     c.setFont("Helvetica", 12)
     for i, linea in enumerate([
         "Dr. Cristóbal Huerta Cortés",
@@ -131,13 +122,13 @@ def generar_orden_imagenologia(datos: dict) -> bytes:
     datos: { nombre, edad, rut, dolor, lado, examen: str, nota?: str }
     Retorna: bytes del PDF generado.
     """
-    nombre = datos.get("nombre") or ""
-    edad   = datos.get("edad") or ""
-    rut    = datos.get("rut") or ""
-    dolor  = datos.get("dolor") or ""
-    lado   = datos.get("lado") or ""
-    examen = datos.get("examen") or ""
-    nota   = str(datos.get("nota") or "").strip()
+    nombre   = datos.get("nombre") or ""
+    edad     = datos.get("edad") or ""
+    rut      = datos.get("rut") or ""
+    dolor    = datos.get("dolor") or ""
+    lado     = datos.get("lado") or ""
+    examen   = datos.get("examen") or ""
+    nota     = str(datos.get("nota") or "").strip()
     sintomas = f"{dolor} {lado}".strip()
 
     titulo_s, subtitulo_s, campo_s, examen_label_s, examen_val_s, nota_s, firma_s = _estilos()
@@ -154,7 +145,6 @@ def generar_orden_imagenologia(datos: dict) -> bytes:
 
     elementos = []
 
-    # — Encabezado —
     logo_path = _ASSETS / "ica.jpg"
     if logo_path.exists():
         from reportlab.platypus import Image as RLImage
@@ -176,7 +166,6 @@ def generar_orden_imagenologia(datos: dict) -> bytes:
     elementos.append(Paragraph("Orden Médica de Imagenología", subtitulo_s))
     elementos.append(Spacer(1, 8 * mm))
 
-    # — Datos paciente —
     for label, valor in [
         ("Nombre", nombre),
         ("Edad",   str(edad)),
@@ -187,17 +176,15 @@ def generar_orden_imagenologia(datos: dict) -> bytes:
 
     elementos.append(Spacer(1, 10 * mm))
 
-    # — Examen —
     elementos.append(Paragraph("Examen sugerido:", examen_label_s))
     elementos.append(Spacer(1, 8 * mm))
     elementos.append(Paragraph(examen, examen_val_s))
     elementos.append(Spacer(1, 12 * mm))
 
-    # — Nota —
     if nota:
         elementos.append(Paragraph(f"Nota:<br/><br/>{nota}", nota_s))
         elementos.append(Spacer(1, 6 * mm))
 
     doc.build(elementos, onFirstPage=on_page, onLaterPages=on_page)
     return buffer.getvalue()
-        
+    
