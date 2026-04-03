@@ -43,18 +43,20 @@ logger = logging.getLogger("main")
 # ============================================================
 # CONFIG
 # ============================================================
-FRONTEND_BASE  = os.getenv("FRONTEND_BASE") or os.getenv("RETURN_BASE") or "https://icarticular.cl"
-RETURN_BASE    = os.getenv("RETURN_BASE") or FRONTEND_BASE
-PORT           = int(os.getenv("PORT") or 3001)
-KHIPU_API_KEY  = os.getenv("KHIPU_API_KEY") or ""
-KHIPU_API_BASE = "https://payment-api.khipu.com"
-KHIPU_AMOUNT   = int(os.getenv("KHIPU_AMOUNT") or 1000)
-KHIPU_SUBJECT  = os.getenv("KHIPU_SUBJECT") or "Orden médica ICA"
-_ENV           = (os.getenv("KHIPU_ENV") or "integration").lower()
-KHIPU_MODE     = "production" if _ENV in ("prod","production") else \
-                 "guest"      if _ENV == "guest" else "integration"
-FLOW_AMOUNT    = int(os.getenv("FLOW_AMOUNT") or KHIPU_AMOUNT)
-FLOW_SUBJECT   = os.getenv("FLOW_SUBJECT") or KHIPU_SUBJECT
+FRONTEND_BASE      = os.getenv("FRONTEND_BASE") or os.getenv("RETURN_BASE") or "https://icarticular.cl"
+RETURN_BASE        = os.getenv("RETURN_BASE") or FRONTEND_BASE
+PORT               = int(os.getenv("PORT") or 3001)
+KHIPU_API_KEY      = os.getenv("KHIPU_API_KEY") or ""
+KHIPU_API_BASE     = "https://payment-api.khipu.com"
+KHIPU_AMOUNT       = int(os.getenv("KHIPU_AMOUNT") or 1000)
+KHIPU_SUBJECT      = os.getenv("KHIPU_SUBJECT") or "Orden médica ICA"
+_ENV               = (os.getenv("KHIPU_ENV") or "integration").lower()
+KHIPU_MODE         = "production" if _ENV in ("prod","production") else \
+                     "guest"      if _ENV == "guest" else "integration"
+FLOW_AMOUNT        = int(os.getenv("FLOW_AMOUNT") or KHIPU_AMOUNT)
+FLOW_SUBJECT       = os.getenv("FLOW_SUBJECT") or KHIPU_SUBJECT
+ICA_BACKEND_URL    = os.getenv("ICA_BACKEND_URL") or ""
+ICA_PREDIAG_SECRET = os.getenv("PREDIAG_SECRET")  or "ica_prediag_2024"
 
 CONFIG = {
     "anthropic_api_key": os.getenv("ANTHROPIC_API_KEY") or "",
@@ -178,6 +180,41 @@ def _backend_base(request: Request) -> str:
     return str(request.base_url).rstrip("/")
 
 # ============================================================
+# REGISTRAR EN ICA (no bloqueante — se llama tras emitir PDF)
+# ============================================================
+async def _registrar_en_ica(
+    datos: dict,
+    modulo: str,
+    examenes: list,
+    diagnostico: str,
+    justificacion: str,
+) -> None:
+    if not ICA_BACKEND_URL:
+        return
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            await client.post(
+                f"{ICA_BACKEND_URL}/api/prediagnostico/registrar",
+                headers={"x-prediag-secret": ICA_PREDIAG_SECRET},
+                json={
+                    "rut":           _norm_rut(datos.get("rut") or ""),
+                    "nombre":        datos.get("nombre") or "",
+                    "edad":          datos.get("edad"),
+                    "genero":        datos.get("genero") or "",
+                    "dolor":         datos.get("dolor") or "",
+                    "lado":          datos.get("lado") or "",
+                    "diagnostico":   diagnostico,
+                    "examenes":      examenes,
+                    "justificacion": justificacion,
+                    "idPago":        datos.get("idPago") or "",
+                    "modulo":        modulo,
+                },
+            )
+        logger.info("Registrado en ICA: rut=%s modulo=%s", datos.get("rut"), modulo)
+    except Exception as e:
+        logger.warning("No se pudo registrar en ICA: %s", e)
+
+# ============================================================
 # HEALTH
 # ============================================================
 @app.get("/")
@@ -296,8 +333,6 @@ async def guardar_datos(request: Request):
         if body.get("ordenAlternativa"):       incoming["ordenAlternativa"] = body["ordenAlternativa"]
 
     next_ = _merge(prev, incoming)
-
-    # Copiar examenesIA → examenes (para PDF)
     if isinstance(incoming.get("examenesIA"), list) and incoming["examenesIA"]:
         next_["examenes"] = list(incoming["examenesIA"])
     if isinstance(prev.get("examenes"), list) and not next_.get("examenes"):
@@ -306,7 +341,6 @@ async def guardar_datos(request: Request):
         if prev.get(f) and not next_.get(f):
             next_[f] = prev[f]
     next_["pagoConfirmado"] = True
-
     _mem_set("trauma", id_pago, next_)
     return {"ok": True}
 
@@ -341,7 +375,6 @@ async def guardar_datos_preop(request: Request):
     if isinstance(informe_ia, str) and informe_ia.strip(): next_["informeIA"] = informe_ia.strip()
     if isinstance(nota, str) and nota.strip(): next_["nota"] = nota.strip()
     next_["pagoConfirmado"] = True
-
     _mem_set("preop", id_pago, next_)
     return {"ok": True}
 
@@ -374,7 +407,6 @@ async def guardar_datos_generales(request: Request):
     if isinstance(informe_ia, str) and informe_ia.strip(): next_["informeIA"] = informe_ia.strip()
     if isinstance(nota, str) and nota.strip(): next_["nota"] = nota.strip()
     next_["pagoConfirmado"] = True
-
     _mem_set("generales", id_pago, next_)
     return {"ok": True}
 
@@ -593,17 +625,17 @@ async def ia_trauma_endpoint(body: TraumaIABody):
         result = {"ok": True, "fallback": True, "examenes": [fb["examen"]],
                   "diagnostico": fb["diagnostico"], "justificacion": fb["justificacion"],
                   "informeIA": fb["justificacion"]}
-    id_pago = body.idPago
-    prev    = _mem_get("trauma", id_pago)
-    pac     = body.paciente or (body.traumaJSON or {}).get("paciente") or {}
-    geo     = prev.get("geo") or (body.traumaJSON or {}).get("geo")
+    id_pago  = body.idPago
+    prev     = _mem_get("trauma", id_pago)
+    pac      = body.paciente or (body.traumaJSON or {}).get("paciente") or {}
+    geo      = prev.get("geo") or (body.traumaJSON or {}).get("geo")
     examenes = result.get("examenes") or []
     next_ = {**prev, **pac,
-             "examenes":       examenes,
-             "examenesIA":     examenes,
-             "diagnosticoIA":  result.get("diagnostico",""),
-             "justificacionIA":result.get("justificacion",""),
-             "pagoConfirmado": True}
+             "examenes":        examenes,
+             "examenesIA":      examenes,
+             "diagnosticoIA":   result.get("diagnostico",""),
+             "justificacionIA": result.get("justificacion",""),
+             "pagoConfirmado":  True}
     if geo: next_["geo"] = geo
     _mem_set("trauma", id_pago, next_)
     _mem_set("ia",     id_pago, next_)
@@ -687,7 +719,7 @@ async def api_preview_informe(body: ChatPreviewBody):
         _mem_set("meta", body.idPago, {"moduloAutorizado": "ia"})
     return result
 
-# ============================================================
+  # ============================================================
 # PDF — TRAUMA
 # ============================================================
 @app.get("/pdf/{id_pago}")
@@ -713,6 +745,13 @@ async def pdf_trauma(id_pago: str):
     asyncio.create_task(enviar_orden_por_correo(
         datos={**d, "rut": rut}, modulo="trauma",
         generador_pdf=lambda _: pdf_bytes, config=CONFIG))
+    asyncio.create_task(_registrar_en_ica(
+        datos={**d, "rut": rut, "idPago": id_pago},
+        modulo="trauma",
+        examenes=d.get("examenes") or [],
+        diagnostico=d.get("diagnosticoIA") or "",
+        justificacion=d.get("justificacionIA") or "",
+    ))
     return Response(content=pdf_bytes, media_type="application/pdf",
                     headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
@@ -746,6 +785,13 @@ async def pdf_preop(id_pago: str):
     asyncio.create_task(enviar_orden_por_correo(
         datos={**d, "rut": rut}, modulo="preop",
         generador_pdf=lambda _: pdf_bytes, config=CONFIG))
+    asyncio.create_task(_registrar_en_ica(
+        datos={**d, "rut": rut, "idPago": id_pago},
+        modulo="preop",
+        examenes=d.get("examenesIA") or [],
+        diagnostico=d.get("informeIA") or "",
+        justificacion=d.get("tipoCirugia") or "",
+    ))
     return Response(content=pdf_bytes, media_type="application/pdf",
                     headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
@@ -762,8 +808,7 @@ async def pdf_generales(id_pago: str):
 
     rut = _norm_rut(d.get("rut") or "")
     try:
-        pdf_bytes = generar_orden_generales({**d,
-            "examenes_ia": d.get("examenesIA") or [], "rut": rut})
+        pdf_bytes = generar_orden_generales({**d, "rut": rut})
     except Exception as e:
         logger.error("pdf generales error: %s", e)
         return Response(status_code=500)
@@ -772,6 +817,13 @@ async def pdf_generales(id_pago: str):
     asyncio.create_task(enviar_orden_por_correo(
         datos={**d, "rut": rut}, modulo="generales",
         generador_pdf=lambda _: pdf_bytes, config=CONFIG))
+    asyncio.create_task(_registrar_en_ica(
+        datos={**d, "rut": rut, "idPago": id_pago},
+        modulo="generales",
+        examenes=d.get("examenesIA") or [],
+        diagnostico=d.get("informeIA") or "",
+        justificacion=d.get("nota") or "",
+    ))
     return Response(content=pdf_bytes, media_type="application/pdf",
                     headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
@@ -800,6 +852,13 @@ async def pdf_ia_orden(id_pago: str):
     asyncio.create_task(enviar_orden_por_correo(
         datos={**d, "rut": rut}, modulo="ia",
         generador_pdf=lambda _: pdf_bytes, config=CONFIG))
+    asyncio.create_task(_registrar_en_ica(
+        datos={**d, "rut": rut, "idPago": id_pago},
+        modulo="ia",
+        examenes=d.get("examenes") or d.get("examenesIA") or [],
+        diagnostico=d.get("diagnosticoIA") or "",
+        justificacion=d.get("justificacionIA") or "",
+    ))
     return Response(content=pdf_bytes, media_type="application/pdf",
                     headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
@@ -816,11 +875,11 @@ async def pdf_ia_informe(id_pago: str):
 
     try:
         pdf_bytes = generar_informe_ia({
-            "nombre":   d.get("nombre"),
-            "edad":     d.get("edad"),
-            "rut":      d.get("rut"),
-            "consulta": d.get("consulta") or "",
-            "respuesta":d.get("informeIA") or (d.get("iaJSON") or {}).get("informeIA") or "",
+            "nombre":    d.get("nombre"),
+            "edad":      d.get("edad"),
+            "rut":       d.get("rut"),
+            "consulta":  d.get("consulta") or "",
+            "respuesta": d.get("informeIA") or (d.get("iaJSON") or {}).get("informeIA") or "",
         })
     except Exception as e:
         logger.error("pdf ia informe error: %s", e)
@@ -840,7 +899,7 @@ async def pdf_rm_get(id_pago: str):
     examen_txt = _build_examen(d)
     if not _contiene_rm(examen_txt):
         return JSONResponse(status_code=404,
-            content={"ok": False, "error": "No corresponde formulario RM: los exámenes no incluyen Resonancia."})
+            content={"ok": False, "error": "No corresponde formulario RM."})
     try:
         pdf_bytes = generar_formulario_resonancia({
             "nombre":        d.get("nombre") or "",
@@ -862,19 +921,17 @@ async def pdf_rm_get(id_pago: str):
 # ============================================================
 @app.post("/guardar-rm")
 async def guardar_rm(request: Request):
-    body = await request.json()
-    id_pago      = body.get("idPago") or ""
-    rm_form      = body.get("rmForm")
+    body          = await request.json()
+    id_pago       = body.get("idPago") or ""
+    rm_form       = body.get("rmForm")
     observaciones = body.get("observaciones") or ""
     if not id_pago: raise HTTPException(400, detail="Falta idPago")
 
     space, base = _mem_pick(id_pago)
     if not base:
         return JSONResponse(status_code=404, content={"ok": False, "error": "No hay datos base"})
-    examen_txt = _build_examen(base)
-    if not _contiene_rm(examen_txt):
-        return JSONResponse(status_code=409, content={"ok": False,
-            "error": "El caso no contiene Resonancia."})
+    if not _contiene_rm(_build_examen(base)):
+        return JSONResponse(status_code=409, content={"ok": False, "error": "El caso no contiene Resonancia."})
 
     patch = {}
     if isinstance(rm_form, dict) and rm_form: patch["rmForm"] = rm_form
@@ -910,3 +967,4 @@ async def resolver_deriv(request: Request):
 async def not_found(request: Request, exc):
     return JSONResponse(status_code=404,
         content={"ok": False, "error": "Ruta no encontrada", "path": str(request.url.path)})
+  
