@@ -68,7 +68,6 @@ def _dibujar_firma_timbre(c: rl_canvas.Canvas, doc) -> None:
     firma_w = 60 * mm
     firma_x = (PAGE_W - firma_w) / 2
 
-    # — Firma imagen —
     firma_path = _ASSETS / "FIRMA.png"
     if firma_path.exists():
         c.drawImage(
@@ -78,12 +77,10 @@ def _dibujar_firma_timbre(c: rl_canvas.Canvas, doc) -> None:
             preserveAspectRatio=True, mask="auto",
         )
 
-    # — Línea y etiqueta —
     c.setFont("Helvetica", 12)
     c.drawCentredString(PAGE_W / 2, base_y + 34, "_________________________")
     c.drawCentredString(PAGE_W / 2, base_y + 20, "Firma y Timbre Médico")
 
-    # — Timbre rotado 20° —
     timbre_path = _ASSETS / "timbre.jpg"
     if timbre_path.exists():
         timbre_w = 28 * mm
@@ -94,7 +91,7 @@ def _dibujar_firma_timbre(c: rl_canvas.Canvas, doc) -> None:
 
         c.saveState()
         c.translate(cx, cy)
-        c.rotate(20)                        # ← 20° igual que el JS original
+        c.rotate(20)
         c.translate(-cx, -cy)
         c.drawImage(
             str(timbre_path),
@@ -104,7 +101,6 @@ def _dibujar_firma_timbre(c: rl_canvas.Canvas, doc) -> None:
         )
         c.restoreState()
 
-    # — Datos médico —
     c.setFont("Helvetica", 12)
     for i, linea in enumerate([
         "Dr. Cristóbal Huerta Cortés",
@@ -120,14 +116,15 @@ def _dibujar_firma_timbre(c: rl_canvas.Canvas, doc) -> None:
 # ============================================================
 def generar_orden_generales(datos: dict) -> bytes:
     """
-    datos: { nombre, edad, rut, genero, examenes_ia: list[str], informe_ia?: str }
+    datos: { nombre, edad, rut, genero, examenesIA: list[str], informeIA?: str }
     Retorna: bytes del PDF generado.
     """
     nombre      = datos.get("nombre") or ""
     edad        = datos.get("edad") or ""
     rut         = datos.get("rut") or ""
     genero      = datos.get("genero") or ""
-    examenes_ia = datos.get("examenes_ia") or []
+    # camelCase (sistema) con fallback snake_case
+    examenes_ia = datos.get("examenesIA") or datos.get("examenes_ia") or []
 
     lista = [
         str(it if isinstance(it, str) else (it or {}).get("nombre", "")).strip()
@@ -149,7 +146,6 @@ def generar_orden_generales(datos: dict) -> bytes:
 
     elementos = []
 
-    # — Encabezado —
     logo_path = _ASSETS / "ica.jpg"
     if logo_path.exists():
         from reportlab.platypus import Image as RLImage
@@ -171,7 +167,6 @@ def generar_orden_generales(datos: dict) -> bytes:
     elementos.append(Paragraph("Orden de Exámenes Generales", subtitulo_s))
     elementos.append(Spacer(1, 8 * mm))
 
-    # — Datos paciente —
     for label, valor in [
         ("Nombre", nombre),
         ("RUT",    rut),
@@ -182,7 +177,6 @@ def generar_orden_generales(datos: dict) -> bytes:
 
     elementos.append(Spacer(1, 8 * mm))
 
-    # — Lista de exámenes —
     elementos.append(Paragraph("Exámenes solicitados:", seccion_s))
     elementos.append(Spacer(1, 4 * mm))
 
