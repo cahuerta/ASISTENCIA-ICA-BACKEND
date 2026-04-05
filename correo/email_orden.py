@@ -12,7 +12,14 @@ import httpx
 
 logger = logging.getLogger("email_orden")
 
-RESEND_API = "https://api.resend.com/emails"
+RESEND_API     = "https://api.resend.com/emails"
+RESERVAS_BASE  = "https://reservas.icarticular.cl"
+
+# Mapeo doctor_id (medicos.json) → professional_id (professionals.json ICA)
+_MAP_DR_RESERVA = {
+    "cristobal_huerta": "huerta",
+    "jaime_espinoza":   "espinoza",
+}
 
 
 # ============================================================
@@ -40,6 +47,52 @@ def _asunto_por_modulo(modulo: str) -> str:
         "preop":     "Orden preoperatoria – ICA",
         "generales": "Orden de exámenes – ICA",
     }.get(modulo, "Orden médica – ICA")
+
+
+def _bloque_reserva(datos: dict) -> str:
+    """
+    Arma el bloque con link de reserva según derivación.
+    No se envía si el paciente ya viene de una reserva.
+    """
+    # Si ya tiene reserva, no enviar link
+    if datos.get("origen") == "reserva":
+        return ""
+
+    deriv  = datos.get("deriv") or {}
+    doctor = deriv.get("doctor") or {}
+    sede   = deriv.get("sede")   or {}
+
+    doctor_id     = doctor.get("id") or ""
+    doctor_nombre = doctor.get("nombre") or ""
+    sede_nombre   = sede.get("nombre") or ""
+    agenda        = doctor.get("agenda") or sede_nombre
+
+    # Mapear al ID del sistema de reservas ICA
+    reserva_id = _MAP_DR_RESERVA.get(doctor_id)
+    if not reserva_id:
+        return ""
+
+    link = f"{RESERVAS_BASE}?dr={reserva_id}"
+
+    lineas = [
+        "─────────────────────────────────────",
+        "📅 RESERVE SU HORA",
+        "",
+    ]
+
+    if doctor_nombre:
+        lineas.append(f"Médico recomendado: {doctor_nombre}")
+    if agenda:
+        lineas.append(f"Centro: {agenda}")
+
+    lineas += [
+        "",
+        "Reserve su hora en línea:",
+        link,
+        "─────────────────────────────────────",
+    ]
+
+    return "\n".join(lineas)
 
 
 # ============================================================
@@ -84,15 +137,24 @@ async def enviar_orden_por_correo(
         pdf_b64 = base64.b64encode(pdf_bytes).decode()
         asunto  = _asunto_por_modulo(modulo)
 
+        # — Bloque de reserva (solo si no viene de reserva) —
+        bloque_reserva = _bloque_reserva(datos)
+
+        cuerpo = (
+            "Estimado(a),\n\n"
+            "Adjuntamos su orden médica generada por Asistencia ICA.\n"
+        )
+
+        if bloque_reserva:
+            cuerpo += f"\n{bloque_reserva}\n"
+
+        cuerpo += "\nInstituto de Cirugía Articular"
+
         payload = {
             "from":    f"Instituto de Cirugía Articular <{from_addr}>",
             "to":      [email],
             "subject": asunto,
-            "text": (
-                "Estimado(a),\n\n"
-                "Adjuntamos su orden médica generada por Asistencia ICA.\n\n"
-                "Instituto de Cirugía Articular"
-            ),
+            "text":    cuerpo,
             "attachments": [
                 {
                     "filename": "orden_medica.pdf",
@@ -117,4 +179,4 @@ async def enviar_orden_por_correo(
     except Exception as e:
         # 🔴 NUNCA romper flujo PDF — solo loggear
         logger.error("❌ [RESEND] Error email (IGNORADO): %s", e)
-      
+        
