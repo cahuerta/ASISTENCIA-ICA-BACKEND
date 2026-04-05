@@ -747,7 +747,7 @@ async def pdf_trauma(id_pago: str):
 
     filename = f"orden_{_sanitize(d.get('nombre') or 'paciente')}.pdf"
     asyncio.create_task(enviar_orden_por_correo(
-        datos={**d, "rut": rut}, modulo="trauma",
+        datos={**d, "rut": rut, "deriv": deriv}, modulo="trauma",
         generador_pdf=lambda _: pdf_bytes, config=CONFIG))
     asyncio.create_task(_registrar_en_ica(
         datos={**d, "rut": rut, "idPago": id_pago},
