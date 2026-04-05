@@ -145,7 +145,8 @@ def _sanitize(t: str) -> str:
     return re.sub(r'[^a-zA-Z0-9_-]+', '_', str(t or ""))
 
 def _norm_rut(s: str) -> str:
-    return re.sub(r'[^0-9kK]', '', str(s or "")).upper()
+    # Quita puntos pero mantiene guión — igual que frontend normalizeRut
+    return re.sub(r'[.]', '', str(s or '')).upper().strip()
 
 def _modulo_desde(id_pago: str, modulo: str = "") -> str:
     m = str(modulo or "").lower()
