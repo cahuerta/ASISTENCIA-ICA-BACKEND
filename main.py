@@ -119,18 +119,14 @@ app.state.config = CONFIG
 
 ALLOWED_ORIGINS = [
     FRONTEND_BASE,
-    "https://asistencia-ica-fggf.vercel.app",
     "https://icarticular.cl",
     "https://www.icarticular.cl",
     "https://app.icarticular.cl",
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
 ]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
-    allow_origin_regex=r"^https://.*\.vercel\.app$",
     allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization"],
     allow_credentials=False,
