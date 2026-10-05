@@ -614,6 +614,8 @@ class TraumaIABody(BaseModel):
     paciente:   dict | None = None
     detalles:   dict | None = None
     traumaJSON: dict | None = None
+    marcadores: dict | None = None
+    consulta:   str | None = None   # anamnesis del asistente de voz (Ipo); opcional
 
 @app.post("/ia-trauma")
 @app.post("/ia/trauma")
@@ -636,6 +638,7 @@ async def ia_trauma_endpoint(body: TraumaIABody):
              "diagnosticoIA":   result.get("diagnostico",""),
              "justificacionIA": result.get("justificacion",""),
              "pagoConfirmado":  True}
+    if body.consulta: next_["consulta"] = body.consulta
     if geo: next_["geo"] = geo
     _mem_set("trauma", id_pago, next_)
     _mem_set("ia",     id_pago, next_)
@@ -967,4 +970,3 @@ async def resolver_deriv(request: Request):
 async def not_found(request: Request, exc):
     return JSONResponse(status_code=404,
         content={"ok": False, "error": "Ruta no encontrada", "path": str(request.url.path)})
-
