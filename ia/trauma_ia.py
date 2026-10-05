@@ -3,6 +3,17 @@
 # Claude primario → OpenAI fallback → heurístico
 # Stateless — sin memoria server-side
 # CONTRATO: { ok, diagnostico, examenes[1], justificacion, informeIA }
+#
+# v2 (asistente de voz Ipo, ASISTENCIA-ICA):
+# - Acepta `consulta` (opcional): la anamnesis completa que Ipo hace por voz
+#   (signos de alarma por zona, cómo es el dolor, desde cuándo, tratamientos).
+#   Antes este módulo solo veía zona, lado, edad, sexo y puntos dolorosos.
+#   Sin `consulta` funciona igual que antes (módulo Trauma del formulario).
+# - Examen ESTANDARIZADO: la IA elige UNO del catálogo cerrado de la zona
+#   (CATALOGO_EXAMENES, editable abajo), y el examen sale siempre con el mismo
+#   nombre y la lateralidad en su lugar. Si la IA propone algo fuera del
+#   catálogo, se usa el del catálogo con la misma técnica (radiografía,
+#   ecografía o resonancia); si no se reconoce, el del fallback por zona.
 
 import re
 import logging
@@ -28,6 +39,12 @@ Reglas (ESTRICTAS):
 - Prioriza IMAGENOLOGÍA. Si corresponde, sugiere ECOGRAFÍA en lesiones de partes blandas (p. ej., hombro/codo/mano en pacientes jóvenes).
 - Si hay lateralidad (Derecha/Izquierda), inclúyela explícitamente en el examen.
 - Integra PUNTOS DOLOROSOS si existen; la explicación debe referirse a ellos cuando estén presentes.
+- Si viene la ANAMNESIS (conversación con el paciente), básate en ella: mecanismo, tiempo de evolución,
+  características del dolor, síntomas asociados, signos de alarma y tratamientos previos.
+- El examen debe ser EXACTAMENTE UNO de la lista "Exámenes permitidos", copiado tal cual.
+  Criterio general: radiografía como primer estudio en dolor de evolución crónica o sospecha ósea/degenerativa;
+  ecografía para tendones y partes blandas superficiales (hombro, codo, mano, tobillo);
+  resonancia si se sospecha lesión intraarticular, meniscal, ligamentaria, del cartílago o compromiso radicular.
 - **EXACTAMENTE 1** diagnóstico presuntivo.
 - **EXACTAMENTE 1** examen sugerido.
 - No repitas identificadores del paciente.
@@ -150,6 +167,114 @@ def _tips_desde_marcadores(m_reg: dict) -> list[str]:
 
 
 # ============================================================
+# CATÁLOGO DE EXÁMENES POR ZONA (editable)
+# ============================================================
+# Por zona, los exámenes permitidos según técnica. "{lado}" se reemplaza por
+# " DERECHA" / " IZQUIERDA" (vacío en columna). La IA debe elegir exactamente
+# uno de los de la zona; el nombre que se imprime en la orden es este.
+CATALOGO_EXAMENES: dict[str, dict[str, str]] = {
+    "rodilla": {
+        "RX":  "RADIOGRAFÍA DE RODILLA{lado} AP, LATERAL Y AXIAL DE RÓTULA",
+        "ECO": "ECOGRAFÍA DE RODILLA{lado}",
+        "RM":  "RESONANCIA MAGNÉTICA DE RODILLA{lado}",
+    },
+    "cadera": {
+        "RX":  "RADIOGRAFÍA DE PELVIS AP Y CADERA{lado} AXIAL",
+        "ECO": "ECOGRAFÍA DE CADERA{lado}",
+        "RM":  "RESONANCIA MAGNÉTICA DE CADERA{lado}",
+    },
+    "hombro": {
+        "RX":  "RADIOGRAFÍA DE HOMBRO{lado} AP Y AXIAL",
+        "ECO": "ECOGRAFÍA DE HOMBRO{lado}",
+        "RM":  "RESONANCIA MAGNÉTICA DE HOMBRO{lado}",
+    },
+    "codo": {
+        "RX":  "RADIOGRAFÍA DE CODO{lado} AP Y LATERAL",
+        "ECO": "ECOGRAFÍA DE CODO{lado}",
+        "RM":  "RESONANCIA MAGNÉTICA DE CODO{lado}",
+    },
+    "mano": {
+        "RX":  "RADIOGRAFÍA DE MANO{lado} AP Y OBLICUA",
+        "ECO": "ECOGRAFÍA DE MANO{lado}",
+        "RM":  "RESONANCIA MAGNÉTICA DE MANO{lado}",
+    },
+    "tobillo": {
+        "RX":  "RADIOGRAFÍA DE TOBILLO{lado} AP, LATERAL Y MORTAJA",
+        "ECO": "ECOGRAFÍA DE TOBILLO{lado}",
+        "RM":  "RESONANCIA MAGNÉTICA DE TOBILLO{lado}",
+    },
+    "columna lumbar": {
+        "RX":  "RADIOGRAFÍA DE COLUMNA LUMBAR AP Y LATERAL",
+        "RM":  "RESONANCIA MAGNÉTICA DE COLUMNA LUMBAR",
+    },
+    "columna cervical": {
+        "RX":  "RADIOGRAFÍA DE COLUMNA CERVICAL AP Y LATERAL",
+        "RM":  "RESONANCIA MAGNÉTICA DE COLUMNA CERVICAL",
+    },
+    "columna dorsal": {
+        "RX":  "RADIOGRAFÍA DE COLUMNA DORSAL AP Y LATERAL",
+        "RM":  "RESONANCIA MAGNÉTICA DE COLUMNA DORSAL",
+    },
+}
+
+ZONAS_MASCULINAS = {"hombro", "codo", "tobillo"}
+
+
+def _zona_catalogo(dolor: str) -> str | None:
+    d = str(dolor or "").lower().strip()
+    if d in CATALOGO_EXAMENES:
+        return d
+    if "columna" in d or "lumbar" in d or "cervical" in d or "dorsal" in d:
+        for z in ("columna cervical", "columna dorsal", "columna lumbar"):
+            if z.split()[1] in d:
+                return z
+        return "columna lumbar"
+    for z in ("rodilla", "cadera", "hombro", "codo", "mano", "tobillo"):
+        if z in d:
+            return z
+    if "muñeca" in d or "dedo" in d:
+        return "mano"
+    if "pie" in d:
+        return "tobillo"
+    return None
+
+
+def _tecnica(texto: str) -> str | None:
+    """RX | ECO | RM según lo que propuso la IA (o None si no se reconoce)."""
+    t = str(texto or "").lower()
+    if "resonancia" in t or re.search(r"\brm\b|\brnm\b", t):
+        return "RM"
+    if "ecograf" in t or re.search(r"\beco\b", t):
+        return "ECO"
+    if "radiograf" in t or re.search(r"\brx\b", t):
+        return "RX"
+    return None
+
+
+def _examen_catalogo(zona: str | None, tecnica: str | None, lado: str = "") -> str:
+    """Nombre estandarizado del catálogo, o "" si la zona o la técnica no están."""
+    if not zona or not tecnica:
+        return ""
+    plantilla = CATALOGO_EXAMENES.get(zona, {}).get(tecnica)
+    if not plantilla:
+        return ""
+    lado_u = str(lado or "").upper().strip()
+    lat = ""
+    if lado_u in ("DERECHA", "IZQUIERDA") and "columna" not in zona:
+        # Concordancia: hombro, codo y tobillo son masculinos (HOMBRO DERECHO)
+        if zona in ZONAS_MASCULINAS:
+            lado_u = lado_u[:-1] + "O"
+        lat = f" {lado_u}"
+    return plantilla.format(lado=lat) + "."
+
+
+def _opciones_catalogo(zona: str | None, lado: str = "") -> str:
+    if not zona:
+        return ""
+    return "\n".join(f"• {_examen_catalogo(zona, t, lado)}" for t in CATALOGO_EXAMENES[zona])
+
+
+# ============================================================
 # NORMALIZAR EXAMEN
 # ============================================================
 def _normalizar_examen(examen: str, dolor: str = "", lado: str = "") -> str:
@@ -185,21 +310,25 @@ def _fallback_heuristico(p: dict) -> dict:
 # CONSTRUIR MENSAJE USUARIO
 # ============================================================
 def _construir_mensaje_usuario(p: dict) -> str:
-    dolor  = str(p.get("dolor") or "")
-    lado   = str(p.get("lado") or "")
-    edad   = p.get("edad")
-    genero = str(p.get("genero") or "")
-    marc   = (p.get("detalles") or {}).get("marcadores") or {}
+    dolor    = str(p.get("dolor") or "")
+    lado     = str(p.get("lado") or "")
+    edad     = p.get("edad")
+    genero   = str(p.get("genero") or "")
+    marc     = (p.get("detalles") or {}).get("marcadores") or {}
+    consulta = str(p.get("consulta") or "").strip()[:4000]
 
     puntos_txt = _marcadores_a_texto(marc)
     tips_arr   = _tips_desde_marcadores(marc)
     tips_txt   = ("\n\nTips clínicos:\n• " + "\n• ".join(tips_arr)) if tips_arr else ""
+    opciones   = _opciones_catalogo(_zona_catalogo(dolor), lado)
 
     return (
         f"Edad: {edad or '—'}\n"
         + (f"Género: {genero}\n" if genero else "")
         + (f"Región de dolor: {dolor}{f' ({lado})' if lado else ''}\n" if dolor else "")
-        + f"Puntos dolorosos marcados:\n{puntos_txt}{tips_txt}\n\n"
+        + (f"\nANAMNESIS (conversación con el paciente):\n{consulta}\n" if consulta else "")
+        + f"\nPuntos dolorosos marcados:\n{puntos_txt}{tips_txt}\n\n"
+        + (f"Exámenes permitidos (elige exactamente uno, copiado tal cual):\n{opciones}\n\n" if opciones else "")
         + "Redacta EXACTAMENTE con el formato solicitado y el carácter ESTRICTO de 1 diagnóstico y 1 examen."
     )
 
@@ -299,6 +428,8 @@ async def trauma_ia(payload: dict, config: dict) -> dict:
     """
     id_pago      = payload.get("idPago") or ""
     paciente     = payload.get("paciente") or {}
+    # Anamnesis de Ipo (opcional): arriba en el payload o dentro de paciente
+    consulta     = str(payload.get("consulta") or paciente.get("consulta") or "").strip()
     detalles     = payload.get("detalles") or {}
     trauma_json  = payload.get("traumaJSON")
 
@@ -327,7 +458,7 @@ async def trauma_ia(payload: dict, config: dict) -> dict:
         )
         detalles = {**detalles, "marcadores": marc_relev}
 
-    p = {**paciente, "detalles": detalles}
+    p = {**paciente, "detalles": detalles, "consulta": consulta}
 
     anthropic_key   = config.get("anthropic_api_key") or ""
     openai_key      = config.get("openai_api_key") or ""
@@ -359,7 +490,13 @@ async def trauma_ia(payload: dict, config: dict) -> dict:
     if texto_ia:
         parsed = _parse_secciones(texto_ia)
         dx_ok  = str(parsed["diagnostico"]).strip()
-        ex_ok  = _normalizar_examen(parsed["examen"], p.get("dolor"), p.get("lado"))
+        # Examen del catálogo de la zona (misma técnica que propuso la IA); si la
+        # zona no está en el catálogo, se normaliza lo que propuso como antes
+        zona_cat = _zona_catalogo(p.get("dolor"))
+        if zona_cat:
+            ex_ok = _examen_catalogo(zona_cat, _tecnica(parsed["examen"]), p.get("lado"))
+        else:
+            ex_ok = _normalizar_examen(parsed["examen"], p.get("dolor"), p.get("lado"))
         just   = parsed["explicacion"] or "Justificación clínica basada en región y puntos dolorosos."
         if dx_ok and ex_ok:
             out = {"diagnostico": dx_ok, "examen": ex_ok, "justificacion": just}
@@ -367,6 +504,11 @@ async def trauma_ia(payload: dict, config: dict) -> dict:
     if not out:
         out = _fallback_heuristico(p)
         proveedor = "fallback"
+        # El fallback también sale con el nombre del catálogo
+        zona_cat = _zona_catalogo(p.get("dolor"))
+        ex_cat = _examen_catalogo(zona_cat, _tecnica(out.get("examen")), p.get("lado")) if zona_cat else ""
+        if ex_cat:
+            out = {**out, "examen": ex_cat}
 
     return {
         "ok":           True,
@@ -379,4 +521,3 @@ async def trauma_ia(payload: dict, config: dict) -> dict:
             "proveedor":   proveedor,
         },
   }
-  
