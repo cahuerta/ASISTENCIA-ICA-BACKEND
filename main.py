@@ -27,6 +27,7 @@ from ia.trauma_ia import trauma_ia
 from ia.generales_ia import generales_ia
 from ia.preop_ia import preop_ia
 from ia.chat import preview_informe
+from ia.agente_ipo import turno_ipo
 
 from ordenes.orden_imagenologia import generar_orden_imagenologia
 from ordenes.ia_orden_imagenologia import generar_orden_imagenologia_ia
@@ -62,6 +63,8 @@ CONFIG = {
     "anthropic_api_key": os.getenv("ANTHROPIC_API_KEY") or "",
     "openai_api_key":    os.getenv("OPENAI_API_KEY") or "",
     "anthropic_model":   os.getenv("ANTHROPIC_MODEL") or "claude-sonnet-4-6",
+    # Agente Ipo (conversacion por turnos): modelo economico y rapido
+    "agente_model":      os.getenv("ANTHROPIC_AGENTE_MODEL") or "claude-haiku-4-5-20251001",
     "openai_model":      os.getenv("OPENAI_MODEL") or "gpt-4o-mini",
     "resend_api_key":    os.getenv("RESEND_API_KEY") or "",
     "resend_from":       os.getenv("RESEND_FROM") or "contacto@icarticular.cl",
@@ -955,6 +958,23 @@ async def reset(id_pago: str):
 # ============================================================
 # RESOLVER DERIVACIÓN (usado por BookingCerebro de ICA)
 # ============================================================
+# ============================================================
+# AGENTE IPO — un turno de conversacion (ia/agente_ipo.py)
+# ============================================================
+class AgenteIpoBody(BaseModel):
+    zona:         str | None = None
+    lado:         str | None = None
+    edad:         Any = None
+    sexo:         str | None = None
+    preguntas:    list = []
+    respuestas:   dict = {}
+    conversacion: list = []
+    ultima:       str | None = None
+
+@app.post("/agente/ipo/turno")
+async def agente_ipo_turno(body: AgenteIpoBody):
+    return await turno_ipo(body.model_dump(), CONFIG)
+
 @app.post("/resolver-derivacion")
 async def resolver_deriv(request: Request):
     body = await request.json()
@@ -970,3 +990,5 @@ async def resolver_deriv(request: Request):
 async def not_found(request: Request, exc):
     return JSONResponse(status_code=404,
         content={"ok": False, "error": "Ruta no encontrada", "path": str(request.url.path)})
+
+          
