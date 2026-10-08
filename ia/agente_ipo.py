@@ -18,6 +18,9 @@
 #   - La IA no diagnostica ni aconseja aquí; el diagnóstico y el examen siguen
 #     saliendo del módulo de trauma (/ia-trauma).
 #
+# v2 (fluidez): preguntas más cortas y conversadas, entradas variadas (no siempre
+#   "Entiendo") y algo más de variedad (temperature 0.5). Las barandas no cambian.
+#
 # CONTRATO: { ok, respuestas: {id: {valor, resumen}}, siguiente: {id, texto, tipo} | None,
 #             urgencia, completo, fuente: "ia" | "guion" }
 
@@ -51,10 +54,16 @@ Tu trabajo:
    - Tipo "abierta": valor null y un resumen breve con las palabras del paciente.
 2. Elige el siguiente punto PENDIENTE (prioridad: alarmas "grave", luego "aviso",
    luego el resto, en el orden de la lista) y formula UNA sola pregunta:
-   - Español de Chile, cálido, tuteando, máximo 25 palabras.
-   - Puedes reconocer en pocas palabras lo que dijo ("Entiendo, eso debe molestar.").
+   - Español de Chile, cálido y conversado, tuteando, como lo diría una persona en voz
+     alta. Corta: idealmente menos de 18 palabras, nunca más de 25.
+   - A veces (no siempre) parte reconociendo lo que dijo en 2 a 5 palabras, VARIANDO
+     la forma ("Ya, te entiendo.", "Qué lata, eso molesta.", "Perfecto.", "Ok, gracias.").
+     Mira la conversación: no repitas la misma entrada que usaste antes ni partas
+     dos veces seguidas igual. Nunca uses "Entiendo" dos turnos seguidos.
+   - Si lo que contó es preocupante o doloroso, muestra empatía breve y sincera.
    - Puedes reformular el texto del punto, pero debe preguntar lo mismo, completo.
      En los de tipo "sino" la pregunta debe poder responderse con sí o no.
+   - Nada de listas ni explicaciones: una sola pregunta.
    - Nunca preguntes algo ya respondido. Nunca preguntes por puntos fuera de la lista.
 
 Responde SOLO con un JSON, sin texto adicional:
@@ -160,7 +169,7 @@ async def _llamar_haiku(user_msg: str, api_key: str, modelo: str) -> str:
             json={
                 "model":      modelo,
                 "max_tokens": 500,
-                "temperature": 0.3,
+                "temperature": 0.5,   # algo de variedad al hablar; las barandas siguen igual
                 "system":     SYSTEM_PROMPT,
                 "messages":   [{"role": "user", "content": user_msg}],
             },
