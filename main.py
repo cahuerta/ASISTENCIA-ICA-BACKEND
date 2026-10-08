@@ -28,6 +28,7 @@ from ia.generales_ia import generales_ia
 from ia.preop_ia import preop_ia
 from ia.chat import preview_informe
 from ia.agente_ipo import turno_ipo
+from ia.voz_azure import sintetizar, VozError
 
 from ordenes.orden_imagenologia import generar_orden_imagenologia
 from ordenes.ia_orden_imagenologia import generar_orden_imagenologia_ia
@@ -66,6 +67,9 @@ CONFIG = {
     # Agente Ipo (conversacion por turnos): modelo economico y rapido
     "agente_model":      os.getenv("ANTHROPIC_AGENTE_MODEL") or "claude-haiku-4-5-20251001",
     "openai_model":      os.getenv("OPENAI_MODEL") or "gpt-4o-mini",
+    # Voz natural (Azure, plan gratis F0): sin estas dos, los asistentes usan la voz del navegador
+    "azure_speech_key":    os.getenv("AZURE_SPEECH_KEY") or "",
+    "azure_speech_region": os.getenv("AZURE_SPEECH_REGION") or "",
     "resend_api_key":    os.getenv("RESEND_API_KEY") or "",
     "resend_from":       os.getenv("RESEND_FROM") or "contacto@icarticular.cl",
     "flow_api_key":      os.getenv("FLOW_API_KEY") or "",
@@ -956,9 +960,6 @@ async def reset(id_pago: str):
     return {"ok": True, "removed": removed}
 
 # ============================================================
-# RESOLVER DERIVACIÓN (usado por BookingCerebro de ICA)
-# ============================================================
-# ============================================================
 # AGENTE IPO — un turno de conversacion (ia/agente_ipo.py)
 # ============================================================
 class AgenteIpoBody(BaseModel):
@@ -975,6 +976,37 @@ class AgenteIpoBody(BaseModel):
 async def agente_ipo_turno(body: AgenteIpoBody):
     return await turno_ipo(body.model_dump(), CONFIG)
 
+# ============================================================
+# VOZ NATURAL — texto a audio MP3 con Azure (ia/voz_azure.py)
+# Si responde error, el navegador habla con su propia voz (respaldo).
+# El texto va en el cuerpo (POST), nunca en la URL.
+# ============================================================
+ORIGEN_CONFIABLE = re.compile(r"^https://([a-z0-9-]+\.)*(icarticular\.cl|hipokratia\.health)$")
+
+class VozBody(BaseModel):
+    texto:     str
+    voz:       str | None = None   # "ica" | "ipo" | "femenina" | "masculina"
+    velocidad: str | None = None   # "lenta" | "normal" | "rapida"
+    tono:      str | None = None   # "grave" | "normal" | "aguda"
+
+@app.post("/voz")
+async def voz(body: VozBody, request: Request):
+    origen = request.headers.get("origin") or ""
+    if origen not in ALLOWED_ORIGINS and not ORIGEN_CONFIABLE.match(origen):
+        return JSONResponse(status_code=403, content={"ok": False, "error": "Origen no permitido"})
+    try:
+        audio = await sintetizar(
+            body.texto, body.voz or "", body.velocidad or "", body.tono or "",
+            CONFIG, get_client_ip(request),
+        )
+    except VozError as e:
+        return JSONResponse(status_code=e.status, content={"ok": False, "error": e.mensaje})
+    return Response(content=audio, media_type="audio/mpeg",
+                    headers={"Cache-Control": "private, max-age=86400"})
+
+# ============================================================
+# RESOLVER DERIVACIÓN (usado por BookingCerebro de ICA)
+# ============================================================
 @app.post("/resolver-derivacion")
 async def resolver_deriv(request: Request):
     body = await request.json()
@@ -990,5 +1022,3 @@ async def resolver_deriv(request: Request):
 async def not_found(request: Request, exc):
     return JSONResponse(status_code=404,
         content={"ok": False, "error": "Ruta no encontrada", "path": str(request.url.path)})
-
-          
