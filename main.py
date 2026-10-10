@@ -131,9 +131,14 @@ ALLOWED_ORIGINS = [
     "https://app.icarticular.cl",
 ]
 
+# Subdominios propios (icarticular.cl, hipokratia.health): MiSalud usa la voz
+# natural (/voz) para su asistente
+ORIGEN_CONFIABLE = re.compile(r"^https://([a-z0-9-]+\.)*(icarticular\.cl|hipokratia\.health)$")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
+    allow_origin_regex=ORIGEN_CONFIABLE.pattern,
     allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization"],
     allow_credentials=False,
@@ -981,8 +986,6 @@ async def agente_ipo_turno(body: AgenteIpoBody):
 # Si responde error, el navegador habla con su propia voz (respaldo).
 # El texto va en el cuerpo (POST), nunca en la URL.
 # ============================================================
-ORIGEN_CONFIABLE = re.compile(r"^https://([a-z0-9-]+\.)*(icarticular\.cl|hipokratia\.health)$")
-
 class VozBody(BaseModel):
     texto:     str
     voz:       str | None = None   # "ica" | "ipo" | "femenina" | "masculina"
