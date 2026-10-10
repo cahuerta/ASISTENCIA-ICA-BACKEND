@@ -15,7 +15,9 @@ logger = logging.getLogger("email_orden")
 RESEND_API    = "https://api.resend.com/emails"
 RESERVAS_BASE = "https://reservas.icarticular.cl"
 
-# Mapeo doctor_id (medicos.json) → professional_id (professionals.json ICA)
+# professional_id en reservas: se toma de "reservaId" del médico en medicos.json
+# (así un médico nuevo funciona sin tocar este archivo). Este mapeo queda solo de
+# respaldo para entradas antiguas sin "reservaId".
 _MAP_DR_RESERVA = {
     "cristobal_huerta": "huerta",
     "jaime_espinoza":   "espinoza",
@@ -64,7 +66,7 @@ def _bloque_reserva_html(datos: dict) -> str:
     doctor_nombre = doctor.get("nombre") or ""
     agenda        = doctor.get("agenda") or sede.get("nombre") or ""
 
-    reserva_id = _MAP_DR_RESERVA.get(doctor_id)
+    reserva_id = str(doctor.get("reservaId") or "").strip() or _MAP_DR_RESERVA.get(doctor_id)
     if not reserva_id:
         return ""
 
