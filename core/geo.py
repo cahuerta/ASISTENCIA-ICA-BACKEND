@@ -1,5 +1,6 @@
 # core/geo.py
 # Infraestructura pura: IP + geolocalización
+# v2: si no se puede ubicar al paciente, la región es la de ICA (maule), no Santiago.
 # CONTRATO:
 # - SIEMPRE devuelve { country, region }
 # - NUNCA usa sesión
@@ -21,6 +22,9 @@ _sedes_raw = json.loads((_DERIVACION_DIR / "sedes.geo.json").read_text(encoding=
 _CIUDADES: list[tuple[str, dict]] = list((_sedes_raw.get("CL") or {}).items())
 
 logger = logging.getLogger("geo")
+
+# Sin GPS ni IP útil: la región de ICA (prioridad siempre ICA, nunca Santiago por defecto)
+REGION_DEFECTO = "maule"
 
 
 # ============================================================
@@ -115,9 +119,8 @@ async def geo_from_ip(ip: str) -> dict:
     except Exception as e:
         _log("Error IPAPI", error=str(e))
 
-    # Último recurso: ciudad más cercana al centro del primer bbox
-    region, sede = _CIUDADES[0]
-    c_lat, c_lon = _centro_bbox(sede["bbox"])
-    _log("IP sin coords, usando proximidad real", region=region)
-    return resolver_geo_por_gps(c_lat, c_lon)
-            
+    # Último recurso: ICA (Curicó, región del Maule). Antes era la primera región de
+    # la lista (Santiago), y se recomendaban médicos de otra red sin saber dónde estaba.
+    _log("IP sin coords, usando la región de ICA", region=REGION_DEFECTO)
+    return {"country": "CL", "region": REGION_DEFECTO}
+    
