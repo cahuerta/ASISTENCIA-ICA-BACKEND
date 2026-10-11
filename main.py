@@ -58,7 +58,9 @@ KHIPU_MODE         = "production" if _ENV in ("prod","production") else \
 FLOW_AMOUNT        = int(os.getenv("FLOW_AMOUNT") or KHIPU_AMOUNT)
 FLOW_SUBJECT       = os.getenv("FLOW_SUBJECT") or KHIPU_SUBJECT
 ICA_BACKEND_URL    = os.getenv("ICA_BACKEND_URL") or ""
-ICA_PREDIAG_SECRET = os.getenv("PREDIAG_SECRET")  or "ica_prediag_2024"
+# Clave entre este backend y la ficha para grabar el prediagnóstico (sin valor por
+# defecto: sin ella no se graba). El mismo valor en la ficha y en misalud-backend.
+ICA_PREDIAG_SECRET = (os.getenv("PREDIAG_SECRET") or "").strip()
 
 CONFIG = {
     "anthropic_api_key": os.getenv("ANTHROPIC_API_KEY") or "",
@@ -189,8 +191,13 @@ def _backend_base(request: Request) -> str:
     return str(request.base_url).rstrip("/")
 
 # ============================================================
-# REGISTRAR EN ICA (no bloqueante — se llama tras emitir PDF)
+# REGISTRAR EN LA FICHA (no bloqueante — se llama tras emitir el PDF)
 # ============================================================
+# Solo con identidad verificada: el paciente trae un "codigo" cifrado que emite
+# la ficha (link del correo de confirmación de reserva) o misalud-backend
+# (paciente con sesión iniciada que pasa de su asistente a Ipo / Ica). La ficha
+# valida la clave (PREDIAG_SECRET), el código y que el RUT coincida; si el
+# paciente no tiene ficha, no graba. Desde la app pública sin código, no se graba.
 async def _registrar_en_ica(
     datos: dict,
     modulo: str,
@@ -198,17 +205,19 @@ async def _registrar_en_ica(
     diagnostico: str,
     justificacion: str,
 ) -> None:
-    # Solo grabar ficha si el paciente viene de reserva
-    if datos.get("origen") != "reserva":
+    codigo = str(datos.get("codigo") or "").strip()
+    if not codigo:
         return
-    if not ICA_BACKEND_URL:
+    if not ICA_BACKEND_URL or not ICA_PREDIAG_SECRET:
+        logger.warning("Prediagnóstico no grabado en la ficha: falta ICA_BACKEND_URL o PREDIAG_SECRET")
         return
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            await client.post(
+            r = await client.post(
                 f"{ICA_BACKEND_URL}/api/prediagnostico/registrar",
-                headers={"x-internal-user": "ia_prediagnostico"},
+                headers={"X-Prediag-Secret": ICA_PREDIAG_SECRET},
                 json={
+                    "codigo":        codigo,
                     "rut":           _norm_rut(datos.get("rut") or ""),
                     "nombre":        datos.get("nombre") or "",
                     "edad":          datos.get("edad"),
@@ -222,9 +231,16 @@ async def _registrar_en_ica(
                     "modulo":        modulo,
                 },
             )
-        logger.info("Registrado en ICA: rut=%s modulo=%s", datos.get("rut"), modulo)
+        if r.status_code == 200:
+            logger.info("Prediagnóstico grabado en la ficha: orden=%s modulo=%s estado=%s",
+                        datos.get("idPago"), modulo, (r.json() or {}).get("estado"))
+        else:
+            # Sin RUT en el log: la orden basta para buscarlo
+            logger.warning("La ficha no grabó el prediagnóstico (orden=%s): %s %s",
+                           datos.get("idPago"), r.status_code, r.text[:200])
     except Exception as e:
-        logger.warning("No se pudo registrar en ICA: %s", e)
+        logger.warning("No se pudo grabar el prediagnóstico en la ficha (orden=%s): %s",
+                       datos.get("idPago"), type(e).__name__)
 
 # ============================================================
 # HEALTH
@@ -299,6 +315,47 @@ async def flow_confirmation(request: Request):
 async def flow_return(idPago: str = "", modulo: str = "trauma"):
     params = urlencode({"pago": "ok", "idPago": idPago, "modulo": modulo})
     return RedirectResponse(url=f"{RETURN_BASE}?{params}", status_code=302)
+
+# ============================================================
+# PACIENTE VERIFICADO — link del correo de confirmación de reserva
+# El link trae solo un código cifrado; con él la ficha entrega los datos para no
+# volver a preguntarlos (nombre, RUT, edad, sexo, correo). El código se guarda
+# con la orden para grabarla después en la ficha.
+# ============================================================
+class PacienteVerificadoBody(BaseModel):
+    codigo: str
+
+@app.post("/paciente-verificado")
+async def paciente_verificado(body: PacienteVerificadoBody):
+    codigo = (body.codigo or "").strip()
+    if not codigo or len(codigo) > 600:
+        raise HTTPException(400, detail="Código inválido")
+    if not ICA_BACKEND_URL or not ICA_PREDIAG_SECRET:
+        raise HTTPException(503, detail="No disponible")
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            r = await client.post(
+                f"{ICA_BACKEND_URL}/api/prediagnostico/paciente",
+                headers={"X-Prediag-Secret": ICA_PREDIAG_SECRET},
+                json={"codigo": codigo},
+            )
+    except Exception:
+        raise HTTPException(503, detail="La ficha no responde")
+    if r.status_code in (403, 404):
+        raise HTTPException(r.status_code, detail="Link vencido o paciente sin ficha")
+    if r.status_code != 200:
+        raise HTTPException(502, detail="La ficha no respondió bien")
+    d = r.json() or {}
+    sexo = str(d.get("sexo") or "").strip().lower()
+    return {
+        "ok":     True,
+        "rut":    d.get("rut") or "",
+        "nombre": d.get("nombre") or "",
+        "edad":   d.get("edad"),
+        "genero": "Masculino" if sexo.startswith(("m", "h")) else "Femenino" if sexo.startswith("f") else "",
+        "email":  d.get("email") or "",
+        "codigo": codigo,
+    }
 
 # ============================================================
 # GUARDAR DATOS — TRAUMA
