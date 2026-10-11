@@ -1,7 +1,9 @@
 # ia/voz_azure.py
 # VOZ NATURAL — texto a audio con las voces neurales de Azure (español de Chile).
 #
-# Ica habla con Catalina (es-CL, mujer) e Ipo con Lorenzo (es-CL, hombre).
+# Ica habla con Catalina (es-CL, mujer), Ipo con Lorenzo (es-CL, hombre) y
+# Sophia, la investigadora, con Dalia (es-MX, mujer): Azure tiene solo esas dos
+# voces de Chile, y Sophia debe sonar distinta de Ica.
 # El navegador manda el texto al backend (POST /voz), el backend pide el audio a
 # Azure y lo devuelve en MP3. La clave de Azure vive solo aquí (variables de Render
 # AZURE_SPEECH_KEY y AZURE_SPEECH_REGION), nunca en el navegador.
@@ -36,6 +38,7 @@ logger = logging.getLogger("voz_azure")
 VOCES = {
     "ica":       "es-CL-CatalinaNeural",
     "ipo":       "es-CL-LorenzoNeural",
+    "sophia":    "es-MX-DaliaNeural",
     "femenina":  "es-CL-CatalinaNeural",
     "masculina": "es-CL-LorenzoNeural",
 }
