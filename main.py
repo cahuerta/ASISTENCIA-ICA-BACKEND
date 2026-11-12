@@ -69,7 +69,9 @@ CONFIG = {
     # Agente Ipo (conversacion por turnos): modelo economico y rapido
     "agente_model":      os.getenv("ANTHROPIC_AGENTE_MODEL") or "claude-haiku-4-5-20251001",
     "openai_model":      os.getenv("OPENAI_MODEL") or "gpt-4o-mini",
-    # Voz natural (Azure, plan gratis F0): sin estas dos, los asistentes usan la voz del navegador
+    # Voz natural: Google Text-to-Speech primero (ia/voz_azure.py); Azure (plan gratis F0)
+    # queda de respaldo. Sin ninguna, los asistentes usan la voz del navegador
+    "google_tts_api_key":  os.getenv("GOOGLE_TTS_API_KEY") or "",
     "azure_speech_key":    os.getenv("AZURE_SPEECH_KEY") or "",
     "azure_speech_region": os.getenv("AZURE_SPEECH_REGION") or "",
     "resend_api_key":    os.getenv("RESEND_API_KEY") or "",
@@ -1039,7 +1041,7 @@ async def agente_ipo_turno(body: AgenteIpoBody):
     return await turno_ipo(body.model_dump(), CONFIG)
 
 # ============================================================
-# VOZ NATURAL — texto a audio MP3 con Azure (ia/voz_azure.py)
+# VOZ NATURAL — texto a audio MP3 con Google Text-to-Speech (respaldo Azure) — ia/voz_azure.py
 # Si responde error, el navegador habla con su propia voz (respaldo).
 # El texto va en el cuerpo (POST), nunca en la URL.
 # ============================================================
