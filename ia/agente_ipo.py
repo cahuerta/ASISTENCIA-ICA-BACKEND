@@ -52,8 +52,9 @@ Tu trabajo:
    - Tipo "sino": valor true (sí) o false (no). Si dijo que no tiene ninguno de los
      síntomas de la pregunta, es false; si tiene alguno, es true.
    - Tipo "abierta": valor null y un resumen breve con las palabras del paciente.
-2. Elige el siguiente punto PENDIENTE (prioridad: alarmas "grave", luego "aviso",
-   luego el resto, en el orden de la lista) y formula UNA sola pregunta:
+2. Elige el siguiente punto PENDIENTE en este orden: primero los puntos sin alarma, en
+   el orden de la lista (las preguntas específicas del dolor y luego las generales);
+   al final las alarmas: primero "aviso" y por último "grave". Formula UNA sola pregunta:
    - Español de Chile, cálido y conversado, tuteando, como lo diría una persona en voz
      alta. Corta: idealmente menos de 18 palabras, nunca más de 25.
    - A veces (no siempre) parte reconociendo lo que dijo en 2 a 5 palabras, VARIANDO
@@ -65,6 +66,8 @@ Tu trabajo:
      En los de tipo "sino" la pregunta debe poder responderse con sí o no.
    - Nada de listas ni explicaciones: una sola pregunta.
    - Nunca preguntes algo ya respondido. Nunca preguntes por puntos fuera de la lista.
+   - Si recibes PUNTOS MARCADOS EN EL CUERPO, el paciente ya mostró dónde le duele:
+     no le preguntes de nuevo "dónde exactamente"; pregunta cómo es y qué lo empeora.
 
 Responde SOLO con un JSON, sin texto adicional:
 {"respuestas": [{"id": "...", "valor": true|false|null, "resumen": "..."}],
@@ -125,7 +128,7 @@ def _urgencia(lista: list[dict], respuestas: dict) -> bool:
 
 def _pendientes(lista: list[dict], respuestas: dict) -> list[dict]:
     pend = [p for p in lista if p["id"] not in respuestas]
-    orden = {"grave": 0, "aviso": 1, None: 2}
+    orden = {None: 0, "aviso": 1, "grave": 2}  # primero lo específico y general; al final las alarmas
     return sorted(pend, key=lambda p: orden[p["bandera"]])  # estable: respeta el orden de la lista
 
 
@@ -151,8 +154,10 @@ def _mensaje_usuario(datos: dict, lista: list[dict], respuestas: dict, conversac
         f"{'Ipo' if c.get('rol') == 'ipo' else 'Paciente'}: {_texto(c.get('texto'), 600)}"
         for c in conversacion[-MAX_TURNOS_CONVERSACION:] if isinstance(c, dict)
     ) or "(inicio)"
+    puntos = [_texto(x, 300) for x in (datos.get("puntos") or []) if isinstance(x, str) and x.strip()][:20]
+    puntos_txt = ("\n\nPUNTOS MARCADOS EN EL CUERPO (dónde siente el dolor):\n- " + "\n- ".join(puntos)) if puntos else ""
     return (
-        f"DATOS BÁSICOS: {basicos}\n\nLISTA:\n{lista_txt}\n\nYA RESPONDIDOS:\n{resp_txt}\n\n"
+        f"DATOS BÁSICOS: {basicos}{puntos_txt}\n\nLISTA:\n{lista_txt}\n\nYA RESPONDIDOS:\n{resp_txt}\n\n"
         f"CONVERSACIÓN:\n{conv_txt}\n\nÚLTIMA FRASE DEL PACIENTE: {_texto(ultima, 1200) or '(sin respuesta)'}"
     )
 
@@ -240,7 +245,7 @@ async def turno_ipo(payload: dict, config: dict) -> dict:
         return {"ok": True, "respuestas": nuevas, "siguiente": None, "urgencia": False, "completo": True, "fuente": fuente}
 
     # La pregunta de la IA solo si es sobre un punto pendiente y tiene buena forma;
-    # si no, la del banco (primer pendiente, alarmas primero)
+    # si no, la del banco (primer pendiente; las alarmas al final)
     por_id = {p["id"]: p for p in pendientes}
     if fuente == "ia" and propuesta_id in por_id and _pregunta_valida(propuesta_txt):
         p = por_id[propuesta_id]

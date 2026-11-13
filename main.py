@@ -1035,6 +1035,7 @@ class AgenteIpoBody(BaseModel):
     respuestas:   dict = {}
     conversacion: list = []
     ultima:       str | None = None
+    puntos:       list = []       # puntos marcados en el cuerpo 3D (texto)
 
 @app.post("/agente/ipo/turno")
 async def agente_ipo_turno(body: AgenteIpoBody):
